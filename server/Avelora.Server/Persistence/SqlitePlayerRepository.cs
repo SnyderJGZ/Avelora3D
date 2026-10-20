@@ -24,18 +24,29 @@ namespace Avelora.Server.Persistence
         private const string TimeFormat = "O";
 
         private readonly string _connectionString;
+        private readonly int _passwordIterations;
         private readonly object _initializeGate = new object();
         private bool _initialized;
         private bool _disposed;
 
-        public SqlitePlayerRepository(string databasePath)
+        public SqlitePlayerRepository(
+            string databasePath,
+            int passwordIterations = PasswordHasher.DefaultIterations)
         {
             if (string.IsNullOrWhiteSpace(databasePath))
             {
                 throw new ArgumentException("La ruta de la base de datos está vacía.", nameof(databasePath));
             }
 
+            if (passwordIterations < 1 || passwordIterations > PasswordHasher.MaxIterations)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(passwordIterations),
+                    "Las iteraciones de PBKDF2 deben estar entre 1 y " + PasswordHasher.MaxIterations + ".");
+            }
+
             DatabasePath = databasePath;
+            _passwordIterations = passwordIterations;
 
             if (databasePath != ":memory:")
             {
@@ -129,9 +140,19 @@ namespace Avelora.Server.Persistence
                     row.PasswordHash,
                     row.PasswordIterations);
 
-                return valid
-                    ? AccountLoginResult.Ok(row.Id)
-                    : AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+                if (!valid)
+                {
+                    return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+                }
+
+                // Rehash al entrar: la cuenta se quedó con menos iteraciones de las configuradas.
+                // Se hace en la misma operación que el login, sobre la conexión ya abierta.
+                if (row.PasswordIterations < _passwordIterations)
+                {
+                    RewritePassword(connection, row.Id, password, _passwordIterations);
+                }
+
+                return AccountLoginResult.Ok(row.Id);
             }
 
             if (string.IsNullOrEmpty(registrationCode) ||
@@ -140,7 +161,7 @@ namespace Avelora.Server.Persistence
                 return AccountLoginResult.Failed(RejectReason.RegistrationClosed);
             }
 
-            PasswordHasher.Create(password, out byte[] salt, out byte[] hash, out int iterations);
+            PasswordHasher.Create(password, _passwordIterations, out byte[] salt, out byte[] hash);
 
             using SqliteCommand insert = connection.CreateCommand();
             insert.CommandText =
@@ -151,7 +172,7 @@ namespace Avelora.Server.Persistence
             insert.Parameters.AddWithValue("@name", accountName);
             insert.Parameters.AddWithValue("@hash", hash);
             insert.Parameters.AddWithValue("@salt", salt);
-            insert.Parameters.AddWithValue("@iterations", iterations);
+            insert.Parameters.AddWithValue("@iterations", _passwordIterations);
             insert.Parameters.AddWithValue("@created", FormatTime(DateTime.UtcNow));
 
             object? result = insert.ExecuteScalar();
@@ -344,6 +365,28 @@ CREATE INDEX characters_account_idx ON characters(account_id);
         }
 
         // ---------------------------------------------------------------- consultas
+
+        /// <summary>
+        /// Recalcula sal, hash e iteraciones de una cuenta (rehash al entrar con más iteraciones).
+        /// </summary>
+        private static void RewritePassword(
+            SqliteConnection connection,
+            int accountId,
+            string password,
+            int iterations)
+        {
+            PasswordHasher.Create(password, iterations, out byte[] salt, out byte[] hash);
+
+            using SqliteCommand update = connection.CreateCommand();
+            update.CommandText =
+                "UPDATE accounts SET password_hash = @hash, password_salt = @salt, " +
+                "password_iterations = @iterations WHERE id = @id;";
+            update.Parameters.AddWithValue("@hash", hash);
+            update.Parameters.AddWithValue("@salt", salt);
+            update.Parameters.AddWithValue("@iterations", iterations);
+            update.Parameters.AddWithValue("@id", accountId);
+            update.ExecuteNonQuery();
+        }
 
         private static AccountRow? FindAccount(SqliteConnection connection, string accountName)
         {

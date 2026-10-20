@@ -48,6 +48,8 @@ namespace Avelora.Tests
             Assert.Equal("data/avelora.db", config.DatabasePath);
             Assert.Equal("avelora-dev", config.RegistrationInvitationCode);
             Assert.Equal(60d, config.SaveIntervalSeconds);
+            Assert.Equal(16, config.MaxPendingLogins);
+            Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
         }
 
         [Fact]
@@ -85,6 +87,8 @@ namespace Avelora.Tests
                 DatabasePath = "datos/prueba.db",
                 RegistrationInvitationCode = "invitacion",
                 SaveIntervalSeconds = 12.5d,
+                MaxPendingLogins = 4,
+                MaxFailedLoginsPerAccountPerMinute = 2,
                 PlayerSpeed = 7.5f,
                 PlayerHalfWidth = 0.3f,
                 PlayerHalfHeight = 0.6f,
@@ -118,6 +122,8 @@ namespace Avelora.Tests
             Assert.Equal(original.DatabasePath, loaded.DatabasePath);
             Assert.Equal(original.RegistrationInvitationCode, loaded.RegistrationInvitationCode);
             Assert.Equal(original.SaveIntervalSeconds, loaded.SaveIntervalSeconds);
+            Assert.Equal(original.MaxPendingLogins, loaded.MaxPendingLogins);
+            Assert.Equal(original.MaxFailedLoginsPerAccountPerMinute, loaded.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(original.PlayerSpeed, loaded.PlayerSpeed);
             Assert.Equal(original.PlayerHalfWidth, loaded.PlayerHalfWidth);
             Assert.Equal(original.PlayerHalfHeight, loaded.PlayerHalfHeight);
@@ -235,6 +241,18 @@ namespace Avelora.Tests
                 DatabasePath = string.Empty,
                 SaveIntervalSeconds = 0d,
             }.Validate();
+        }
+
+        [Fact]
+        public void Un_Ajuste_De_Login_Imposible_Impide_Arrancar()
+        {
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { MaxPendingLogins = 0 }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { MaxFailedLoginsPerAccountPerMinute = 0 }.Validate);
+
+            new ServerConfig { MaxPendingLogins = 1, MaxFailedLoginsPerAccountPerMinute = 1 }.Validate();
         }
 
         [Fact]

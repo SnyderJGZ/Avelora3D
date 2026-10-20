@@ -37,6 +37,7 @@ namespace Avelora.Server.Net
         private readonly byte[] _mapHash;
         private readonly IPlayerRepository? _repository;
         private readonly CharacterSaveService? _saves;
+        private readonly LoginWorker? _login;
         private readonly string _registrationCode;
         private readonly long _saveEveryTicks;
         private long _nextSaveTick;
@@ -51,13 +52,17 @@ namespace Avelora.Server.Net
         private readonly ConcurrentQueue<ControlEvent> _control = new ConcurrentQueue<ControlEvent>();
         private readonly ConcurrentQueue<OutboundMessage> _outbound = new ConcurrentQueue<OutboundMessage>();
         private readonly ConcurrentDictionary<int, int> _connectionToEntity = new ConcurrentDictionary<int, int>();
-        private readonly ConcurrentDictionary<int, int> _connectionToCharacter = new ConcurrentDictionary<int, int>();
-        private readonly ConcurrentDictionary<int, int> _onlineCharacters = new ConcurrentDictionary<int, int>();
+        private readonly ConcurrentDictionary<int, int> _connectionToAccount = new ConcurrentDictionary<int, int>();
+        private readonly ConcurrentDictionary<int, int> _onlineAccounts = new ConcurrentDictionary<int, int>();
 
         // Solo hilo de red.
         private readonly Dictionary<int, long> _handshakeDeadlines = new Dictionary<int, long>();
+        private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
+        private readonly Dictionary<string, FailedLoginWindow> _failedLogins =
+            new Dictionary<string, FailedLoginWindow>(StringComparer.Ordinal);
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
         private long _currentSecond;
+        private long _currentMinute;
 
         // Solo hilo de simulación.
         private readonly Dictionary<int, Session> _sessions = new Dictionary<int, Session>();
@@ -123,6 +128,12 @@ namespace Avelora.Server.Net
 
             _nextSaveTick = _saveEveryTicks;
 
+            // El login (PBKDF2 + SQLite) corre en su propio hilo: el de red nunca espera a disco.
+            if (_repository != null)
+            {
+                _login = new LoginWorker(_repository, _registrationCode);
+            }
+
             _transport.Connected += OnConnected;
             _transport.Disconnected += OnDisconnected;
             _transport.Received += OnReceived;
@@ -162,17 +173,20 @@ namespace Avelora.Server.Net
             _netThread?.Join(TimeSpan.FromSeconds(2));
             _netThread = null;
             _transport.Stop();
+            _login?.Dispose();
         }
 
         public void Dispose() => Stop();
 
         /// <summary>
-        /// Una vuelta del hilo de red: procesar eventos, vaciar la cola de salida y expirar los
-        /// saludos que no llegan. Es público para poder probarlo sin arrancar el hilo.
+        /// Una vuelta del hilo de red: procesar eventos, recoger los logins terminados, vaciar la
+        /// cola de salida y expirar los saludos que no llegan. Es público para poder probarlo sin
+        /// arrancar el hilo.
         /// </summary>
         public void PollOnce()
         {
             _transport.Poll();
+            DrainLogins();
             DrainOutbound();
             ExpireHandshakes();
         }
@@ -258,7 +272,8 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _loginsRejected),
             _saves?.Saved ?? 0,
             _saves?.Failed ?? 0,
-            _saves?.Pending ?? 0);
+            _saves?.Pending ?? 0,
+            _saves?.LastError);
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -282,6 +297,10 @@ namespace Avelora.Server.Net
             _handshakeDeadlines.Remove(connectionId);
             _messagesThisSecond.Remove(connectionId);
 
+            // Si estaba autenticándose, su resultado ya no interesa. Nada que reservar: la
+            // conexión se ha ido antes de que el login terminara.
+            _pendingLogins.Remove(connectionId);
+
             // La baja se aplica en el hilo de simulación: aquí solo se avisa.
             _control.Enqueue(ControlEvent.Leave(connectionId));
         }
@@ -292,6 +311,13 @@ namespace Avelora.Server.Net
 
             if (length <= 0 || length > ProtocolConstants.MaxMessageSize)
             {
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (_pendingLogins.ContainsKey(connectionId))
+            {
+                // Autenticándose: no hay sesión todavía, así que cualquier mensaje sobra.
                 Interlocked.Increment(ref _messagesRejected);
                 return;
             }
@@ -393,55 +419,149 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            try
-            {
-                AccountLoginResult login = _repository.Login(
-                    accountName,
-                    hello.Password,
-                    hello.InvitationCode,
-                    _registrationCode);
-
-                if (!login.Success)
-                {
-                    Interlocked.Increment(ref _loginsRejected);
-                    RejectHandshake(connectionId, login.Failure);
-                    return;
-                }
-
-                CharacterRecord character = _repository.GetOrCreateCharacter(
-                    login.AccountId,
-                    characterName,
-                    _zone.Id,
-                    _config.Spawn,
-                    _mapHash);
-
-                // Dos conexiones no pueden llevar el mismo personaje: una pisaría el guardado de
-                // la otra. La reserva se libera al procesar la baja.
-                if (!_onlineCharacters.TryAdd(character.Id, connectionId))
-                {
-                    Interlocked.Increment(ref _loginsRejected);
-                    RejectHandshake(connectionId, RejectReason.CharacterInUse);
-                    return;
-                }
-
-                _connectionToCharacter[connectionId] = character.Id;
-                _handshakeDeadlines.Remove(connectionId);
-                Interlocked.Increment(ref _loginsSucceeded);
-
-                // El alta la hace la simulación: aquí todavía no se toca el mundo.
-                _control.Enqueue(ControlEvent.Join(
-                    connectionId,
-                    hello,
-                    login.AccountId,
-                    accountName,
-                    character));
-            }
-            catch (Exception ex)
+            // Límite por cuenta: si ya agotó sus intentos en este minuto, no se encola nada y no
+            // se gasta ni un ciclo de PBKDF2.
+            if (IsAccountRateLimited(accountName))
             {
                 Interlocked.Increment(ref _loginsRejected);
-                Console.Error.WriteLine("ERROR: no se pudo autenticar la cuenta: " + ex.Message);
-                RejectHandshake(connectionId, RejectReason.Unknown);
+                Interlocked.Increment(ref _rateLimited);
+                RejectHandshake(connectionId, RejectReason.RateLimited);
+                return;
             }
+
+            // Tope de logins en vuelo: con la cola llena se rechaza sin calcular el hash.
+            if (_pendingLogins.Count >= _config.MaxPendingLogins)
+            {
+                Interlocked.Increment(ref _rateLimited);
+                RejectHandshake(connectionId, RejectReason.RateLimited);
+                return;
+            }
+
+            _pendingLogins[connectionId] = hello;
+            _handshakeDeadlines.Remove(connectionId);
+
+            // El alta la resolverá el hilo de login y llegará por la cola de resultados.
+            _login!.Enqueue(new LoginRequest(
+                connectionId,
+                accountName,
+                hello.Password,
+                hello.InvitationCode,
+                characterName,
+                _zone.Id,
+                _config.Spawn,
+                _mapHash));
+        }
+
+        /// <summary>
+        /// Vacía la cola de resultados del hilo de login. Aquí se aplica el rechazo o se reserva la
+        /// cuenta y se encola el alta, todo en el hilo de red.
+        /// </summary>
+        private void DrainLogins()
+        {
+            if (_login == null)
+            {
+                return;
+            }
+
+            while (_login.TryDequeueResult(out LoginResult? result))
+            {
+                if (!_pendingLogins.TryGetValue(result.ConnectionId, out HelloMessage hello))
+                {
+                    // La conexión se cerró mientras se autenticaba: el resultado se descarta y no
+                    // se reserva nada.
+                    continue;
+                }
+
+                _pendingLogins.Remove(result.ConnectionId);
+
+                if (result.Error != null)
+                {
+                    Interlocked.Increment(ref _loginsRejected);
+                    Console.Error.WriteLine("ERROR: no se pudo autenticar la cuenta: " + result.Error);
+                    RejectHandshake(result.ConnectionId, RejectReason.Unknown);
+                    continue;
+                }
+
+                if (!result.Success)
+                {
+                    Interlocked.Increment(ref _loginsRejected);
+
+                    if (result.Failure == RejectReason.InvalidCredentials)
+                    {
+                        RecordFailedLogin(result.AccountName);
+                    }
+
+                    RejectHandshake(result.ConnectionId, result.Failure);
+                    continue;
+                }
+
+                // La reserva es por cuenta: si ya estaba conectada, pasa a la conexión nueva y la
+                // simulación echará a la anterior al procesar el alta.
+                int replacedConnectionId = ReserveAccount(result.AccountId, result.ConnectionId);
+                _connectionToAccount[result.ConnectionId] = result.AccountId;
+                Interlocked.Increment(ref _loginsSucceeded);
+
+                _control.Enqueue(ControlEvent.Join(
+                    result.ConnectionId,
+                    hello,
+                    result.AccountId,
+                    result.AccountName,
+                    result.Character,
+                    replacedConnectionId));
+            }
+        }
+
+        /// <summary>
+        /// Reserva la cuenta para esta conexión. Devuelve la conexión anterior si la cuenta ya
+        /// estaba conectada, o 0 si es la primera.
+        /// </summary>
+        private int ReserveAccount(int accountId, int connectionId)
+        {
+            while (true)
+            {
+                if (_onlineAccounts.TryGetValue(accountId, out int existing))
+                {
+                    if (_onlineAccounts.TryUpdate(accountId, connectionId, existing))
+                    {
+                        return existing;
+                    }
+                }
+                else if (_onlineAccounts.TryAdd(accountId, connectionId))
+                {
+                    return 0;
+                }
+            }
+        }
+
+        /// <summary>¿La cuenta ya agotó los intentos fallidos del minuto actual?</summary>
+        private bool IsAccountRateLimited(string accountName)
+        {
+            long minute = Environment.TickCount64 / 60_000;
+            ExpireFailedLogins(minute);
+
+            return _failedLogins.TryGetValue(accountName, out FailedLoginWindow window) &&
+                window.Count >= _config.MaxFailedLoginsPerAccountPerMinute;
+        }
+
+        private void RecordFailedLogin(string accountName)
+        {
+            long minute = Environment.TickCount64 / 60_000;
+            ExpireFailedLogins(minute);
+
+            _failedLogins.TryGetValue(accountName, out FailedLoginWindow window);
+            _failedLogins[accountName] = new FailedLoginWindow(minute, window.Count + 1);
+        }
+
+        /// <summary>Al cambiar de minuto se tira la ventana anterior: el diccionario no crece.</summary>
+        private void ExpireFailedLogins(long minute)
+        {
+            if (minute == _currentMinute)
+            {
+                return;
+            }
+
+            _currentMinute = minute;
+            _failedLogins.Clear();
         }
 
         private void RejectHandshake(int connectionId, RejectReason reason)
@@ -567,6 +687,13 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            // Misma cuenta en otra conexión: se echa a la anterior antes de contar el aforo, así
+            // reconectar no depende de que quede hueco. Si es el mismo personaje, se conserva la
+            // posición viva que tenía (más reciente que la de la base de datos).
+            Vec2? previousPosition = control.ReplacesConnectionId > 0
+                ? ReplaceSession(control.ReplacesConnectionId, control.Character?.Id ?? 0)
+                : null;
+
             if (_sessions.Count >= _config.MaxPlayers)
             {
                 ReleaseConnection(connectionId);
@@ -582,7 +709,7 @@ namespace Avelora.Server.Net
             if (control.Character != null)
             {
                 characterId = control.Character.Id;
-                spawn = ResolveSpawn(zone, control.Character);
+                spawn = previousPosition ?? ResolveSpawn(zone, control.Character);
             }
 
             PlayerEntity player = zone.SpawnPlayer(
@@ -619,11 +746,40 @@ namespace Avelora.Server.Net
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
-        private void RemovePlayer(int connectionId)
+        /// <summary>
+        /// Retira la sesión anterior de la misma cuenta: guarda, quita su entidad y le avisa con
+        /// <see cref="RejectReason.LoggedInElsewhere"/>. Devuelve su posición si el personaje es el
+        /// mismo que va a entrar, para no aparecer en la posición vieja de la base de datos.
+        /// </summary>
+        private Vec2? ReplaceSession(int previousConnectionId, int characterId)
+        {
+            if (!_sessions.TryGetValue(previousConnectionId, out Session? previous))
+            {
+                return null;
+            }
+
+            Vec2? position = null;
+
+            if (characterId > 0 &&
+                previous.Character != null &&
+                previous.Character.Id == characterId &&
+                _zone.Entities.TryGet(previous.EntityId, out Entity? entity) &&
+                entity is PlayerEntity player)
+            {
+                position = player.Position;
+            }
+
+            RemoveSession(previousConnectionId, RejectReason.LoggedInElsewhere);
+            return position;
+        }
+
+        private void RemovePlayer(int connectionId) => RemoveSession(connectionId, null);
+
+        private void RemoveSession(int connectionId, RejectReason? rejectReason)
         {
             if (!_sessions.TryGetValue(connectionId, out Session? session))
             {
-                // Puede ser una conexión que reservó personaje y se fue antes de que la simulación
+                // Puede ser una conexión que reservó cuenta y se fue antes de que la simulación
                 // procesara el alta. Hay que soltar la reserva igualmente.
                 ReleaseConnection(connectionId);
                 return;
@@ -639,6 +795,12 @@ namespace Avelora.Server.Net
             _connectionToEntity.TryRemove(connectionId, out _);
             ReleaseConnection(connectionId);
             Interlocked.Increment(ref _playersLeft);
+
+            if (rejectReason.HasValue)
+            {
+                byte[] bytes = MessageCodec.EncodeReject(new RejectMessage(rejectReason.Value));
+                Enqueue(connectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: true);
+            }
         }
 
         /// <summary>
@@ -683,9 +845,11 @@ namespace Avelora.Server.Net
 
         private void ReleaseConnection(int connectionId)
         {
-            if (_connectionToCharacter.TryRemove(connectionId, out int characterId))
+            if (_connectionToAccount.TryRemove(connectionId, out int accountId))
             {
-                _onlineCharacters.TryRemove(characterId, out _);
+                // Solo se suelta si la reserva sigue siendo de esta conexión: la baja tardía de la
+                // conexión antigua no debe quitarle la cuenta a la nueva.
+                _onlineAccounts.TryRemove(new KeyValuePair<int, int>(accountId, connectionId));
             }
         }
 
@@ -769,7 +933,8 @@ namespace Avelora.Server.Net
                 HelloMessage hello,
                 int accountId,
                 string accountName,
-                CharacterRecord? character)
+                CharacterRecord? character,
+                int replacesConnectionId)
             {
                 Kind = kind;
                 ConnectionId = connectionId;
@@ -777,6 +942,7 @@ namespace Avelora.Server.Net
                 AccountId = accountId;
                 AccountName = accountName;
                 Character = character;
+                ReplacesConnectionId = replacesConnectionId;
             }
 
             public ControlEventKind Kind { get; }
@@ -792,19 +958,24 @@ namespace Avelora.Server.Net
             /// <summary>Personaje cargado de la base de datos; <c>null</c> en el modo sin persistencia.</summary>
             public CharacterRecord? Character { get; }
 
+            /// <summary>Conexión anterior de la misma cuenta (hay que echarla), o 0 si no había.</summary>
+            public int ReplacesConnectionId { get; }
+
             public static ControlEvent Join(
                 int connectionId,
                 HelloMessage hello,
                 int accountId,
                 string accountName,
-                CharacterRecord? character) =>
+                CharacterRecord? character,
+                int replacesConnectionId = 0) =>
                 new ControlEvent(
                     ControlEventKind.Join,
                     connectionId,
                     hello,
                     accountId,
                     accountName,
-                    character);
+                    character,
+                    replacesConnectionId);
 
             public static ControlEvent Leave(int connectionId) =>
                 new ControlEvent(
@@ -813,7 +984,23 @@ namespace Avelora.Server.Net
                     default,
                     0,
                     string.Empty,
-                    null);
+                    null,
+                    0);
+        }
+
+        /// <summary>Fallos de login de una cuenta dentro del minuto actual.</summary>
+        private readonly struct FailedLoginWindow
+        {
+            public FailedLoginWindow(long minute, int count)
+            {
+                Minute = minute;
+                Count = count;
+            }
+
+            /// <summary>Minuto de <see cref="Environment.TickCount64"/> al que pertenece la cuenta.</summary>
+            public long Minute { get; }
+
+            public int Count { get; }
         }
 
         private readonly struct OutboundMessage
@@ -886,7 +1073,8 @@ namespace Avelora.Server.Net
             long loginsRejected,
             long charactersSaved,
             long saveFailures,
-            int pendingSaves)
+            int pendingSaves,
+            string? saveLastError = null)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -906,6 +1094,7 @@ namespace Avelora.Server.Net
             CharactersSaved = charactersSaved;
             SaveFailures = saveFailures;
             PendingSaves = pendingSaves;
+            SaveLastError = saveLastError;
         }
 
         public int Connections { get; }
@@ -951,5 +1140,8 @@ namespace Avelora.Server.Net
 
         /// <summary>Personajes esperando a que SQLite los escriba.</summary>
         public int PendingSaves { get; }
+
+        /// <summary>Último error de guardado, si lo hubo.</summary>
+        public string? SaveLastError { get; }
     }
 }

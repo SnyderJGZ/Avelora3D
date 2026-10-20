@@ -29,6 +29,7 @@ namespace Avelora.Server.Persistence
         private readonly Thread _thread;
 
         private volatile bool _stopping;
+        private volatile string? _lastError;
         private bool _disposed;
         private long _saved;
         private long _failed;
@@ -64,8 +65,8 @@ namespace Avelora.Server.Persistence
             }
         }
 
-        /// <summary>Último error de SQLite, si lo hubo.</summary>
-        public string? LastError { get; private set; }
+        /// <summary>Último error de SQLite, si lo hubo. Se puede leer desde otro hilo.</summary>
+        public string? LastError => _lastError;
 
         /// <summary>Encola una foto. Si ya había otra del mismo personaje, la sustituye.</summary>
         public void Enqueue(CharacterRecord character)
@@ -145,7 +146,12 @@ namespace Avelora.Server.Persistence
                         }
                         catch (Exception ex)
                         {
-                            LastError = ex.Message;
+                            _lastError = ex.Message;
+
+                            // Un guardado perdido es progreso perdido: además de contarlo, se dice.
+                            Console.Error.WriteLine(
+                                "ERROR: no se pudo guardar el personaje " + character.Id + ": " + ex.Message);
+
                             Interlocked.Increment(ref _failed);
                         }
                     }

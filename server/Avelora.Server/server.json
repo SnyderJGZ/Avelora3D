@@ -12,6 +12,8 @@
   "databasePath": "data/avelora.db",
   "registrationInvitationCode": "avelora-dev",
   "saveIntervalSeconds": 60,
+  "maxPendingLogins": 16,
+  "maxFailedLoginsPerAccountPerMinute": 5,
   "playerSpeed": 4,
   "playerHalfWidth": 0.4,
   "playerHalfHeight": 0.4,

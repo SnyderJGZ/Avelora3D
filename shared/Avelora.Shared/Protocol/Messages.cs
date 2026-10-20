@@ -204,7 +204,15 @@ namespace Avelora.Shared.Protocol
         RegistrationClosed = 9,
 
         /// <summary>Ese personaje ya está jugando en otra conexión.</summary>
+        /// <remarks>
+        /// El servidor ya no lo emite: desde la Etapa F, la misma cuenta conectada dos veces echa a
+        /// la sesión anterior (<see cref="LoggedInElsewhere"/>). Se conserva el valor para no
+        /// renumerar el resto.
+        /// </remarks>
         CharacterInUse = 10,
+
+        /// <summary>La misma cuenta se conectó desde otra conexión: esta sesión se cierra.</summary>
+        LoggedInElsewhere = 11,
     }
 
     /// <summary>Respuesta negativa al saludo.</summary>

@@ -53,7 +53,7 @@ namespace Avelora.Tests
         [Fact]
         public void La_Cuenta_Se_Registra_Y_Se_Verifica_Sin_Distinguir_Mayusculas()
         {
-            using var repository = new SqlitePlayerRepository(DatabasePath);
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
             repository.Initialize();
 
             AccountLoginResult registered = repository.Login(
@@ -87,7 +87,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Registro_Cerrado_No_Crea_Cuentas()
         {
-            using var repository = new SqlitePlayerRepository(DatabasePath);
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
             repository.Initialize();
 
             AccountLoginResult closed = repository.Login("nadie", "secreto1", "lo-que-sea", string.Empty);
@@ -105,7 +105,7 @@ namespace Avelora.Tests
             byte[] mapHash = NewHash(3);
             int accountId;
 
-            using (var repository = new SqlitePlayerRepository(DatabasePath))
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
             {
                 repository.Initialize();
 
@@ -134,7 +134,7 @@ namespace Avelora.Tests
                     NewHash(9)));
             }
 
-            using (var reopened = new SqlitePlayerRepository(DatabasePath))
+            using (var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
             {
                 reopened.Initialize();
 
@@ -194,7 +194,7 @@ namespace Avelora.Tests
 
             harness.Connect(1);
             harness.Handshake(1, "dev", "avelora-dev", "dev");
-            harness.Pump();
+            harness.Pump(1);
 
             Assert.Equal(1, harness.Zone.Entities.Count);
 
@@ -207,7 +207,7 @@ namespace Avelora.Tests
 
             harness.Connect(2);
             harness.Handshake(2, "dev", "avelora-dev", "dev");
-            harness.Pump();
+            harness.Pump(2);
 
             WelcomeMessage welcome = harness.LastWelcome(2);
 
@@ -224,7 +224,7 @@ namespace Avelora.Tests
 
             harness.Connect(1);
             harness.Handshake(1, "dev", "avelora-dev", "dev");
-            harness.Pump();
+            harness.Pump(1);
 
             harness.Transport.RaiseDisconnected(1);
             harness.Server.BeforeTick(harness.Zone);
@@ -232,7 +232,7 @@ namespace Avelora.Tests
 
             harness.Connect(2);
             harness.Handshake(2, "dev", "otra-clave", "dev");
-            harness.Pump();
+            harness.Pump(2);
 
             Assert.Equal(0, harness.Zone.Entities.Count);
             Assert.True(harness.LastReject(2, out RejectMessage reject));
@@ -241,21 +241,51 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Un_Personaje_No_Puede_Estar_En_Dos_Conexiones()
+        public void La_Misma_Cuenta_Desde_Dos_Conexiones_Echa_A_La_Primera()
         {
             using var harness = new ServerHarness(DatabasePath);
 
             harness.Connect(1);
             harness.Handshake(1, "dev", "avelora-dev", "dev");
-            harness.Pump();
+            harness.Pump(1);
 
+            PlayerEntity first = (PlayerEntity)harness.Zone.Entities.All[0];
+            first.Position = new Vec2(2.5f, -3.5f);
+
+            // Misma cuenta y mismo personaje desde otra conexión: la nueva gana.
             harness.Connect(2);
             harness.Handshake(2, "dev", "avelora-dev", "dev");
-            harness.Pump();
+            harness.Pump(2);
+
+            // La primera se va con motivo y se cierra; queda una sola entidad, en la posición viva.
+            Assert.True(harness.LastReject(1, out RejectMessage reject));
+            Assert.Equal(RejectReason.LoggedInElsewhere, reject.Reason);
+            Assert.Contains(1, harness.Transport.DisconnectedConnections);
 
             Assert.Equal(1, harness.Zone.Entities.Count);
-            Assert.True(harness.LastReject(2, out RejectMessage reject));
-            Assert.Equal(RejectReason.CharacterInUse, reject.Reason);
+            WelcomeMessage welcome = harness.LastWelcome(2);
+            Assert.Equal(2.5f, welcome.SpawnX);
+            Assert.Equal(-3.5f, welcome.SpawnY);
+
+            // La baja tardía de la conexión antigua no suelta la reserva de la nueva: si la
+            // soltara, la tercera conexión entraría sin echar a nadie y habría dos sesiones.
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.BeforeTick(harness.Zone);
+
+            PlayerEntity second = (PlayerEntity)harness.Zone.Entities.Get(welcome.EntityId)!;
+            second.Position = new Vec2(4.5f, 1.5f);
+
+            harness.Connect(3);
+            harness.Handshake(3, "dev", "avelora-dev", "dev");
+            harness.Pump(3);
+
+            Assert.True(harness.LastReject(2, out RejectMessage secondReject));
+            Assert.Equal(RejectReason.LoggedInElsewhere, secondReject.Reason);
+            Assert.Equal(1, harness.Zone.Entities.Count);
+
+            WelcomeMessage third = harness.LastWelcome(3);
+            Assert.Equal(4.5f, third.SpawnX);
+            Assert.Equal(1.5f, third.SpawnY);
         }
 
         private static byte[] NewHash(byte seed)
@@ -316,7 +346,9 @@ namespace Avelora.Tests
 
                 MapHash = MapFile.ComputeContentHashBytes(map);
                 Transport = new FakeServerTransport();
-                Repository = new SqlitePlayerRepository(databasePath);
+
+                // Pocas iteraciones: estas pruebas no miden PBKDF2, solo el flujo de login.
+                Repository = new SqlitePlayerRepository(databasePath, passwordIterations: 1_000);
                 Repository.Initialize();
                 Saves = new CharacterSaveService(Repository);
                 Server = new NetworkServer(
@@ -360,10 +392,54 @@ namespace Avelora.Tests
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
             }
 
-            public void Pump()
+            /// <summary>
+            /// Una vuelta de los dos hilos hasta que la conexión reciba el desenlace de su saludo
+            /// (<c>Welcome</c> o <c>Reject</c>). El login ya no es síncrono: corre en su hilo y hay
+            /// que esperar a que la red recoja el resultado.
+            /// </summary>
+            public void Pump(int connectionId)
             {
-                Server.BeforeTick(Zone);
-                Server.PollOnce();
+                long deadline = Environment.TickCount64 + 5_000;
+
+                while (true)
+                {
+                    Server.BeforeTick(Zone);
+                    Server.PollOnce();
+
+                    if (HasOutcome(connectionId))
+                    {
+                        return;
+                    }
+
+                    if (Environment.TickCount64 >= deadline)
+                    {
+                        throw new TimeoutException(
+                            "La conexión " + connectionId + " no recibió Welcome ni Reject a tiempo.");
+                    }
+
+                    Thread.Sleep(1);
+                }
+            }
+
+            private bool HasOutcome(int connectionId)
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+
+                    if (sent.ConnectionId != connectionId)
+                    {
+                        continue;
+                    }
+
+                    if (MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _) ||
+                        MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out _))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             public WelcomeMessage LastWelcome(int connectionId)

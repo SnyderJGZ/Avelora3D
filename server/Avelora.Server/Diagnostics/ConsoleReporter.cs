@@ -117,6 +117,11 @@ namespace Avelora.Server.Diagnostics
                 " fallos=" + network.SaveFailures +
                 " pendientes=" + network.PendingSaves);
 
+            if (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError))
+            {
+                Console.WriteLine("            error de guardado: " + network.SaveLastError);
+            }
+
             Console.WriteLine(
                 "            memoria: GC " + GC.CollectionCount(0) + "/" + GC.CollectionCount(1) + "/" +
                 GC.CollectionCount(2) + "  mem=" + Invariant(GC.GetTotalMemory(false) / 1048576.0, "0.0") + "MB");
@@ -199,7 +204,10 @@ namespace Avelora.Server.Diagnostics
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +
                 " personaje(s) guardados, " + network.SaveFailures + " fallos, " +
-                network.PendingSaves + " pendiente(s)");
+                network.PendingSaves + " pendiente(s)" +
+                (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError)
+                    ? ", último error: " + network.SaveLastError
+                    : string.Empty));
             Console.WriteLine("  Jugadores       : " + zone.Players.Count);
             Console.WriteLine("  Código de salida: " + exitCode);
         }

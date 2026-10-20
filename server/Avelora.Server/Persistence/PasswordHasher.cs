@@ -14,27 +14,53 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public static class PasswordHasher
     {
-        public const int DefaultIterations = 100_000;
+        /// <summary>
+        /// Iteraciones por defecto desde la Etapa F. Las cuentas antiguas guardan las suyas y se
+        /// recalculan al entrar (ver <c>SqlitePlayerRepository.Login</c>).
+        /// </summary>
+        public const int DefaultIterations = 600_000;
+
+        /// <summary>Tope de iteraciones aceptadas al verificar o al recalcular un hash.</summary>
+        public const int MaxIterations = 1_000_000;
 
         private const int SaltSize = 16;
         private const int HashSize = 32;
-        private const int MaxIterations = 1_000_000;
 
-        /// <summary>Crea sal y hash nuevos para una contraseña.</summary>
+        /// <summary>Crea sal y hash nuevos para una contraseña con las iteraciones por defecto.</summary>
         public static void Create(
             string password,
             out byte[] salt,
             out byte[] hash,
             out int iterations)
         {
+            iterations = DefaultIterations;
+            Create(password, iterations, out salt, out hash);
+        }
+
+        /// <summary>
+        /// Crea sal y hash nuevos con un número de iteraciones concreto. Se usa al registrar una
+        /// cuenta y al recalcular el hash de una que se quedó con menos de las configuradas.
+        /// </summary>
+        public static void Create(
+            string password,
+            int iterations,
+            out byte[] salt,
+            out byte[] hash)
+        {
             if (password is null)
             {
                 throw new ArgumentNullException(nameof(password));
             }
 
+            if (iterations < 1 || iterations > MaxIterations)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(iterations),
+                    "Las iteraciones de PBKDF2 deben estar entre 1 y " + MaxIterations + ".");
+            }
+
             salt = new byte[SaltSize];
             RandomNumberGenerator.Fill(salt);
-            iterations = DefaultIterations;
             hash = Rfc2898DeriveBytes.Pbkdf2(
                 password,
                 salt,

@@ -72,10 +72,20 @@ namespace Avelora.Server.Simulation
             _thread.Start();
         }
 
-        /// <summary>Espera a que el hilo termine.</summary>
-        public void Join(TimeSpan timeout)
+        /// <summary>
+        /// Espera a que el hilo termine. Devuelve <c>false</c> si se agotó el tiempo, y entonces la
+        /// simulación puede seguir tocando el mundo: quien llama no debe recorrerlo.
+        /// </summary>
+        public bool Join(TimeSpan timeout)
         {
-            _thread?.Join(timeout);
+            Thread? thread = _thread;
+
+            if (thread == null)
+            {
+                return true;
+            }
+
+            return thread.Join(timeout);
         }
 
         private void Run(CancellationToken cancellationToken)

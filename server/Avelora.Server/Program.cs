@@ -195,13 +195,28 @@ namespace Avelora.Server
 
             double elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
 
-            core.Join(TimeSpan.FromSeconds(2));
+            // Parar en orden: primero la simulación (para que nadie toque el mundo), después la red
+            // y solo al final el guardado. Si la simulación no terminó a tiempo, recorrer sus
+            // sesiones sería una carrera: es preferible perder lo más reciente a corromperlo.
+            bool simulationStopped = core.Join(TimeSpan.FromSeconds(2));
 
-            // El hilo de simulación ya no toca el mundo: se puede recorrer para guardar a todos los
-            // que seguían conectados cuando llegó la orden de parar.
-            network.SaveAll(zone);
-            saves?.Flush(TimeSpan.FromSeconds(5));
             network.Stop();
+
+            if (simulationStopped)
+            {
+                network.SaveAll(zone);
+            }
+            else
+            {
+                ConsoleReporter.WriteError(
+                    "El hilo de simulación no terminó a tiempo: no se guardan los jugadores conectados.");
+            }
+
+            if (saves != null && !saves.Flush(TimeSpan.FromSeconds(5)))
+            {
+                ConsoleReporter.WriteError(
+                    "Quedaron " + saves.Pending + " personaje(s) sin guardar al cerrar.");
+            }
 
             // Se mide antes de cerrar: el tiempo de parada no debe contar como ticks perdidos.
             ConsoleReporter.WriteSummary(elapsedSeconds, zone, core.Metrics, network.Snapshot(), 0);

@@ -69,6 +69,18 @@ namespace Avelora.Server.Configuration
         /// <summary>Cada cuántos segundos se guardan los personajes conectados.</summary>
         public double SaveIntervalSeconds { get; set; } = 60d;
 
+        /// <summary>
+        /// Logins que pueden estar autenticándose a la vez. Con la cola llena se rechaza el saludo
+        /// con <c>RateLimited</c> sin gastar PBKDF2.
+        /// </summary>
+        public int MaxPendingLogins { get; set; } = 16;
+
+        /// <summary>
+        /// Intentos fallidos que admite una misma cuenta por minuto. Superado el tope, el siguiente
+        /// saludo se rechaza con <c>RateLimited</c> sin comprobar la contraseña.
+        /// </summary>
+        public int MaxFailedLoginsPerAccountPerMinute { get; set; } = 5;
+
         /// <summary>Velocidad del jugador, en unidades por segundo. La impone el servidor, nunca el cliente.</summary>
         public float PlayerSpeed { get; set; } = 4f;
 
@@ -395,6 +407,17 @@ namespace Avelora.Server.Configuration
             if (HandshakeTimeoutSeconds <= 0d)
             {
                 throw new InvalidOperationException("handshakeTimeoutSeconds debe ser positivo.");
+            }
+
+            // Límites del login: son frenos de la red delante de PBKDF2 y SQLite (Etapa F).
+            if (MaxPendingLogins < 1)
+            {
+                throw new InvalidOperationException("maxPendingLogins debe ser >= 1.");
+            }
+
+            if (MaxFailedLoginsPerAccountPerMinute < 1)
+            {
+                throw new InvalidOperationException("maxFailedLoginsPerAccountPerMinute debe ser >= 1.");
             }
         }
 
