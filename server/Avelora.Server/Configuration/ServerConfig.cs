@@ -1,0 +1,459 @@
+#nullable enable
+using System;
+using System.IO;
+using System.Text.Json;
+using Avelora.Server.Simulation;
+using Avelora.Shared;
+using Avelora.Shared.Protocol;
+
+namespace Avelora.Server.Configuration
+{
+    /// <summary>
+    /// Ajustes del servidor, leídos de <c>server.json</c> (plan del servidor §3: «configuración
+    /// externa: tick rate, límites y rutas en un archivo, no en el código»).
+    /// </summary>
+    /// <remarks>
+    /// Todos los valores tienen un defecto razonable, así que el servidor arranca aunque el
+    /// archivo no exista: en ese caso se escribe uno para poder editarlo.
+    /// </remarks>
+    public sealed class ServerConfig
+    {
+        /// <summary>Nombre del archivo de configuración por defecto.</summary>
+        public const string DefaultFileName = "server.json";
+
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            WriteIndented = true,
+        };
+
+        /// <summary>
+        /// Ticks por segundo. Debe coincidir con <see cref="SimulationConstants.TickRate"/>:
+        /// el cliente lleva compilado ese paso, así que un valor distinto rompería predicción y
+        /// reconciliación (guía del núcleo §5.1).
+        /// </summary>
+        public int TickRate { get; set; } = SimulationConstants.TickRate;
+
+        /// <summary>Ruta del mapa <c>.avmap</c>. Si es relativa se busca junto a la configuración, en el directorio actual y junto al ejecutable.</summary>
+        public string MapPath { get; set; } = "maps/avelora-etapa-a.avmap";
+
+        /// <summary>Identificador de la zona (en el MVP hay una sola).</summary>
+        public int ZoneId { get; set; } = 1;
+
+        /// <summary>Posición X de aparición del jugador.</summary>
+        public float SpawnX { get; set; } = -1.5f;
+
+        /// <summary>Posición Y de aparición del jugador.</summary>
+        public float SpawnY { get; set; } = -2.5f;
+
+        /// <summary>Identificador del primer personaje cuando la persistencia está desactivada.</summary>
+        public int FirstCharacterId { get; set; } = 1;
+
+        /// <summary>Activa cuentas, personajes y guardado en SQLite (Etapa F).</summary>
+        public bool PersistenceEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Ruta del archivo SQLite. Si es relativa se resuelve junto a la configuración, que a su
+        /// vez viaja junto al ejecutable.
+        /// </summary>
+        public string DatabasePath { get; set; } = "data/avelora.db";
+
+        /// <summary>
+        /// Código necesario para crear una cuenta nueva. Vacío cierra el registro. En el MVP es un
+        /// valor de desarrollo compartido; cámbialo antes de exponer el servidor.
+        /// </summary>
+        public string RegistrationInvitationCode { get; set; } = "avelora-dev";
+
+        /// <summary>Cada cuántos segundos se guardan los personajes conectados.</summary>
+        public double SaveIntervalSeconds { get; set; } = 60d;
+
+        /// <summary>Velocidad del jugador, en unidades por segundo. La impone el servidor, nunca el cliente.</summary>
+        public float PlayerSpeed { get; set; } = 4f;
+
+        /// <summary>Semiancho de la caja de colisión del jugador.</summary>
+        public float PlayerHalfWidth { get; set; } = 0.4f;
+
+        /// <summary>Semialto de la caja de colisión del jugador.</summary>
+        public float PlayerHalfHeight { get; set; } = 0.4f;
+
+        /// <summary>Tope de intenciones que el tick saca de la cola de entrada por vuelta (protege la duración del tick).</summary>
+        public int MaxIntentsPerTick { get; set; } = 128;
+
+        /// <summary>Tope de intenciones que se aceptan por jugador y tick (margen para el jitter).</summary>
+        public int MaxIntentsPerPlayerPerTick { get; set; } = 4;
+
+        /// <summary>Capacidad de la cola de inputs de cada jugador (una entrada se consume por tick).</summary>
+        public int InputBufferCapacity { get; set; } = 8;
+
+        /// <summary>Tope de la cola concurrente de entrada: si se llena, se descarta (guía del núcleo §2.3).</summary>
+        public int MaxQueuedIntents { get; set; } = 4096;
+
+        /// <summary>Número de ticks que guarda la ventana de métricas (600 = 30 s a 20 Hz).</summary>
+        public int MetricsWindowTicks { get; set; } = 600;
+
+        /// <summary>Cada cuántos segundos se imprime el informe de métricas.</summary>
+        public double ReportIntervalSeconds { get; set; } = 5.0;
+
+        /// <summary>Puerto UDP de escucha. <c>0</c> deja que el sistema elija uno (útil en pruebas).</summary>
+        public int Port { get; set; } = ProtocolConstants.DefaultPort;
+
+        /// <summary>Jugadores que caben en la zona.</summary>
+        public int MaxPlayers { get; set; } = 10;
+
+        /// <summary>
+        /// Conexiones que admite el transporte. Es mayor que <see cref="MaxPlayers"/> a propósito:
+        /// así al que sobra se le puede responder «lleno» en vez de cerrarle el socket sin explicación.
+        /// </summary>
+        public int MaxConnections { get; set; } = 16;
+
+        /// <summary>Tope de mensajes por conexión y segundo (los inputs van a 20/s: deja margen al jitter).</summary>
+        public int MaxMessagesPerSecondPerConnection { get; set; } = 90;
+
+        /// <summary>Tope de mensajes pendientes de enviar. Si se llena, se tiran los snapshots viejos.</summary>
+        public int MaxQueuedOutboundMessages { get; set; } = 512;
+
+        /// <summary>Cada cuántos ticks se envía un snapshot (1 = 20 por segundo).</summary>
+        public int SnapshotEveryTicks { get; set; } = 1;
+
+        /// <summary>
+        /// Radio del área de interés, en tiles. Una entidad nueva se envía a un jugador si está a
+        /// esta distancia o menos. Por defecto cubre de sobra la vista del mapa actual.
+        /// </summary>
+        public float InterestRadius { get; set; } = InterestSettings.DefaultRadius;
+
+        /// <summary>Lado de cada celda de la grilla espacial del área de interés, en tiles.</summary>
+        public float InterestCellSize { get; set; } = InterestSettings.DefaultCellSize;
+
+        /// <summary>
+        /// Margen extra, en tiles, que conserva visible a una entidad que ya lo estaba. Evita que
+        /// una entidad parada en el borde aparezca y desaparezca en ticks alternos.
+        /// </summary>
+        public float InterestHysteresis { get; set; } = InterestSettings.DefaultHysteresis;
+
+        /// <summary>Segundos que se espera el saludo de una conexión recién abierta.</summary>
+        public double HandshakeTimeoutSeconds { get; set; } = 5.0;
+
+        /// <summary>Duración de la ejecución en segundos. <c>0</c> = hasta que se pulse Ctrl+C.</summary>
+        public double RunSeconds { get; set; }
+
+        /// <summary>Posición de aparición del jugador.</summary>
+        public Vec2 Spawn => new Vec2(SpawnX, SpawnY);
+
+        /// <summary>Caja de colisión del jugador.</summary>
+        public Vec2 PlayerHalfSize => new Vec2(PlayerHalfWidth, PlayerHalfHeight);
+
+        /// <summary>
+        /// Busca el archivo de configuración: primero el que se pase por argumento, luego el
+        /// directorio actual y por último el del ejecutable.
+        /// </summary>
+        public static string ResolveConfigPath(string? requested)
+        {
+            if (!string.IsNullOrWhiteSpace(requested))
+            {
+                string full = Path.GetFullPath(requested);
+                if (!File.Exists(full))
+                {
+                    throw new FileNotFoundException("No existe el archivo de configuración indicado.", full);
+                }
+
+                return full;
+            }
+
+            string inCurrent = Path.Combine(Environment.CurrentDirectory, DefaultFileName);
+            if (File.Exists(inCurrent))
+            {
+                return inCurrent;
+            }
+
+            string besideExecutable = Path.Combine(AppContext.BaseDirectory, DefaultFileName);
+            return File.Exists(besideExecutable) ? besideExecutable : inCurrent;
+        }
+
+        /// <summary>Carga la configuración; si el archivo no existe escribe uno con los valores por defecto.</summary>
+        public static ServerConfig Load(string configPath)
+        {
+            ServerConfig config;
+
+            if (File.Exists(configPath))
+            {
+                string json = File.ReadAllText(configPath);
+                config = JsonSerializer.Deserialize<ServerConfig>(json, JsonOptions) ?? new ServerConfig();
+            }
+            else
+            {
+                config = new ServerConfig();
+                Save(configPath, config);
+            }
+
+            config.Validate();
+            return config;
+        }
+
+        /// <summary>Escribe la configuración en disco.</summary>
+        public static void Save(string configPath, ServerConfig config)
+        {
+            string? directory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllText(configPath, JsonSerializer.Serialize(config, JsonOptions));
+        }
+
+        /// <summary>
+        /// Comprueba que los valores son utilizables. Se hace al arrancar y no en mitad del tick:
+        /// un ajuste imposible debe impedir arrancar (plan del servidor §7, «validar en la frontera»).
+        /// </summary>
+        public void Validate()
+        {
+            if (TickRate != SimulationConstants.TickRate)
+            {
+                throw new InvalidOperationException(
+                    "tickRate vale " + TickRate + " pero la simulación compartida está compilada a " +
+                    SimulationConstants.TickRate + " Hz (SimulationConstants.TickRate). " +
+                    "Cliente y servidor deben avanzar con el mismo paso: cambia la constante compartida " +
+                    "(y el cliente) antes que este archivo.");
+            }
+
+            if (string.IsNullOrWhiteSpace(MapPath))
+            {
+                throw new InvalidOperationException("mapPath está vacío: hace falta un mapa .avmap.");
+            }
+
+            if (PlayerSpeed <= 0f || float.IsNaN(PlayerSpeed) || float.IsInfinity(PlayerSpeed))
+            {
+                throw new InvalidOperationException("playerSpeed debe ser un número positivo.");
+            }
+
+            if (PlayerHalfWidth <= 0f || PlayerHalfHeight <= 0f)
+            {
+                throw new InvalidOperationException("La caja de colisión del jugador debe tener tamaño positivo.");
+            }
+
+            if (MaxIntentsPerTick < 1 || MaxIntentsPerPlayerPerTick < 1)
+            {
+                throw new InvalidOperationException("Los topes de intenciones por tick deben ser >= 1.");
+            }
+
+            if (InputBufferCapacity < 1)
+            {
+                throw new InvalidOperationException("inputBufferCapacity debe ser >= 1.");
+            }
+
+            if (MaxQueuedIntents < 1)
+            {
+                throw new InvalidOperationException("maxQueuedIntents debe ser >= 1.");
+            }
+
+            if (MetricsWindowTicks < 1)
+            {
+                throw new InvalidOperationException("metricsWindowTicks debe ser >= 1.");
+            }
+
+            if (ReportIntervalSeconds <= 0d)
+            {
+                throw new InvalidOperationException("reportIntervalSeconds debe ser positivo.");
+            }
+
+            if (RunSeconds < 0d)
+            {
+                throw new InvalidOperationException("runSeconds no puede ser negativo.");
+            }
+
+            ValidateNetwork();
+            ValidateInterest();
+            ValidatePersistence();
+        }
+
+        /// <summary>
+        /// Valida la persistencia. Con la base de datos desactivada no se exige ruta ni intervalo;
+        /// con ella activa, ambos tienen que permitir guardar de forma segura.
+        /// </summary>
+        private void ValidatePersistence()
+        {
+            if (!PersistenceEnabled)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(DatabasePath))
+            {
+                throw new InvalidOperationException("databasePath está vacío y la persistencia está activada.");
+            }
+
+            if (SaveIntervalSeconds <= 0d ||
+                double.IsNaN(SaveIntervalSeconds) ||
+                double.IsInfinity(SaveIntervalSeconds))
+            {
+                throw new InvalidOperationException("saveIntervalSeconds debe ser un número positivo.");
+            }
+
+            if (RegistrationInvitationCode is null)
+            {
+                throw new InvalidOperationException("registrationInvitationCode no puede ser null.");
+            }
+
+            if (RegistrationInvitationCode.Length > ProtocolConstants.MaxInvitationCodeBytes)
+            {
+                throw new InvalidOperationException(
+                    "registrationInvitationCode no puede superar los " +
+                    ProtocolConstants.MaxInvitationCodeBytes + " caracteres.");
+            }
+        }
+
+        /// <summary>
+        /// Resuelve el archivo SQLite. A diferencia del mapa, si es relativo se crea junto a la
+        /// configuración (no se busca uno existente en otros directorios): la base de datos es
+        /// del servidor, no un contenido compartido.
+        /// </summary>
+        public string ResolveDatabasePath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(DatabasePath))
+            {
+                throw new InvalidOperationException("databasePath está vacío.");
+            }
+
+            if (DatabasePath == ":memory:" || Path.IsPathRooted(DatabasePath))
+            {
+                return DatabasePath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", DatabasePath));
+        }
+
+        /// <summary>
+        /// Valida el área de interés. Los tres valores tienen que ser finitos, y radio y celda
+        /// positivos; la histéresis puede ser cero (sin margen).
+        /// </summary>
+        private void ValidateInterest()
+        {
+            if (InterestRadius <= 0f || float.IsNaN(InterestRadius) || float.IsInfinity(InterestRadius))
+            {
+                throw new InvalidOperationException("interestRadius debe ser un número positivo.");
+            }
+
+            if (InterestCellSize <= 0f || float.IsNaN(InterestCellSize) || float.IsInfinity(InterestCellSize))
+            {
+                throw new InvalidOperationException("interestCellSize debe ser un número positivo.");
+            }
+
+            if (InterestHysteresis < 0f || float.IsNaN(InterestHysteresis) || float.IsInfinity(InterestHysteresis))
+            {
+                throw new InvalidOperationException("interestHysteresis no puede ser negativo.");
+            }
+
+            if (float.IsInfinity(InterestRadius + InterestHysteresis))
+            {
+                throw new InvalidOperationException("interestRadius + interestHysteresis no es representable.");
+            }
+        }
+
+        /// <summary>
+        /// Valida la configuración de red: puerto, aforo, colas y tiempos. Todo se comprueba antes
+        /// de abrir el socket, para no arrancar con una combinación imposible.
+        /// </summary>
+        private void ValidateNetwork()
+        {
+            if (Port < 0 || Port > 65535)
+            {
+                throw new InvalidOperationException("port debe estar entre 0 y 65535.");
+            }
+
+            if (MaxPlayers < 1)
+            {
+                throw new InvalidOperationException("maxPlayers debe ser >= 1.");
+            }
+
+            if (MaxConnections < MaxPlayers)
+            {
+                throw new InvalidOperationException(
+                    "maxConnections (" + MaxConnections + ") no puede ser menor que maxPlayers (" + MaxPlayers + "): " +
+                    "los jugadores que sobran deben poder recibir un rechazo.");
+            }
+
+            if (MaxMessagesPerSecondPerConnection < SimulationConstants.TickRate)
+            {
+                throw new InvalidOperationException(
+                    "maxMessagesPerSecondPerConnection debe cubrir al menos los inputs de un tick (" +
+                    SimulationConstants.TickRate + "/s).");
+            }
+
+            if (MaxQueuedOutboundMessages < 1)
+            {
+                throw new InvalidOperationException("maxQueuedOutboundMessages debe ser >= 1.");
+            }
+
+            if (SnapshotEveryTicks < 1)
+            {
+                throw new InvalidOperationException("snapshotEveryTicks debe ser >= 1.");
+            }
+
+            if (HandshakeTimeoutSeconds <= 0d)
+            {
+                throw new InvalidOperationException("handshakeTimeoutSeconds debe ser positivo.");
+            }
+        }
+
+        /// <summary>
+        /// Comprueba que la caja del jugador cabe en el punto de aparición. Si aparece solapando
+        /// una pared queda atrapado para siempre: <see cref="MovementSimulator.Step"/> no acepta
+        /// ningún movimiento hacia una posición no caminable, ni siquiera para salir.
+        /// </summary>
+        public void ValidateSpawn(MapCollisionGrid map)
+        {
+            if (map is null)
+            {
+                throw new ArgumentNullException(nameof(map));
+            }
+
+            if (!map.IsBoxWalkable(Spawn, PlayerHalfSize))
+            {
+                throw new InvalidOperationException(
+                    "El punto de aparición (" + SpawnX + "; " + SpawnY + ") no está libre: la caja del " +
+                    "jugador se solapa con una pared y quedaría atrapada. Corrige spawnX/spawnY.");
+            }
+        }
+
+        /// <summary>
+        /// Resuelve la ruta del mapa probando junto a la configuración, en el directorio actual y
+        /// junto al ejecutable. Así funciona igual con <c>dotnet run</c>, con el ejecutable
+        /// publicado o con la configuración en otro sitio.
+        /// </summary>
+        public string ResolveMapPath(string configPath)
+        {
+            if (Path.IsPathRooted(MapPath))
+            {
+                if (!File.Exists(MapPath))
+                {
+                    throw new FileNotFoundException("No se encuentra el mapa indicado en mapPath.", MapPath);
+                }
+
+                return MapPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            string[] candidates =
+            {
+                Path.GetFullPath(Path.Combine(configDirectory ?? ".", MapPath)),
+                Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, MapPath)),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, MapPath)),
+            };
+
+            foreach (string candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            throw new FileNotFoundException(
+                "No se encuentra el mapa '" + MapPath + "'. Se buscó en:" + Environment.NewLine +
+                "  " + string.Join(Environment.NewLine + "  ", candidates));
+        }
+    }
+}

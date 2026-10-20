@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Avelora.Bots</RootNamespace>
+    <AssemblyName>Avelora.Bots</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\Avelora.Shared\Avelora.Shared.csproj" />
+    <ProjectReference Include="..\..\shared\Avelora.Net\Avelora.Net.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Los bots validan la huella del mapa igual que el cliente de Unity. -->
+    <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

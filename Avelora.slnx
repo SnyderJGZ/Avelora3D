@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/shared/">
+    <Project Path="shared/Avelora.Shared/Avelora.Shared.csproj" />
+    <Project Path="shared/Avelora.Net/Avelora.Net.csproj" />
+  </Folder>
+  <Folder Name="/server/">
+    <Project Path="server/Avelora.Server/Avelora.Server.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Avelora.Bots/Avelora.Bots.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Avelora.Tests/Avelora.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Avelora.Server</RootNamespace>
+    <AssemblyName>Avelora.Server</AssemblyName>
+    <!-- El servidor no necesita ICU ni datos culturales; evita cargar la base de datos de
+         globalización y hace el arranque más ligero y predecible. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\Avelora.Shared\Avelora.Shared.csproj" />
+    <ProjectReference Include="..\..\shared\Avelora.Net\Avelora.Net.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Un solo archivo SQLite, sin servidor aparte. La persistencia queda detrás de
+         IPlayerRepository (plan del servidor §8). -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- Microsoft.Data.Sqlite 10.0.0 arrastra la librería nativa 2.1.11, con un aviso de
+         seguridad conocido. 2.1.13 es la versión corregida y mantiene la misma API. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Configuración junto al ejecutable: se puede editar sin recompilar. -->
+    <None Update="server.json" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- El mapa vive en maps/ (contenido compartido cliente/servidor) y viaja junto al ejecutable. -->
+    <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

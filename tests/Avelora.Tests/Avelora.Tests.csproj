@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Avelora.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\Avelora.Shared\Avelora.Shared.csproj" />
+    <ProjectReference Include="..\..\server\Avelora.Server\Avelora.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- El mapa exportado desde Unity viaja junto a las pruebas: hay que comprobar que el
+         servidor carga exactamente el mismo archivo que juega el cliente. -->
+    <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.1: Unity (API Compatibility Level .NET Standard 2.1) puede consumir
+         estos mismos fuentes sin cambios, y el servidor los referencia como ensamblado. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>Avelora.Shared</RootNamespace>
+    <!-- C# 9 como máximo: el código también se compila dentro de Unity (C# 10+ no está soportado). -->
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

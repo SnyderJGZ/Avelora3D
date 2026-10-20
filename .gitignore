@@ -1,0 +1,38 @@
+## Ignorar artefactos de compilación de .NET
+[Bb]in/
+[Oo]bj/
+
+## Unity (solo la carpeta Library/etc.; los assets de client/ sí se versionan)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+.vs/
+.vscode/
+.idea/
+*.csproj.user
+*.user
+*.suo
+*.pidb
+*.booproj
+*.svd
+*.unitypackage
+
+## Base de datos SQLite de desarrollo
+*.db
+*.db-shm
+*.db-wal
+
+## Registros de ejecución
+*.log
+
+## Mapas: sí se versionan (maps/*.avmap)
+## El .avmap es contenido, no un artefacto: cliente y servidor deben cargar exactamente el mismo
+## archivo, y las pruebas comparan su huella. No añadir *.avmap aquí.
+
+## Sistema operativo
+.DS_Store
+Thumbs.db
