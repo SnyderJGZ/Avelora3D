@@ -729,6 +729,8 @@ namespace Avelora.Client
                     return "cuenta inexistente o invitación no válida";
                 case RejectReason.CharacterInUse:
                     return "ese personaje ya está conectado";
+                case RejectReason.LoggedInElsewhere:
+                    return "tu cuenta se ha conectado desde otro sitio";
                 default:
                     return "motivo desconocido";
             }

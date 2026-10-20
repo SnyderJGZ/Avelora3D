@@ -2468,6 +2468,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Avelora.Client.NetworkClient
   host: 127.0.0.1
   port: 7777
+  accountName: dev
+  password: avelora-dev
+  characterName: 
+  invitationCode: avelora-dev
   connectOnStart: 1
   welcomeTimeoutSeconds: 6
   interpolationDelay: 0.1
