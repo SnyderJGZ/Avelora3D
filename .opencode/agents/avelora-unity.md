@@ -1,7 +1,7 @@
 ---
 description: Implementa tareas del cliente de Unity de Avelora y las sincroniza con el proyecto de Unity
 mode: primary
-model: openrouter/deepseek/deepseek-v4.1-flash
+model: opencode/deepseek-v4.1-flash-free
 steps: 80
 permissions:
   - action: shell

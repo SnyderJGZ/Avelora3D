@@ -1,7 +1,7 @@
 ---
 description: Implementa tareas de servidor, código compartido, bots y pruebas de Avelora
 mode: primary
-model: openrouter/deepseek/deepseek-v4.1-flash
+model: opencode/deepseek-v4.1-flash-free
 steps: 80
 permissions:
   - action: shell
