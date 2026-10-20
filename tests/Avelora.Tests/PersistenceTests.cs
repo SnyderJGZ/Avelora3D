@@ -288,6 +288,35 @@ namespace Avelora.Tests
             Assert.Equal(1.5f, third.SpawnY);
         }
 
+        [Fact]
+        public void La_Misma_Cuenta_Desde_Dos_Conexiones_Echa_A_La_Conexion_Cero()
+        {
+            using var harness = new ServerHarness(DatabasePath);
+
+            // LiteNetLib empieza en 0: la conexión 0 es una sesión real, no «sin conexión».
+            harness.Connect(0);
+            harness.Handshake(0, "dev", "avelora-dev", "dev");
+            harness.Pump(0);
+
+            PlayerEntity first = (PlayerEntity)harness.Zone.Entities.All[0];
+            first.Position = new Vec2(2.5f, -3.5f);
+
+            // Misma cuenta y mismo personaje desde la conexión 1: la nueva gana.
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            // La 0 se va con motivo y se cierra; queda una sola entidad, en la posición viva.
+            Assert.True(harness.LastReject(0, out RejectMessage reject));
+            Assert.Equal(RejectReason.LoggedInElsewhere, reject.Reason);
+            Assert.Contains(0, harness.Transport.DisconnectedConnections);
+
+            Assert.Equal(1, harness.Zone.Entities.Count);
+            WelcomeMessage welcome = harness.LastWelcome(1);
+            Assert.Equal(2.5f, welcome.SpawnX);
+            Assert.Equal(-3.5f, welcome.SpawnY);
+        }
+
         private static byte[] NewHash(byte seed)
         {
             var hash = new byte[ProtocolConstants.MapHashSize];

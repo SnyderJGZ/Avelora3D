@@ -48,6 +48,12 @@ namespace Avelora.Server.Net
         /// </summary>
         private const int RateLimitDisconnectFactor = 3;
 
+        /// <summary>
+        /// «No hay conexión anterior». No puede ser 0: LiteNetLib empieza en 0 y reutiliza los ids,
+        /// así que 0 es una conexión real.
+        /// </summary>
+        private const int NoConnection = -1;
+
         // Frontera entre hilos.
         private readonly ConcurrentQueue<ControlEvent> _control = new ConcurrentQueue<ControlEvent>();
         private readonly ConcurrentQueue<OutboundMessage> _outbound = new ConcurrentQueue<OutboundMessage>();
@@ -515,7 +521,7 @@ namespace Avelora.Server.Net
 
         /// <summary>
         /// Reserva la cuenta para esta conexión. Devuelve la conexión anterior si la cuenta ya
-        /// estaba conectada, o 0 si es la primera.
+        /// estaba conectada, o <see cref="NoConnection"/> si es la primera.
         /// </summary>
         private int ReserveAccount(int accountId, int connectionId)
         {
@@ -530,7 +536,7 @@ namespace Avelora.Server.Net
                 }
                 else if (_onlineAccounts.TryAdd(accountId, connectionId))
                 {
-                    return 0;
+                    return NoConnection;
                 }
             }
         }
@@ -692,7 +698,7 @@ namespace Avelora.Server.Net
             // Misma cuenta en otra conexión: se echa a la anterior antes de contar el aforo, así
             // reconectar no depende de que quede hueco. Si es el mismo personaje, se conserva la
             // posición viva que tenía (más reciente que la de la base de datos).
-            Vec2? previousPosition = control.ReplacesConnectionId > 0
+            Vec2? previousPosition = control.ReplacesConnectionId != NoConnection
                 ? ReplaceSession(control.ReplacesConnectionId, control.Character?.Id ?? 0)
                 : null;
 
@@ -960,7 +966,10 @@ namespace Avelora.Server.Net
             /// <summary>Personaje cargado de la base de datos; <c>null</c> en el modo sin persistencia.</summary>
             public CharacterRecord? Character { get; }
 
-            /// <summary>Conexión anterior de la misma cuenta (hay que echarla), o 0 si no había.</summary>
+            /// <summary>
+            /// Conexión anterior de la misma cuenta (hay que echarla), o <see cref="NoConnection"/>
+            /// si no había.
+            /// </summary>
             public int ReplacesConnectionId { get; }
 
             public static ControlEvent Join(
@@ -969,7 +978,7 @@ namespace Avelora.Server.Net
                 int accountId,
                 string accountName,
                 CharacterRecord? character,
-                int replacesConnectionId = 0) =>
+                int replacesConnectionId = NoConnection) =>
                 new ControlEvent(
                     ControlEventKind.Join,
                     connectionId,
@@ -987,7 +996,7 @@ namespace Avelora.Server.Net
                     0,
                     string.Empty,
                     null,
-                    0);
+                    NoConnection);
         }
 
         private readonly struct OutboundMessage
