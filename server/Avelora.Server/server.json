@@ -28,6 +28,7 @@
   "interestCellSize": 8,
   "interestHysteresis": 1,
   "handshakeTimeoutSeconds": 5,
+  "rejectDisconnectDelayMilliseconds": 500,
   "metricsWindowTicks": 600,
   "reportIntervalSeconds": 5,
   "runSeconds": 0

@@ -50,6 +50,7 @@ namespace Avelora.Tests
             Assert.Equal(60d, config.SaveIntervalSeconds);
             Assert.Equal(16, config.MaxPendingLogins);
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
+            Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
         }
 
         [Fact]
@@ -103,6 +104,7 @@ namespace Avelora.Tests
                 InterestCellSize = 2.5f,
                 InterestHysteresis = 0.75f,
                 HandshakeTimeoutSeconds = 3.5d,
+                RejectDisconnectDelayMilliseconds = 750,
                 MetricsWindowTicks = 30,
                 ReportIntervalSeconds = 2.5d,
                 RunSeconds = 3d,
@@ -138,6 +140,7 @@ namespace Avelora.Tests
             Assert.Equal(original.InterestCellSize, loaded.InterestCellSize);
             Assert.Equal(original.InterestHysteresis, loaded.InterestHysteresis);
             Assert.Equal(original.HandshakeTimeoutSeconds, loaded.HandshakeTimeoutSeconds);
+            Assert.Equal(original.RejectDisconnectDelayMilliseconds, loaded.RejectDisconnectDelayMilliseconds);
             Assert.Equal(original.MetricsWindowTicks, loaded.MetricsWindowTicks);
             Assert.Equal(original.ReportIntervalSeconds, loaded.ReportIntervalSeconds);
             Assert.Equal(original.RunSeconds, loaded.RunSeconds);
@@ -199,6 +202,11 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { MaxQueuedOutboundMessages = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { SnapshotEveryTicks = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { HandshakeTimeoutSeconds = 0d }.Validate);
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { RejectDisconnectDelayMilliseconds = -1 }.Validate);
+
+            // 0 es válido: corta en la vuelta siguiente sin esperar.
+            new ServerConfig { RejectDisconnectDelayMilliseconds = 0 }.Validate();
         }
 
         [Fact]

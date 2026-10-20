@@ -115,7 +115,7 @@ namespace Avelora.Tests
         [Fact]
         public void Una_Version_Distinta_Se_Rechaza()
         {
-            using var harness = new Harness();
+            using var harness = new Harness(config => config.RejectDisconnectDelayMilliseconds = 0);
 
             harness.Connect(1);
             harness.Handshake(1, version: (ushort)(ProtocolConstants.Version + 1));
@@ -128,7 +128,31 @@ namespace Avelora.Tests
                 harness.Transport.Sent[0].Data.Length,
                 out RejectMessage reject));
             Assert.Equal(RejectReason.ProtocolVersion, reject.Reason);
+
+            // El rechazo sale en la llamada, pero el corte espera a que venza el retardo.
+            harness.Server.PollOnce();
             Assert.Contains(1, harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void El_Rechazo_De_Saludo_No_Corta_En_La_Misma_Vuelta()
+        {
+            using var harness = new Harness(config => config.RejectDisconnectDelayMilliseconds = 0);
+
+            harness.Connect(1);
+            harness.Handshake(1, version: (ushort)(ProtocolConstants.Version + 1));
+
+            // El motivo ya viajó…
+            SentMessage sent = harness.Transport.Sent[0];
+            Assert.True(MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out RejectMessage reject));
+            Assert.Equal(RejectReason.ProtocolVersion, reject.Reason);
+
+            // …pero el corte todavía no se ha pedido.
+            Assert.Empty(harness.Transport.DisconnectedConnections);
+
+            // Con retardo 0 vence en la vuelta siguiente, después de haber podido enviar el Reject.
+            harness.Server.PollOnce();
+            Assert.Equal(new[] { 1 }, harness.Transport.DisconnectedConnections);
         }
 
         [Fact]
@@ -155,7 +179,7 @@ namespace Avelora.Tests
         [Fact]
         public void Un_Saludo_Mal_Formado_Se_Rechaza()
         {
-            using var harness = new Harness();
+            using var harness = new Harness(config => config.RejectDisconnectDelayMilliseconds = 0);
 
             harness.Connect(1);
             harness.Transport.RaiseReceived(1, new byte[] { (byte)MessageType.Hello, 1, 2, 3 });
@@ -167,6 +191,8 @@ namespace Avelora.Tests
                 harness.Transport.Sent[0].Data.Length,
                 out RejectMessage reject));
             Assert.Equal(RejectReason.MalformedMessage, reject.Reason);
+
+            harness.Server.PollOnce();
             Assert.Contains(1, harness.Transport.DisconnectedConnections);
         }
 
@@ -247,7 +273,11 @@ namespace Avelora.Tests
         [Fact]
         public void La_Zona_Llena_Rechaza_Con_Motivo()
         {
-            using var harness = new Harness(config => config.MaxPlayers = 1);
+            using var harness = new Harness(config =>
+            {
+                config.MaxPlayers = 1;
+                config.RejectDisconnectDelayMilliseconds = 0;
+            });
 
             harness.Connect(1);
             harness.Handshake(1);
@@ -263,6 +293,8 @@ namespace Avelora.Tests
             Assert.Equal(2, last.ConnectionId);
             Assert.True(MessageCodec.TryReadReject(last.Data, 0, last.Data.Length, out RejectMessage reject));
             Assert.Equal(RejectReason.ServerFull, reject.Reason);
+
+            harness.Server.PollOnce();
             Assert.Contains(2, harness.Transport.DisconnectedConnections);
         }
 
@@ -441,7 +473,11 @@ namespace Avelora.Tests
         [Fact]
         public void Insistir_Por_Encima_Del_Limite_Desconecta()
         {
-            using var harness = new Harness(config => config.MaxMessagesPerSecondPerConnection = 20);
+            using var harness = new Harness(config =>
+            {
+                config.MaxMessagesPerSecondPerConnection = 20;
+                config.RejectDisconnectDelayMilliseconds = 0;
+            });
 
             harness.Connect(1);
             harness.Handshake(1);
@@ -456,6 +492,8 @@ namespace Avelora.Tests
             }
 
             Assert.Equal(1, harness.Server.Snapshot().RateLimitedDisconnects);
+
+            harness.Server.PollOnce();
             Assert.Contains(1, harness.Transport.DisconnectedConnections);
 
             SentMessage last = harness.Transport.Sent[harness.Transport.Sent.Count - 1];

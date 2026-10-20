@@ -63,6 +63,8 @@ namespace Avelora.Server.Net
 
         // Solo hilo de red.
         private readonly Dictionary<int, long> _handshakeDeadlines = new Dictionary<int, long>();
+        private readonly Dictionary<int, PendingDisconnect> _pendingDisconnects =
+            new Dictionary<int, PendingDisconnect>();
         private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
         private readonly Dictionary<string, int> _failedLogins =
             new Dictionary<string, int>(StringComparer.Ordinal);
@@ -191,6 +193,9 @@ namespace Avelora.Server.Net
         /// </summary>
         public void PollOnce()
         {
+            // Los cortes vencidos van primero: un rechazo apuntado en esta misma vuelta espera a
+            // la siguiente, aunque el retardo sea 0. Así el mensaje fiable siempre sale antes.
+            ExpirePendingDisconnects();
             _transport.Poll();
             DrainLogins();
             DrainOutbound();
@@ -301,6 +306,7 @@ namespace Avelora.Server.Net
         private void OnDisconnected(int connectionId, DisconnectReason reason)
         {
             _handshakeDeadlines.Remove(connectionId);
+            _pendingDisconnects.Remove(connectionId);
             _messagesThisSecond.Remove(connectionId);
 
             // Si estaba autenticándose, su resultado ya no interesa. Nada que reservar: la
@@ -314,6 +320,14 @@ namespace Avelora.Server.Net
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
             Interlocked.Increment(ref _messagesReceived);
+
+            if (_pendingDisconnects.ContainsKey(connectionId))
+            {
+                // Ya se le envió el Reject y está a punto de cortarse: nada de lo que mande
+                // mientras tanto puede afectar a la sesión.
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
 
             if (length <= 0 || length > ProtocolConstants.MaxMessageSize)
             {
@@ -352,7 +366,7 @@ namespace Avelora.Server.Net
 
                 byte[] reject = MessageCodec.EncodeReject(new RejectMessage(RejectReason.RateLimited));
                 _transport.Send(connectionId, reject, reject.Length, DeliveryMode.ReliableOrdered);
-                _transport.Disconnect(connectionId, DisconnectReason.Rejected);
+                ScheduleDisconnect(connectionId, DisconnectReason.Rejected);
                 return;
             }
 
@@ -581,7 +595,7 @@ namespace Avelora.Server.Net
 
             byte[] bytes = MessageCodec.EncodeReject(new RejectMessage(reason));
             _transport.Send(connectionId, bytes, bytes.Length, DeliveryMode.ReliableOrdered);
-            _transport.Disconnect(connectionId, DisconnectReason.Rejected);
+            ScheduleDisconnect(connectionId, DisconnectReason.Rejected);
         }
 
         private void ExpireHandshakes()
@@ -617,7 +631,7 @@ namespace Avelora.Server.Net
 
                 byte[] bytes = MessageCodec.EncodeReject(new RejectMessage(RejectReason.Timeout));
                 _transport.Send(connectionId, bytes, bytes.Length, DeliveryMode.ReliableOrdered);
-                _transport.Disconnect(connectionId, DisconnectReason.Timeout);
+                ScheduleDisconnect(connectionId, DisconnectReason.Timeout);
             }
         }
 
@@ -632,8 +646,60 @@ namespace Avelora.Server.Net
 
                 if (message.DisconnectAfter)
                 {
-                    _transport.Disconnect(message.ConnectionId, DisconnectReason.Rejected);
+                    // El rechazo acaba de salir en la línea de arriba; el corte espera para que
+                    // el mensaje fiable llegue primero.
+                    ScheduleDisconnect(message.ConnectionId, DisconnectReason.Rejected);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Apunta una conexión para cerrarla cuando venza el retardo. El envío del <c>Reject</c>
+        /// ya se hizo; solo falta el corte, que se hará en <see cref="ExpirePendingDisconnects"/>.
+        /// </summary>
+        private void ScheduleDisconnect(int connectionId, DisconnectReason reason)
+        {
+            _pendingDisconnects[connectionId] = new PendingDisconnect(
+                Environment.TickCount64 + _config.RejectDisconnectDelayMilliseconds,
+                reason);
+        }
+
+        /// <summary>
+        /// Cierra las conexiones cuyo retardo de corte ya venció. Se llama al principio de cada
+        /// vuelta: una conexión apuntada en esta vuelta no se corta hasta la siguiente.
+        /// </summary>
+        private void ExpirePendingDisconnects()
+        {
+            if (_pendingDisconnects.Count == 0)
+            {
+                return;
+            }
+
+            long now = Environment.TickCount64;
+            List<int>? expired = null;
+
+            foreach (KeyValuePair<int, PendingDisconnect> pair in _pendingDisconnects)
+            {
+                if (!pair.Value.DisconnectIssued && pair.Value.Deadline <= now)
+                {
+                    (expired ??= new List<int>()).Add(pair.Key);
+                }
+            }
+
+            if (expired == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < expired.Count; i++)
+            {
+                int connectionId = expired[i];
+                PendingDisconnect pending = _pendingDisconnects[connectionId];
+
+                // Se conserva hasta que el transporte avise de la desconexión: así sus mensajes
+                // rezagados se siguen descartando y no se repite el corte.
+                _pendingDisconnects[connectionId] = pending.Issued();
+                _transport.Disconnect(connectionId, pending.Reason);
             }
         }
 
@@ -931,6 +997,34 @@ namespace Avelora.Server.Net
             Allow = 0,
             Drop = 1,
             Disconnect = 2,
+        }
+
+        /// <summary>
+        /// Corte apuntado después de enviar un <c>Reject</c>. Se guarda el motivo para el
+        /// transporte y si el corte ya se pidió, para no repetirlo mientras llega el aviso de
+        /// desconexión real.
+        /// </summary>
+        private readonly struct PendingDisconnect
+        {
+            public PendingDisconnect(long deadline, DisconnectReason reason)
+                : this(deadline, reason, false)
+            {
+            }
+
+            private PendingDisconnect(long deadline, DisconnectReason reason, bool disconnectIssued)
+            {
+                Deadline = deadline;
+                Reason = reason;
+                DisconnectIssued = disconnectIssued;
+            }
+
+            public long Deadline { get; }
+
+            public DisconnectReason Reason { get; }
+
+            public bool DisconnectIssued { get; }
+
+            public PendingDisconnect Issued() => new PendingDisconnect(Deadline, Reason, true);
         }
 
         private readonly struct ControlEvent

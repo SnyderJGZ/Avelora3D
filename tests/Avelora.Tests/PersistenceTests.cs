@@ -237,6 +237,8 @@ namespace Avelora.Tests
             Assert.Equal(0, harness.Zone.Entities.Count);
             Assert.True(harness.LastReject(2, out RejectMessage reject));
             Assert.Equal(RejectReason.InvalidCredentials, reject.Reason);
+
+            harness.Server.PollOnce();
             Assert.Contains(2, harness.Transport.DisconnectedConnections);
         }
 
@@ -260,6 +262,8 @@ namespace Avelora.Tests
             // La primera se va con motivo y se cierra; queda una sola entidad, en la posición viva.
             Assert.True(harness.LastReject(1, out RejectMessage reject));
             Assert.Equal(RejectReason.LoggedInElsewhere, reject.Reason);
+
+            harness.Server.PollOnce();
             Assert.Contains(1, harness.Transport.DisconnectedConnections);
 
             Assert.Equal(1, harness.Zone.Entities.Count);
@@ -309,6 +313,8 @@ namespace Avelora.Tests
             // La 0 se va con motivo y se cierra; queda una sola entidad, en la posición viva.
             Assert.True(harness.LastReject(0, out RejectMessage reject));
             Assert.Equal(RejectReason.LoggedInElsewhere, reject.Reason);
+
+            harness.Server.PollOnce();
             Assert.Contains(0, harness.Transport.DisconnectedConnections);
 
             Assert.Equal(1, harness.Zone.Entities.Count);
@@ -358,6 +364,10 @@ namespace Avelora.Tests
                     PersistenceEnabled = true,
                     DatabasePath = databasePath,
                     SaveIntervalSeconds = 60d,
+
+                    // Pruebas sin sockets: el corte se pide en la vuelta siguiente y se puede
+                    // comprobar con un PollOnce más, sin esperar medio segundo.
+                    RejectDisconnectDelayMilliseconds = 0,
                 };
 
                 MapCollisionGrid map = MapFile.Load(MapPath);

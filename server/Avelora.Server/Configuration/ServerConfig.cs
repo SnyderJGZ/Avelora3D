@@ -147,6 +147,13 @@ namespace Avelora.Server.Configuration
         /// <summary>Segundos que se espera el saludo de una conexión recién abierta.</summary>
         public double HandshakeTimeoutSeconds { get; set; } = 5.0;
 
+        /// <summary>
+        /// Milisegundos que se espera antes de cerrar una conexión a la que ya se le envió un
+        /// <c>Reject</c>. Sin esta pausa, el corte puede adelantar al mensaje fiable y el cliente
+        /// se queda sin saber el motivo (F-01d). <c>0</c> corta en la siguiente vuelta de la red.
+        /// </summary>
+        public int RejectDisconnectDelayMilliseconds { get; set; } = 500;
+
         /// <summary>Duración de la ejecución en segundos. <c>0</c> = hasta que se pulse Ctrl+C.</summary>
         public double RunSeconds { get; set; }
 
@@ -407,6 +414,11 @@ namespace Avelora.Server.Configuration
             if (HandshakeTimeoutSeconds <= 0d)
             {
                 throw new InvalidOperationException("handshakeTimeoutSeconds debe ser positivo.");
+            }
+
+            if (RejectDisconnectDelayMilliseconds < 0)
+            {
+                throw new InvalidOperationException("rejectDisconnectDelayMilliseconds no puede ser negativo.");
             }
 
             // Límites del login: son frenos de la red delante de PBKDF2 y SQLite (Etapa F).
