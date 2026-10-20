@@ -17,11 +17,15 @@ namespace Avelora.Bots
     /// <code>
     /// dotnet run --project tools/Avelora.Bots
     /// dotnet run --project tools/Avelora.Bots -- --bots 3 --seconds 10
+    /// dotnet run --project tools/Avelora.Bots -- --bots 50 --ramp-ms 200 --behavior crowd
     /// dotnet run --project tools/Avelora.Bots -- --host 127.0.0.1 --port 7777 --bots 10
     /// </code>
     /// </remarks>
     internal static class Program
     {
+        /// <summary>Tope de bots: la prueba de carga del plan pide 30–50 y se deja margen hasta 100.</summary>
+        private const int MaxBots = 100;
+
         private static int Main(string[] args)
         {
             if (!TryParseArguments(args, out Options options, out string? error))
@@ -46,15 +50,24 @@ namespace Avelora.Bots
 
             byte[] mapHash = MapFile.ComputeContentHashBytes(map);
 
-            Console.WriteLine("Avelora · bots (Etapa F: cuentas y persistencia)");
+            Console.WriteLine("Avelora · bots (Etapa G: prueba de carga)");
             Console.WriteLine("  Servidor : " + options.Host + ":" + options.Port);
-            Console.WriteLine("  Bots     : " + options.Bots + " durante " + Invariant(options.Seconds) + " s");
+            Console.WriteLine("  Bots     : " + options.Bots + " durante " + Invariant(options.Seconds) + " s" +
+                " (rampa " + options.RampMs + " ms, " + BehaviorName(options.Behavior) + ")");
+            Console.WriteLine("  Reintento: hasta " + options.Retries + " vez/veces si el login se limita; " +
+                "saludo esperado " + options.WelcomeTimeoutMs + " ms por intento");
             Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
                 " (invitación '" + options.InvitationCode + "')");
             Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
             Console.WriteLine();
 
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(options.Seconds + 10d));
+            // El margen cubre la rampa y lo que puede tardar un reintento; las esperas de cada
+            // bot ya tienen su propio tope, así que esto solo evita que la prueba no acabe nunca.
+            double rampSeconds = (options.Bots - 1) * options.RampMs / 1000d;
+            double retrySeconds = options.Retries * ((options.WelcomeTimeoutMs / 1000d) + 5d);
+            using var cancellation = new CancellationTokenSource(
+                TimeSpan.FromSeconds(options.Seconds + rampSeconds + retrySeconds + 30d));
+
             Console.CancelKeyPress += (sender, eventArgs) =>
             {
                 eventArgs.Cancel = true;
@@ -76,7 +89,11 @@ namespace Avelora.Bots
                     runMs,
                     options.AccountPrefix,
                     options.Password,
-                    options.InvitationCode);
+                    options.InvitationCode,
+                    startDelayMs: (i - 1) * options.RampMs,
+                    retries: options.Retries,
+                    welcomeTimeoutMs: options.WelcomeTimeoutMs,
+                    behavior: options.Behavior);
                 bots.Add(bot);
 
                 var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -99,35 +116,108 @@ namespace Avelora.Bots
                 bots[i].Dispose();
             }
 
+            return WriteSummary(bots, options);
+        }
+
+        private static int WriteSummary(List<BotClient> bots, Options options)
+        {
             Console.WriteLine();
             Console.WriteLine("Resumen");
 
             int ok = 0;
             long snapshots = 0;
+            int retryingBots = 0;
+            int retries = 0;
+            long worstGap = 0;
+            double snapshotsPerSecond = 0d;
+            var welcomeTimes = new List<long>(bots.Count);
+            var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
             for (int i = 0; i < bots.Count; i++)
             {
                 BotClient bot = bots[i];
                 snapshots += bot.Snapshots;
+                retries += bot.Retries;
+
+                if (bot.Retries > 0)
+                {
+                    retryingBots++;
+                }
+
+                if (bot.MaxSnapshotGapMs > worstGap)
+                {
+                    worstGap = bot.MaxSnapshotGapMs;
+                }
 
                 if (bot.EntityId > 0)
                 {
                     ok++;
+                    welcomeTimes.Add(bot.WelcomeMs);
+                    snapshotsPerSecond += bot.SnapshotsPerSecond;
+                }
+                else
+                {
+                    string reason = bot.RejectReasonText ?? bot.Status;
+                    rejects.TryGetValue(reason, out int count);
+                    rejects[reason] = count + 1;
                 }
 
                 Console.WriteLine(
-                    "  bot " + bot.Index + ": " + bot.Status.PadRight(12) +
+                    "  bot " + bot.Index + ": " + bot.Status.PadRight(14) +
                     " cuenta=" + bot.AccountName +
                     " ent=" + (bot.EntityId > 0 ? bot.EntityId.ToString(CultureInfo.InvariantCulture) : "-") +
-                    "  snapshots=" + bot.Snapshots +
-                    "  pos=(" + Invariant(bot.X) + "; " + Invariant(bot.Y) + ")" +
-                    "  inputs=" + bot.Sequence);
+                    " reint=" + bot.Retries +
+                    " welcome=" + (bot.WelcomeMs >= 0 ? bot.WelcomeMs + "ms" : "-") +
+                    " snap/s=" + Invariant(bot.SnapshotsPerSecond) +
+                    " hueco=" + bot.MaxSnapshotGapMs + "ms" +
+                    " pos=(" + Invariant(bot.X) + "; " + Invariant(bot.Y) + ")" +
+                    " inputs=" + bot.Sequence +
+                    " snapshots=" + bot.Snapshots);
             }
 
+            welcomeTimes.Sort();
+            double meanPerBot = ok == 0 ? 0d : snapshotsPerSecond / ok;
+            long p50 = welcomeTimes.Count == 0 ? -1 : welcomeTimes[(welcomeTimes.Count - 1) / 2];
+            long maxWelcome = welcomeTimes.Count == 0 ? -1 : welcomeTimes[welcomeTimes.Count - 1];
+
+            Console.WriteLine();
+            Console.WriteLine("  Conectados : " + ok + "/" + bots.Count);
             Console.WriteLine(
-                "  " + ok + "/" + bots.Count + " conectados, " + snapshots + " snapshots recibidos en total");
+                "  Reintentos : " + retries + " en " + retryingBots + " bot(s) (tope " + options.Retries + "/bot)");
+            Console.WriteLine("  Rechazos   : " + DescribeRejects(rejects));
+            Console.WriteLine(
+                "  Welcome    : p50 " + (p50 >= 0 ? p50 + " ms" : "-") +
+                ", máximo " + (maxWelcome >= 0 ? maxWelcome + " ms" : "-") +
+                " (" + welcomeTimes.Count + " bot(s))");
+            Console.WriteLine("  Snapshots  : " + Invariant(meanPerBot) + "/s por bot de media, " +
+                snapshots + " en total");
+            Console.WriteLine("  Peor hueco : " + worstGap + " ms entre snapshots");
             return ok == bots.Count ? 0 : 3;
         }
+
+        private static string DescribeRejects(SortedDictionary<string, int> rejects)
+        {
+            if (rejects.Count == 0)
+            {
+                return "ninguno";
+            }
+
+            var text = new System.Text.StringBuilder();
+            foreach (KeyValuePair<string, int> pair in rejects)
+            {
+                if (text.Length > 0)
+                {
+                    text.Append(", ");
+                }
+
+                text.Append(pair.Key).Append('=').Append(pair.Value);
+            }
+
+            return text.ToString();
+        }
+
+        private static string BehaviorName(BotBehavior behavior) =>
+            behavior == BotBehavior.Crowd ? "todos en el mismo punto" : "direcciones al azar";
 
         private static void RunBot(BotClient bot, CancellationToken cancellationToken)
         {
@@ -211,9 +301,9 @@ namespace Avelora.Bots
                         break;
 
                     case "--bots":
-                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int bots) || bots < 1 || bots > 64)
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int bots) || bots < 1 || bots > MaxBots)
                         {
-                            error = "Número de bots inválido: " + value;
+                            error = "Número de bots inválido: " + value + " (1.." + MaxBots + ")";
                             return false;
                         }
 
@@ -228,6 +318,46 @@ namespace Avelora.Bots
                         }
 
                         options.Seconds = seconds;
+                        break;
+
+                    case "--ramp-ms":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int rampMs) || rampMs < 0)
+                        {
+                            error = "Rampa inválida: " + value;
+                            return false;
+                        }
+
+                        options.RampMs = rampMs;
+                        break;
+
+                    case "--retries":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int retries) || retries < 0)
+                        {
+                            error = "Número de reintentos inválido: " + value;
+                            return false;
+                        }
+
+                        options.Retries = retries;
+                        break;
+
+                    case "--welcome-timeout-ms":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int welcomeTimeoutMs) || welcomeTimeoutMs < 1)
+                        {
+                            error = "Tiempo de espera del saludo inválido: " + value;
+                            return false;
+                        }
+
+                        options.WelcomeTimeoutMs = welcomeTimeoutMs;
+                        break;
+
+                    case "--behavior":
+                        if (!TryParseBehavior(value, out BotBehavior behavior))
+                        {
+                            error = "Comportamiento desconocido: " + value + " (random|crowd)";
+                            return false;
+                        }
+
+                        options.Behavior = behavior;
                         break;
 
                     case "--seed":
@@ -277,6 +407,24 @@ namespace Avelora.Bots
             return true;
         }
 
+        private static bool TryParseBehavior(string value, out BotBehavior behavior)
+        {
+            if (string.Equals(value, "random", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Random;
+                return true;
+            }
+
+            if (string.Equals(value, "crowd", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Crowd;
+                return true;
+            }
+
+            behavior = BotBehavior.Random;
+            return false;
+        }
+
         private sealed class Options
         {
             public string Host { get; set; } = "127.0.0.1";
@@ -286,6 +434,14 @@ namespace Avelora.Bots
             public int Bots { get; set; } = 1;
 
             public double Seconds { get; set; } = 10d;
+
+            public int RampMs { get; set; } = 200;
+
+            public int Retries { get; set; } = 5;
+
+            public int WelcomeTimeoutMs { get; set; } = 15000;
+
+            public BotBehavior Behavior { get; set; } = BotBehavior.Random;
 
             public int Seed { get; set; } = 20261019;
 

@@ -36,3 +36,9 @@
 ## Sistema operativo
 .DS_Store
 Thumbs.db
+
+## Carga de la Etapa G: las salidas de cada pasada y la base de la prueba no se versionan
+tools/carga/resultados/
+tools/carga/avelora-carga.db
+tools/carga/avelora-carga.db-shm
+tools/carga/avelora-carga.db-wal

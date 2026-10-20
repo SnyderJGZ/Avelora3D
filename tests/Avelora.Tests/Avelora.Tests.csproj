@@ -9,6 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\shared\Avelora.Shared\Avelora.Shared.csproj" />
     <ProjectReference Include="..\..\server\Avelora.Server\Avelora.Server.csproj" />
+    <!-- Las pruebas de G-01 ejercitan BotClient directamente con un transporte guionizado. -->
+    <ProjectReference Include="..\..\tools\Avelora.Bots\Avelora.Bots.csproj" />
   </ItemGroup>
 
   <ItemGroup>
