@@ -415,7 +415,7 @@ encima del tope **no llega a la simulación**: el códec devuelve `false` y se c
 
 | Prueba | Resultado |
 | --- | --- |
-| `dotnet test` (48 A + 67 B + 29 C + 16 de la revisión + 19 D + 15 E) | **216/216** (hoy; al cerrar la C eran 160) |
+| `dotnet test` (48 A + 67 B + 29 C + 16 de la revisión + 19 D + 15 E + 22 F) | **216/216** (hoy; al cerrar la C eran 160) |
 | Prueba de punta a punta por UDP (socket efímero) | handshake, inputs y snapshots, con la posición moviéndose a la derecha |
 | Servidor 16 s + 3 bots 9 s | **321 ticks** (desviación **−0.01 %**) |
 | Duración de tick con red | media **0.041 ms**, p99 **0.809 ms**, peor **5.454 ms** |
