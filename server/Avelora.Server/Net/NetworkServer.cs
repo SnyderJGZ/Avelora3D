@@ -58,8 +58,8 @@ namespace Avelora.Server.Net
         // Solo hilo de red.
         private readonly Dictionary<int, long> _handshakeDeadlines = new Dictionary<int, long>();
         private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
-        private readonly Dictionary<string, FailedLoginWindow> _failedLogins =
-            new Dictionary<string, FailedLoginWindow>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _failedLogins =
+            new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
         private long _currentSecond;
         private long _currentMinute;
@@ -429,8 +429,10 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            // Tope de logins en vuelo: con la cola llena se rechaza sin calcular el hash.
-            if (_pendingLogins.Count >= _config.MaxPendingLogins)
+            // Tope de logins en vuelo: cuenta lo que el hilo de login tiene pendiente (cola y
+            // cálculo), no las conexiones abiertas. Si contáramos las conexiones, un cliente
+            // podría saludar y desconectarse en bucle mientras la cola crece sin tope.
+            if (_login!.InFlight >= _config.MaxPendingLogins)
             {
                 Interlocked.Increment(ref _rateLimited);
                 RejectHandshake(connectionId, RejectReason.RateLimited);
@@ -539,8 +541,8 @@ namespace Avelora.Server.Net
             long minute = Environment.TickCount64 / 60_000;
             ExpireFailedLogins(minute);
 
-            return _failedLogins.TryGetValue(accountName, out FailedLoginWindow window) &&
-                window.Count >= _config.MaxFailedLoginsPerAccountPerMinute;
+            return _failedLogins.TryGetValue(accountName, out int failures) &&
+                failures >= _config.MaxFailedLoginsPerAccountPerMinute;
         }
 
         private void RecordFailedLogin(string accountName)
@@ -548,8 +550,8 @@ namespace Avelora.Server.Net
             long minute = Environment.TickCount64 / 60_000;
             ExpireFailedLogins(minute);
 
-            _failedLogins.TryGetValue(accountName, out FailedLoginWindow window);
-            _failedLogins[accountName] = new FailedLoginWindow(minute, window.Count + 1);
+            _failedLogins.TryGetValue(accountName, out int failures);
+            _failedLogins[accountName] = failures + 1;
         }
 
         /// <summary>Al cambiar de minuto se tira la ventana anterior: el diccionario no crece.</summary>
@@ -986,21 +988,6 @@ namespace Avelora.Server.Net
                     string.Empty,
                     null,
                     0);
-        }
-
-        /// <summary>Fallos de login de una cuenta dentro del minuto actual.</summary>
-        private readonly struct FailedLoginWindow
-        {
-            public FailedLoginWindow(long minute, int count)
-            {
-                Minute = minute;
-                Count = count;
-            }
-
-            /// <summary>Minuto de <see cref="Environment.TickCount64"/> al que pertenece la cuenta.</summary>
-            public long Minute { get; }
-
-            public int Count { get; }
         }
 
         private readonly struct OutboundMessage

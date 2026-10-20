@@ -34,6 +34,7 @@ namespace Avelora.Server.Net
 
         private volatile bool _stopping;
         private bool _disposed;
+        private int _inFlight;
 
         public LoginWorker(IPlayerRepository repository, string? registrationCode)
         {
@@ -49,6 +50,13 @@ namespace Avelora.Server.Net
             _thread.Start();
         }
 
+        /// <summary>
+        /// Peticiones en vuelo: las que esperan turno en la cola y la que se está calculando.
+        /// El resultado solo se descuenta cuando la red lo saca, así que una conexión que se va
+        /// sin esperar no libera el tope (si no, se podría llenar la cola de PBKDF2 gratis).
+        /// </summary>
+        public int InFlight => Volatile.Read(ref _inFlight);
+
         /// <summary>Encola una petición y despierta al hilo. Nunca bloquea al que llama.</summary>
         public void Enqueue(in LoginRequest request)
         {
@@ -57,13 +65,22 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            Interlocked.Increment(ref _inFlight);
             _requests.Enqueue(request);
             _signal.Set();
         }
 
         /// <summary>Intenta sacar un resultado ya calculado. La cola la vacía el hilo de red.</summary>
-        public bool TryDequeueResult([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out LoginResult? result) =>
-            _results.TryDequeue(out result);
+        public bool TryDequeueResult([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out LoginResult? result)
+        {
+            if (!_results.TryDequeue(out result))
+            {
+                return false;
+            }
+
+            Interlocked.Decrement(ref _inFlight);
+            return true;
+        }
 
         public void Dispose()
         {

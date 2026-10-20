@@ -186,6 +186,62 @@ namespace Avelora.Tests
             }
         }
 
+        [Fact]
+        public void Desconectar_No_Libera_El_Tope_De_Logins_En_Vuelo()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository, config => config.MaxPendingLogins = 2);
+
+                // Dos conexiones saludan y se van enseguida: sus peticiones siguen en el hilo de
+                // login (una calculándose y otra en la cola).
+                harness.Connect(1);
+                harness.Handshake(1, "cuenta1");
+                harness.Connect(2);
+                harness.Handshake(2, "cuenta2");
+                harness.Server.PollOnce();
+
+                Assert.True(repository.Started.Wait(5_000), "El login de la primera conexión no arrancó.");
+
+                harness.Transport.RaiseDisconnected(1);
+                harness.Transport.RaiseDisconnected(2);
+
+                // El tope cuenta peticiones en vuelo, no conexiones abiertas: la tercera no entra
+                // aunque las dos primeras ya no estén conectadas.
+                harness.Connect(3);
+                harness.Handshake(3, "cuenta3");
+                harness.Server.PollOnce();
+
+                Assert.True(harness.HasReject(3, out RejectMessage reject));
+                Assert.Equal(RejectReason.RateLimited, reject.Reason);
+                Assert.DoesNotContain("cuenta3", repository.Accounts);
+
+                // Al terminar los dos logins, la red saca sus resultados y el tope vuelve a estar
+                // libre: la cuarta conexión ya entra.
+                repository.Gate.Set();
+                Assert.True(
+                    repository.AllFinished.Wait(5_000),
+                    "El hilo de login no terminó las dos peticiones.");
+
+                harness.Server.PollOnce();
+
+                harness.Connect(4);
+                harness.Handshake(4, "cuenta4");
+                harness.Pump(4);
+
+                Assert.True(harness.HasWelcome(4));
+                Assert.Equal(1, harness.Zone.Entities.Count);
+                Assert.Equal(1, harness.Server.Snapshot().LoginsSucceeded);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
         // ---------------------------------------------------------------- 5: fallos por cuenta
 
         [Fact]
@@ -302,11 +358,15 @@ namespace Avelora.Tests
         {
             private readonly object _gate = new object();
             private readonly List<string> _accounts = new List<string>();
+            private int _finished;
 
             public ManualResetEventSlim Gate { get; } = new ManualResetEventSlim(false);
 
             /// <summary>Se pone cuando el primer Login empieza de verdad.</summary>
             public ManualResetEventSlim Started { get; } = new ManualResetEventSlim(false);
+
+            /// <summary>Se pone cuando el segundo Login ha vuelto (sus resultados están saliendo).</summary>
+            public ManualResetEventSlim AllFinished { get; } = new ManualResetEventSlim(false);
 
             public IReadOnlyList<string> Accounts
             {
@@ -336,6 +396,11 @@ namespace Avelora.Tests
 
                 Started.Set();
                 Gate.Wait(TimeSpan.FromSeconds(10));
+
+                if (Interlocked.Increment(ref _finished) >= 2)
+                {
+                    AllFinished.Set();
+                }
 
                 return AccountLoginResult.Ok(_accounts.Count);
             }
