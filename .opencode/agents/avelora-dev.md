@@ -2,7 +2,7 @@
 description: Implementa tareas de servidor, código compartido, bots y pruebas de Avelora
 mode: primary
 model: opencode/deepseek-v4.1-flash-free
-steps: 80
+steps: 150
 permissions:
   - action: shell
     resource: "git commit *"

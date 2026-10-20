@@ -2,7 +2,7 @@
 description: Implementa tareas del cliente de Unity de Avelora y las sincroniza con el proyecto de Unity
 mode: primary
 model: opencode/deepseek-v4.1-flash-free
-steps: 80
+steps: 150
 permissions:
   - action: shell
     resource: "git commit *"
