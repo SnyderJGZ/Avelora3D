@@ -4,26 +4,22 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapa E cerrada.** El cliente de Unity juega **por red real**: saluda al servidor,
-> **predice** su movimiento con el mismo paso fijo y el mismo `MovementSimulator`, **reconcilia**
-> contra la posición autoritativa de cada snapshot e **interpola** a los demás jugadores con
-> ~100 ms de retardo. El cliente **nunca envía su posición ni su tiempo**: solo la dirección y el
-> número de secuencia de cada intención.
+> **Estado: Etapa F cerrada.** El servidor guarda **cuentas y personajes en SQLite** detrás de
+> `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000 iteraciones**,
+> registro con **código de invitación** y límites de intentos por cuenta. El `Hello` lleva las
+> credenciales y el personaje (**protocolo v2**); al entrar, el personaje aparece en la posición
+> que tenía guardada si el mapa coincide.
 >
-> La Etapa E añade el **área de interés** en el servidor: una grilla espacial decide qué entidades
-> entran en cada snapshot. Cada jugador recibe siempre su propia entidad y solo las cercanas, con
-> histéresis en el borde para que no aparezcan y desaparezcan en ticks alternos. En el humo de 30 s
-> con 5 bots y radio 1, los snapshots llevaron **1,21 entidades de media** y el tick no se movió de
-> su presupuesto.
+> Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
+> cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
+> desconectar, cada minuto y al apagar—, así que el tick nunca espera a SQLite.
 
 | Comprobación | Resultado |
 | --- | --- |
-| `dotnet build Avelora.slnx` (Debug y Release) | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` (Debug y Release) | **194/194 en verde** |
-| Compilación en Unity 6 (cliente sin cambios en E) | **0 errores, 0 avisos** |
-| Escena `AveloraEtapaA` en Play con servidor | Handshake, predicción, reconciliación e interpolación; el cliente no cambió en E |
-| Servidor 30 s + 5 bots, radio de interés 1 tile | **600 ticks** (−0.07 %), p99 **0.094 ms**, **0** ticks sobre 50 ms, **0** GC; **1 995** snapshots con **2 413** entidades (**1.21/snapshot**), **0** rechazos, **0** limitados, **0** descartes |
-| Servidor 240 s + cliente Unity + 2 bots | **4 800 ticks** (−0.00 %), p99 **0.051 ms**, **0** ticks sobre 50 ms, **0** GC; **0** rechazos, **0** limitados, **0** descartes de cola |
+| `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
+| `dotnet test Avelora.slnx` | **216/216 en verde** |
+| Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
+| Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
 ![Etapa D en Unity: jugador local en el muro y dos remotos interpolados](docs/capturas/etapa-d.png)
 
@@ -304,7 +300,8 @@ salida. Cambiar de transporte es cambiar una clase en `Program.cs`.
 - **LiteNetLib no es segura entre hilos.** Todo ocurre en un único hilo de red (`avelora-net`), que
   bombea `PollEvents` cada milisegundo y vacía la cola de salida. Los envíos también se hacen ahí.
 - La conexión lleva una **clave** (`avelora-v1`); no es un secreto, solo evita que un escaneo de
-  puertos abra sesiones. La autenticación llega en la Etapa F.
+  puertos abra sesiones. La autenticación real (cuenta y contraseña) está desde la Etapa F; el
+  cifrado del transporte queda para la H.
 
 ### Protocolo binario
 
@@ -319,7 +316,7 @@ pueden discrepar** del formato.
 
 | Tipo | Byte | Dirección | Tamaño | Contenido |
 | --- | --- | --- | --- | --- |
-| `Hello` | 1 | C → S | 41 B | versión (u16), tick (u16), token (u32), huella del mapa (32 B) |
+| `Hello` | 1 | C → S | 41 B + cadenas | versión (u16), tick (u16), token (u32), huella del mapa (32 B), cuenta, contraseña, personaje e invitación (cada una: longitud u16 + UTF-8) |
 | `MoveInput` | 2 | C → S | 7 B | secuencia (u32), dirX (i8), dirY (i8) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
 | `Reject` | 11 | S → C | 2 B | motivo (u8) |
@@ -409,15 +406,16 @@ hilo de red (avelora-net)                        hilo de simulación (avelora-si
 Un paquete con tipo desconocido, truncado, de dirección inválida, con una enumeración inventada o por
 encima del tope **no llega a la simulación**: el códec devuelve `false` y se cuenta como rechazado.
 
-> Queda para las etapas siguientes: límite de conexiones por IP e intentos de login por minuto
-> (Etapa F), cifrado del transporte y registro por evento de cada validación fallida (hoy se
-> cuentan por informe). LiteNetLib puede añadir cifrado por conexión cuando exista login real.
+> Queda para las etapas siguientes: límite de conexiones por IP (Etapa H), cifrado del transporte y
+> registro por evento de cada validación fallida (hoy se cuentan por informe). Los intentos de login
+> por minuto ya existen desde la F (`maxFailedLoginsPerAccountPerMinute`). LiteNetLib puede añadir
+> cifrado por conexión más adelante.
 
 ### Verificación de la Etapa C
 
 | Prueba | Resultado |
 | --- | --- |
-| `dotnet test` (48 A + 67 B + 29 C + 16 de la revisión + 19 D + 15 E) | **194/194** (hoy; al cerrar la C eran 160) |
+| `dotnet test` (48 A + 67 B + 29 C + 16 de la revisión + 19 D + 15 E) | **216/216** (hoy; al cerrar la C eran 160) |
 | Prueba de punta a punta por UDP (socket efímero) | handshake, inputs y snapshots, con la posición moviéndose a la derecha |
 | Servidor 16 s + 3 bots 9 s | **321 ticks** (desviación **−0.01 %**) |
 | Duración de tick con red | media **0.041 ms**, p99 **0.809 ms**, peor **5.454 ms** |
@@ -534,7 +532,7 @@ posiciones, velocidad, tiempo ni saltos.
 
 | Prueba | Resultado |
 | --- | --- |
-| `dotnet test` Debug y Release | **179/179** al cerrar la D (hoy **194/194** con las 15 de la E; 19 nuevas de D: 11 de predicción/reconciliación y 8 de timeline) |
+| `dotnet test` Debug y Release | **179/179** al cerrar la D (hoy **216/216** con las 15 de la E y las 22 de la F; 19 nuevas de D: 11 de predicción/reconciliación y 8 de timeline) |
 | Compilación en Unity 6 | **0 errores, 0 avisos** |
 | Handshake real desde Unity | entidad asignada, huella del mapa correcta, **20 inputs/s** |
 | Reconciliación con 4 186 inputs consecutivos (2 862 en la consulta) | **0 correcciones, 0 saltos**; predicción y autoridad a ≤ 1/128 tile |
@@ -646,6 +644,143 @@ no afectan al tick ni a los snapshots.
 
 ---
 
+## Qué hace la Etapa F
+
+### SQLite detrás de `IPlayerRepository`
+
+`IPlayerRepository` (`server/Avelora.Server/Persistence/IPlayerRepository.cs`) es la única costura
+que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `SaveCharacter`.
+`SqlitePlayerRepository` la implementa sobre **un solo archivo** (`data/avelora.db` por defecto):
+
+- Cada operación abre y cierra su propia conexión; SQLite serializa las escrituras y solo hay un
+  hilo escritor, así que no compiten dos.
+- Al abrir se activan `foreign_keys` y `busy_timeout = 5000`; el archivo se pone en modo **WAL**,
+  para que un login no espere a que termine un guardado.
+- El esquema se crea la primera vez y su versión vive en **`PRAGMA user_version`**
+  (`SchemaVersion = 1`). Si el archivo trae otra versión, el servidor **no arranca** en vez de
+  tocar tablas que no conoce.
+- Con `persistenceEnabled: false` no se abre nada: el servidor vuelve al modo de las etapas
+  anteriores, con identidad local y `firstCharacterId`.
+
+### Cuentas y personajes
+
+- Tabla `accounts`: id, nombre (único y sin distinguir mayúsculas), hash, sal, iteraciones y fecha
+  de creación.
+- Tabla `characters`: id, cuenta, nombre, nivel, experiencia, vida, maná, zona, `x`/`y`, huella del
+  mapa y fechas. Hoy el nivel, la experiencia, la vida y el maná nacen en **1 / 0 / 100 / 100** y no
+  cambian: todavía no hay niveles ni combate.
+- Al entrar se reutiliza la posición guardada **solo** si es de la misma zona y del mismo mapa
+  (`map_hash`) y la caja del jugador cabe ahí; si el mapa cambió o la posición quedó en una pared,
+  se aparece en `spawnX`/`spawnY`.
+- Las contraseñas se guardan con **PBKDF2-HMAC-SHA256**, sal aleatoria de 16 B y hash de 32 B, con
+  **600 000 iteraciones** por defecto. Las iteraciones se guardan por cuenta (tope 1 000 000): si
+  una cuenta antigua entró con menos de las configuradas, **se recalcula el hash al entrar** sin
+  pedirle nada al jugador. La comparación es en tiempo constante.
+- La contraseña viaja **sin cifrar** por UDP en esta etapa; el cifrado del transporte es de la H.
+
+### Registro con código de invitación
+
+- Si la cuenta no existe, se crea solo cuando el `invitationCode` del saludo coincide **exacto** con
+  `registrationInvitationCode`. Si ese ajuste está **vacío, el registro está cerrado**.
+- En cualquier otro caso se responde `Reject(RegistrationClosed)`; una contraseña incorrecta de una
+  cuenta existente es `Reject(InvalidCredentials)`.
+- Nombres válidos: cuenta de 3 a 32 caracteres y personaje de 2 a 32, solo letras, dígitos, `_` y
+  `-`; contraseña de 6 a 128. Si el personaje llega vacío se usa el nombre de la cuenta.
+
+### Login en el hilo `avelora-login`
+
+- El hilo de red solo valida lo barato (versión, tick, mapa, nombres, límites) y encola un
+  `LoginRequest`. `LoginWorker` lo procesa en su propio hilo, **`avelora-login`**: ahí se hace
+  PBKDF2, se lee SQLite y se carga o crea el personaje.
+- El resultado vuelve por una cola que el hilo de red vacía en `PollOnce`. Un login lento no frena
+  ni el tick ni el socket.
+- **`maxPendingLogins` (16)** es el tope de logins *en vuelo*: los que esperan en la cola **y** el
+  que se está calculando. Al llenarse, el saludo se rechaza con `RateLimited` sin gastar PBKDF2.
+  El hueco solo se libera cuando la red recoge el resultado, así que **desconectar no lo libera**.
+- **`maxFailedLoginsPerAccountPerMinute` (5)**: los `InvalidCredentials` se cuentan por cuenta y
+  minuto. Agotado el tope, los siguientes saludos de esa cuenta se rechazan con `RateLimited` sin
+  comprobar la contraseña. Al cambiar de minuto se tira la ventana anterior.
+
+### Una sola sesión por cuenta
+
+- La reserva es por **cuenta**, no por personaje. Si la misma cuenta entra desde otra conexión, la
+  nueva pasa a ser la dueña y la anterior recibe `Reject(LoggedInElsewhere)`: se guarda su posición,
+  se retira su entidad y se suelta su conexión.
+- Si es el **mismo personaje**, la sesión nueva hereda la posición viva de la anterior, que es más
+  reciente que la de la base de datos; así no reaparece donde se guardó por última vez.
+- El `Reject` fiable no siempre llega si se corta enseguida: LiteNetLib manda el paquete de
+  desconexión antes que el mensaje en cola. Por eso el servidor apunta la conexión y espera
+  **`rejectDisconnectDelayMilliseconds` (500 ms)** antes de cerrarla, descartando mientras tanto lo
+  que llegue de ella. El cliente de Unity ya muestra el motivo en vez de «el servidor cerró la
+  conexión».
+
+### Cuándo se guarda
+
+- **Al desconectar**: se toma una foto del personaje y se encola; después la entidad sale del mundo.
+- **Cada `saveIntervalSeconds` (60 s)**: `BeforeTick` encola una foto de todos los conectados, sin
+  tocar el tick.
+- **Al apagar**: tras parar la simulación, `SaveAll` vuelve a encolar y `Flush` espera hasta 5 s a
+  que la cola termine. Si quedara algo pendiente, se avisa por consola.
+- El guardado corre en el hilo **`avelora-save`** con una cola de un solo escritor. Si el mismo
+  personaje se encola dos veces antes de escribirse, la **última foto reemplaza** a la anterior.
+- Antes de encolar se crea un `CharacterRecord` nuevo (`WithPosition`), una **copia inmutable**:
+  el hilo de guardado nunca lee datos que la simulación está moviendo. Los fallos de escritura se
+  cuentan y se imprimen; el resumen muestra guardados y fallos.
+
+### Cliente de Unity
+
+- `NetworkClient` manda cuenta, contraseña, personaje e invitación dentro del `Hello` y valida el
+  `Welcome` como antes. Si el nombre del personaje va vacío, el servidor usa el de la cuenta.
+- La escena `AveloraEtapaA` serializa las credenciales de desarrollo: `accountName: dev`,
+  `password: avelora-dev`, `characterName` vacío e `invitationCode: avelora-dev`.
+- Los rechazos nuevos tienen texto propio: `LoggedInElsewhere` se muestra como «tu cuenta se ha
+  conectado desde otro sitio», `InvalidCredentials` como «cuenta o contraseña incorrectas» y
+  `RegistrationClosed` como «cuenta inexistente o invitación no válida». La reconexión sigue siendo
+  manual con **R**.
+
+### Configuración
+
+| Campo | Defecto | Significado |
+| --- | --- | --- |
+| `persistenceEnabled` | **true** | Activa cuentas, personajes y guardado en SQLite. |
+| `databasePath` | **`data/avelora.db`** | Archivo SQLite; si es relativo, se crea junto a `server.json`. |
+| `registrationInvitationCode` | **`avelora-dev`** | Código para crear cuentas. Vacío cierra el registro. |
+| `saveIntervalSeconds` | **60** | Segundos entre guardados periódicos; debe ser positivo. |
+| `maxPendingLogins` | **16** | Logins en vuelo (cola + cálculo) antes de responder `RateLimited`. |
+| `maxFailedLoginsPerAccountPerMinute` | **5** | Fallos de contraseña por cuenta y minuto. |
+| `rejectDisconnectDelayMilliseconds` | **500** | Espera antes de cortar una conexión ya rechazada; `0` corta en la vuelta siguiente. |
+
+### Verificación de la Etapa F
+
+```powershell
+dotnet build Avelora.slnx -v q --nologo
+dotnet test  Avelora.slnx
+```
+
+| Prueba | Resultado |
+| --- | --- |
+| `dotnet build` | **0 errores, 0 advertencias** |
+| `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
+| Protocolo | **v2**: el `Hello` lleva credenciales y personaje; `Welcome`, `Reject` y `Snapshot` no cambian |
+| Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
+
+Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
+entrar, el registro abierto y cerrado, el tope de logins en vuelo aunque el cliente se desconecte,
+el límite de fallos por cuenta, la expulsión de la sesión anterior (también si es la conexión 0) y
+el `Reject` que llega **antes** del corte en una prueba real por UDP.
+
+### Pospuesto
+
+Quedan fuera de la etapa y se retoman cuando existan esos sistemas:
+
+- **Inventario** (personaje, ranura, ítem y cantidad): todavía no hay ítems en el juego.
+- **Copia diaria de la base de datos**: mantenimiento, no hace falta con un solo archivo de
+  desarrollo.
+- **Guardado tras eventos** (subir de nivel, obtener un ítem raro): no hay niveles ni ítems; hoy se
+  guarda por tiempo, al desconectar y al apagar.
+
+---
+
 ## Sincronizar con Unity
 
 El repositorio es la fuente de verdad. Tras tocar `shared/` o `client/`:
@@ -702,7 +837,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **C** | Red real: transporte UDP, handshake, sesión, `MoveInput` y snapshots | ✅ cerrada |
 | **D** | Predicción, reconciliación e interpolación en el cliente de Unity | ✅ cerrada |
 | **E** | Grilla espacial + área de interés con histéresis y snapshots filtrados | ✅ cerrada |
-| **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ⏳ |
+| **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ⏳ |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ |
 
@@ -710,13 +845,17 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 
 ## Próximo paso
 
-La **Etapa E** ya está cerrada: la grilla espacial, el radio configurable y la histéresis deciden
-qué entidades viajan en cada snapshot, sin cambiar el tick, la reconciliación ni el protocolo. El
-cliente sigue siendo la única parte que dibuja: cuando una entidad sale del área, su vista se retira
-y, si vuelve, se crea de nuevo.
+La **Etapa F** ya está cerrada: las cuentas y los personajes viven en SQLite, el login es real y
+corre en su propio hilo, y la posición sobrevive a la desconexión. La misma cuenta no puede jugar dos
+veces: la sesión anterior recibe `LoggedInElsewhere` y se cierra con la pausa suficiente para que el
+cliente lea el motivo. El protocolo subió a **v2** solo por el saludo; el tick, los snapshots y la
+predicción siguen igual.
 
-El siguiente bloque es la **Etapa F: persistencia mínima**. El plan (§8) pide guardar cuenta,
-personaje, mapa y posición para que una desconexión no borre el progreso: una base de datos pequeña
-(SQLite o similar), carga en el `Welcome`/alta de sesión, guardado periódico y al desconectar, y
-pruebas de ida y vuelta. No cambia el tick; cambia el montaje de `Program` y la identidad del
-jugador.
+El siguiente bloque es la **Etapa G: bots y pruebas de carga** (plan §10). Hay que llevar los bots a
+**30–50** conexiones simultáneas y medir el **peor caso** (todos en el mismo punto, entradas y salidas
+masivas), la **resistencia** de varias horas sin que crezca la memoria, la **mala red** (latencia y
+pérdida simuladas), el **abuso** (mensajes inválidos, inundación, movimiento acelerado) y las
+**caídas** (matar el servidor en pleno juego, reiniciarlo y comprobar que se pierde como mucho el
+último minuto y que la base queda consistente). Conviene vigilar también las **~9 correcciones de
+predicción** que aparecieron al moverse en diagonal en el editor, probablemente por tirones de frames
+mientras el editor está sin foco.
