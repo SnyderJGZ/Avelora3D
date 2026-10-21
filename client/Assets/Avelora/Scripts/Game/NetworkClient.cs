@@ -84,6 +84,12 @@ namespace Avelora.Client
         private readonly HashSet<int> _aliveIds = new HashSet<int>();
         private readonly List<int> _deadIds = new List<int>();
 
+        // Últimas direcciones enviadas, la más nueva primero: el mensaje lleva hasta cuatro inputs
+        // contiguos para que una pérdida de UDP no sea un paso perdido. Se crea una vez, sin reservas
+        // por frame.
+        private readonly sbyte[] _inputHistoryX = new sbyte[ProtocolConstants.MaxInputsPerMessage];
+        private readonly sbyte[] _inputHistoryY = new sbyte[ProtocolConstants.MaxInputsPerMessage];
+
         private AveloraMap _map;
         private SpriteRenderer _localRenderer;
         private LocalPlayerController _offlineController;
@@ -100,6 +106,7 @@ namespace Avelora.Client
         private Vec2 _lastAuthoritative;
         private int _entityId;
         private int _lastDirectionX;
+        private int _inputHistoryCount;
         private long _inputsSent;
         private long _snapshotsReceived;
         private bool _connecting;
@@ -220,6 +227,7 @@ namespace Avelora.Client
             _prediction = null;
             _snapshotsReceived = 0;
             _inputsSent = 0;
+            ClearInputHistory();
             _lastServerTick = 0;
             _lastProcessedSequence = 0;
             _entityId = 0;
@@ -336,9 +344,58 @@ namespace Avelora.Client
                 return;
             }
 
-            byte[] bytes = MessageCodec.EncodeMoveInput(new MoveInputMessage(sequence, directionX, directionY));
+            // La dirección nueva es la más reciente: el códec espera dir0 = sequence y dir_i =
+            // sequence - i.
+            if (_inputHistoryCount < ProtocolConstants.MaxInputsPerMessage)
+            {
+                _inputHistoryCount++;
+            }
+
+            for (int i = _inputHistoryCount - 1; i > 0; i--)
+            {
+                _inputHistoryX[i] = _inputHistoryX[i - 1];
+                _inputHistoryY[i] = _inputHistoryY[i - 1];
+            }
+
+            _inputHistoryX[0] = directionX;
+            _inputHistoryY[0] = directionY;
+
+            // Las secuencias empiezan en 1 y el códec rechaza sequence < n; así también se cubre la
+            // vuelta del uint.
+            int count = _inputHistoryCount;
+            if ((uint)count > sequence)
+            {
+                count = (int)sequence;
+            }
+
+            // El canal Sequenced descarta lo que llega desordenado (G-02): repetir los inputs
+            // anteriores rellena los huecos que deja un datagrama perdido.
+            byte[] bytes = MessageCodec.EncodeMoveInput(new MoveInputMessage(
+                sequence,
+                count,
+                _inputHistoryX[0],
+                _inputHistoryY[0],
+                _inputHistoryX[1],
+                _inputHistoryY[1],
+                _inputHistoryX[2],
+                _inputHistoryY[2],
+                _inputHistoryX[3],
+                _inputHistoryY[3]));
+
             _transport.Send(bytes, bytes.Length, DeliveryMode.Sequenced);
             _inputsSent++;
+        }
+
+        /// <summary>Vacía el historial al empezar una conexión: no se mezclan secuencias de otra sesión.</summary>
+        private void ClearInputHistory()
+        {
+            _inputHistoryCount = 0;
+
+            for (int i = 0; i < _inputHistoryX.Length; i++)
+            {
+                _inputHistoryX[i] = 0;
+                _inputHistoryY[i] = 0;
+            }
         }
 
         private void OnTransportConnected()
@@ -471,6 +528,7 @@ namespace Avelora.Client
                 welcome.Speed,
                 SimulationConstants.FixedDt);
             _prediction.Reset(new Vec2(welcome.SpawnX, welcome.SpawnY));
+            ClearInputHistory();
             _welcomeReceived = true;
 
             transform.position = new Vector3(welcome.SpawnX, welcome.SpawnY, transform.position.z);
