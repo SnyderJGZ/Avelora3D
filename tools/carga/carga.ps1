@@ -3,6 +3,7 @@
 # Uso:
 #   .\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior random -NuevaBase
 #   .\tools\carga\carga.ps1 -Bots 20 -Seconds 60 -LatencyMs 80 -JitterMs 20 -Loss 0.02 -NuevaBase
+#   .\tools\carga\carga.ps1 -Bots 20 -Seconds 60 -LatencyMs 80 -JitterMs 20 -Loss 0.02 -InputRedundancy 1 -NuevaBase
 #   .\tools\carga\carga.ps1 -Bots 20 -Seconds 60 -Abusivos 5 -Abuso flood -NuevaBase
 #
 # Compila en Release una vez, arranca el servidor con tools\carga\server-carga.json, espera 2 s,
@@ -19,6 +20,8 @@ param(
     [int]$LatencyMs = 0,
     [int]$JitterMs = 0,
     [double]$Loss = 0,
+    [ValidateRange(1, 4)]
+    [int]$InputRedundancy = 4,
     [int]$Abusivos = 0,
     [ValidateSet('flood', 'garbage', 'speed', 'replay', 'badlogin')]
     [string]$Abuso = 'flood',
@@ -96,8 +99,10 @@ if ($Abusivos -gt 0) {
     $abuseSuffix = '-abuso' + $Abuso + $Abusivos
 }
 
+$redundancySuffix = '-redund' + $InputRedundancy
+
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$runDir = Join-Path $resultados "$stamp-$Behavior-$Bots$networkSuffix$abuseSuffix"
+$runDir = Join-Path $resultados "$stamp-$Behavior-$Bots$networkSuffix$redundancySuffix$abuseSuffix"
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
 $serverOut = Join-Path $runDir 'servidor.log'
@@ -134,9 +139,10 @@ if ($server.HasExited) {
 $commonArguments = ' --seconds ' + $Seconds + ' --ramp-ms ' + $RampMs + $networkArguments
 
 $botsCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Bots + $commonArguments +
-    ' --behavior ' + $Behavior + ' > "' + $botsOut + '" 2>&1'
+    ' --behavior ' + $Behavior + ' --input-redundancy ' + $InputRedundancy +
+    ' > "' + $botsOut + '" 2>&1'
 
-Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior"
+Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior, redundancia $InputRedundancy"
 $botsProcess = Start-LoggedCommand $botsCommand
 
 $abuseProcess = $null

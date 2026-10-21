@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Bots
 {
@@ -19,6 +20,7 @@ namespace Avelora.Bots
     /// dotnet run --project tools/Avelora.Bots -- --bots 3 --seconds 10
     /// dotnet run --project tools/Avelora.Bots -- --bots 50 --ramp-ms 200 --behavior crowd
     /// dotnet run --project tools/Avelora.Bots -- --bots 20 --latency-ms 80 --jitter-ms 20 --loss 0.02
+    /// dotnet run --project tools/Avelora.Bots -- --bots 20 --latency-ms 80 --jitter-ms 20 --loss 0.02 --input-redundancy 1
     /// dotnet run --project tools/Avelora.Bots -- --bots 5 --behavior flood --account-prefix abuso
     /// dotnet run --project tools/Avelora.Bots -- --host 127.0.0.1 --port 7777 --bots 10
     /// </code>
@@ -99,6 +101,8 @@ namespace Avelora.Bots
 
                 Console.WriteLine("  Reintento: hasta " + options.Retries + " vez/veces si el login se limita; " +
                     "saludo esperado " + options.WelcomeTimeoutMs + " ms por intento");
+                Console.WriteLine("  Redundancia: " + options.InputRedundancy + " input(s) por mensaje" +
+                    (options.InputRedundancy == 1 ? " (sin redundancia, como antes)" : string.Empty));
                 Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
                     " (invitación '" + options.InvitationCode + "')");
                 Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
@@ -136,7 +140,9 @@ namespace Avelora.Bots
                         startDelayMs: (i - 1) * options.RampMs,
                         retries: options.Retries,
                         welcomeTimeoutMs: options.WelcomeTimeoutMs,
-                        behavior: options.Behavior);
+                        behavior: options.Behavior,
+                        map: map,
+                        inputRedundancy: options.InputRedundancy);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -182,6 +188,9 @@ namespace Avelora.Bots
             int retries = 0;
             long worstGap = 0;
             double snapshotsPerSecond = 0d;
+            long corrections = 0;
+            long snaps = 0;
+            long playedMs = 0;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
@@ -210,11 +219,15 @@ namespace Avelora.Bots
                     worstGap = bot.MaxSnapshotGapMs;
                 }
 
+                corrections += bot.Corrections;
+                snaps += bot.Snaps;
+
                 if (bot.EntityId > 0)
                 {
                     ok++;
                     welcomeTimes.Add(bot.WelcomeMs);
                     snapshotsPerSecond += bot.SnapshotsPerSecond;
+                    playedMs += bot.PlayedMs;
                 }
                 else
                 {
@@ -243,6 +256,8 @@ namespace Avelora.Bots
                     " hueco=" + bot.MaxSnapshotGapMs + "ms" +
                     " pos=(" + Invariant(bot.X) + "; " + Invariant(bot.Y) + ")" +
                     " inputs=" + bot.Sequence +
+                    " corr=" + bot.Corrections +
+                    " saltos=" + bot.Snaps +
                     " snapshots=" + bot.Snapshots);
 
                 if (abusive)
@@ -275,6 +290,13 @@ namespace Avelora.Bots
             Console.WriteLine("  Snapshots  : " + Invariant(meanPerBot) + "/s por bot de media, " +
                 snapshots + " en total");
             Console.WriteLine("  Peor hueco : " + worstGap + " ms entre snapshots");
+
+            double minutes = playedMs / 60000d;
+            Console.WriteLine(
+                "  Predicción : " + corrections + " correcciones, " + snaps + " saltos" +
+                (minutes > 0d
+                    ? " (" + Invariant(corrections / minutes) + "/bot/min, " + Invariant(snaps / minutes) + "/bot/min)"
+                    : " (sin tiempo jugado)"));
 
             if (abusive)
             {
@@ -551,6 +573,18 @@ namespace Avelora.Bots
                         options.Loss = loss;
                         break;
 
+                    case "--input-redundancy":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int inputRedundancy) ||
+                            inputRedundancy < 1 ||
+                            inputRedundancy > ProtocolConstants.MaxInputsPerMessage)
+                        {
+                            error = "Redundancia inválida: " + value + " (1.." + ProtocolConstants.MaxInputsPerMessage + ")";
+                            return false;
+                        }
+
+                        options.InputRedundancy = inputRedundancy;
+                        break;
+
                     case "--behavior":
                         if (!TryParseBehavior(value, out BotBehavior behavior))
                         {
@@ -690,6 +724,8 @@ namespace Avelora.Bots
             public int JitterMs { get; set; }
 
             public double Loss { get; set; }
+
+            public int InputRedundancy { get; set; } = ProtocolConstants.MaxInputsPerMessage;
         }
     }
 }

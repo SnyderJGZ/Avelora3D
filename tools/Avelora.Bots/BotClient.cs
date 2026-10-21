@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Shared;
+using Avelora.Shared.Prediction;
 using Avelora.Shared.Protocol;
 
 namespace Avelora.Bots
@@ -90,9 +91,11 @@ namespace Avelora.Bots
         };
 
         private readonly Func<IClientTransport> _transportFactory;
+        private readonly MapCollisionGrid? _map;
         private readonly string _host;
         private readonly int _port;
         private readonly byte[] _mapHash;
+        private readonly int _inputRedundancy;
         private readonly uint _clientToken;
         private readonly Random _random;
         private readonly int _runMs;
@@ -120,6 +123,19 @@ namespace Avelora.Bots
         private sbyte _directionX;
         private sbyte _directionY;
         private long _nextInputAt;
+
+        // Últimos inputs enviados, del más nuevo al más viejo, para la redundancia de G-03.
+        private readonly uint[] _recentSequences = new uint[ProtocolConstants.MaxInputsPerMessage];
+        private readonly sbyte[] _recentX = new sbyte[ProtocolConstants.MaxInputsPerMessage];
+        private readonly sbyte[] _recentY = new sbyte[ProtocolConstants.MaxInputsPerMessage];
+        private readonly bool[] _recentValid = new bool[ProtocolConstants.MaxInputsPerMessage];
+        private int _recentCount;
+
+        // Predicción del jugador local (solo modo random), como la del cliente de Unity.
+        private ClientPrediction? _prediction;
+        private long _corrections;
+        private long _snaps;
+
         private long _nextDirectionChangeAt;
         private long _nextGarbageAt;
         private long _nextInvalidDirectionAt;
@@ -165,7 +181,9 @@ namespace Avelora.Bots
             int retries = 5,
             int welcomeTimeoutMs = 15000,
             BotBehavior behavior = BotBehavior.Random,
-            Func<IClientTransport>? transportFactory = null)
+            Func<IClientTransport>? transportFactory = null,
+            MapCollisionGrid? map = null,
+            int inputRedundancy = ProtocolConstants.MaxInputsPerMessage)
         {
             if (startDelayMs < 0)
             {
@@ -182,7 +200,16 @@ namespace Avelora.Bots
                 throw new ArgumentOutOfRangeException(nameof(welcomeTimeoutMs));
             }
 
+            if (inputRedundancy < 1 || inputRedundancy > ProtocolConstants.MaxInputsPerMessage)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(inputRedundancy),
+                    "La redundancia debe estar entre 1 y " + ProtocolConstants.MaxInputsPerMessage + ".");
+            }
+
             Index = index;
+            _map = map;
+            _inputRedundancy = inputRedundancy;
             _host = host;
             _port = port;
             _mapHash = mapHash;
@@ -215,6 +242,15 @@ namespace Avelora.Bots
         public BotBehavior Behavior => _behavior;
 
         public long Snapshots => Interlocked.Read(ref _snapshots);
+
+        /// <summary>Redundancia configurada: cuántos inputs viajan en cada mensaje normal.</summary>
+        public int InputRedundancy => _inputRedundancy;
+
+        /// <summary>Correcciones suaves que la predicción habría aplicado al jugador local.</summary>
+        public long Corrections => _corrections;
+
+        /// <summary>Saltos grandes que la predicción habría aplicado al jugador local.</summary>
+        public long Snaps => _snaps;
 
         /// <summary>Milisegundos desde el primer intento hasta el <c>Welcome</c>; <c>-1</c> si no llegó.</summary>
         public long WelcomeMs => _welcomeMs;
@@ -672,6 +708,10 @@ namespace Avelora.Bots
             _welcomed = false;
             _disconnected = false;
             _reject = null;
+
+            // La sesión es nueva: los inputs del intento anterior no sirven como redundancia.
+            _recentCount = 0;
+            _prediction = null;
         }
 
         private void DiscardTransport()
@@ -727,16 +767,38 @@ namespace Avelora.Bots
             _transport!.Send(hello, hello.Length, DeliveryMode.ReliableOrdered);
         }
 
-        /// <summary>Manda los inputs válidos del intervalo: uno normal, diez si es <c>flood</c>.</summary>
+        /// <summary>
+        /// Manda los inputs válidos del intervalo: uno normal, diez si es <c>flood</c>. Cada
+        /// mensaje lleva los <see cref="InputRedundancy"/> inputs más recientes (G-03) y, en modo
+        /// <c>random</c>, primero lo aplica a la predicción local.
+        /// </summary>
         private void SendMoveInputs()
         {
             int count = _behavior == BotBehavior.Flood ? FloodInputsPerInterval : 1;
 
             for (int i = 0; i < count; i++)
             {
-                _sequence++;
-                byte[] input = MessageCodec.EncodeMoveInput(
-                    new MoveInputMessage(_sequence, _directionX, _directionY));
+                sbyte directionX = _directionX;
+                sbyte directionY = _directionY;
+
+                uint sequence;
+
+                if (_prediction != null)
+                {
+                    // El mismo camino que el cliente de Unity: predicir primero y mandar la
+                    // secuencia que devuelve la predicción.
+                    sequence = _prediction.AddInput(directionX, directionY);
+                    _sequence = sequence;
+                }
+                else
+                {
+                    _sequence++;
+                    sequence = _sequence;
+                }
+
+                RememberInput(sequence, directionX, directionY, isValid: true);
+
+                byte[] input = EncodeRedundantInput(sequence);
 
                 // Secuenciado: si un input se pierde, el siguiente lo reemplaza; no se reintenta.
                 _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
@@ -746,7 +808,8 @@ namespace Avelora.Bots
 
         /// <summary>
         /// Manda una intención con la dirección fuera de rango. El códec del bot no la valida (solo
-        /// escribe el byte): la rechaza el servidor al deserializar.
+        /// escribe los bytes): la rechaza el servidor al deserializar. No entra en el historial de
+        /// redundancia, porque un mensaje con cualquier dirección inválida se rechaza entero.
         /// </summary>
         private void SendInvalidDirection()
         {
@@ -757,11 +820,114 @@ namespace Avelora.Bots
             sbyte directionY = InvalidDirections[index, 1];
 
             _sequence++;
+            uint sequence = _sequence;
+
+            RememberInput(sequence, directionX, directionY, isValid: false);
+
             byte[] input = MessageCodec.EncodeMoveInput(
-                new MoveInputMessage(_sequence, directionX, directionY));
+                new MoveInputMessage(sequence, directionX, directionY));
 
             _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
             Interlocked.Increment(ref _sentInvalidInputs);
+        }
+
+        /// <summary>Manda un mensaje de un solo input sin tocar el historial (modo <c>replay</c>).</summary>
+        private void SendRawMoveInput(uint sequence, sbyte directionX, sbyte directionY)
+        {
+            byte[] input = MessageCodec.EncodeMoveInput(
+                new MoveInputMessage(sequence, directionX, directionY));
+
+            _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
+            Interlocked.Increment(ref _sentReplayInputs);
+        }
+
+        /// <summary>Guarda el input como el más reciente y desplaza los anteriores.</summary>
+        private void RememberInput(uint sequence, sbyte directionX, sbyte directionY, bool isValid)
+        {
+            for (int i = _recentSequences.Length - 1; i > 0; i--)
+            {
+                _recentSequences[i] = _recentSequences[i - 1];
+                _recentX[i] = _recentX[i - 1];
+                _recentY[i] = _recentY[i - 1];
+                _recentValid[i] = _recentValid[i - 1];
+            }
+
+            _recentSequences[0] = sequence;
+            _recentX[0] = directionX;
+            _recentY[0] = directionY;
+            _recentValid[0] = isValid;
+
+            if (_recentCount < _recentSequences.Length)
+            {
+                _recentCount++;
+            }
+        }
+
+        /// <summary>
+        /// Codifica el input más nuevo con las copias anteriores que correspondan a secuencias
+        /// contiguas y válidas. Si hubo un input inválido o no contiguo, se corta ahí: el par
+        /// <c>i</c> siempre debe ser la secuencia <c>Sequence - i</c>.
+        /// </summary>
+        private byte[] EncodeRedundantInput(uint newestSequence)
+        {
+            int count = Math.Min(_inputRedundancy, _recentCount);
+
+            if (count > 0 && _recentSequences[0] != newestSequence)
+            {
+                count = 0;
+            }
+
+            for (int i = 1; i < count; i++)
+            {
+                if (!_recentValid[i] || _recentSequences[i] != newestSequence - (uint)i)
+                {
+                    count = i;
+                    break;
+                }
+            }
+
+            // La secuencia más nueva no puede ser menor que n (el protocolo lo rechaza).
+            while (count > 1 && newestSequence < (uint)count)
+            {
+                count--;
+            }
+
+            sbyte dir1X = 0;
+            sbyte dir1Y = 0;
+            sbyte dir2X = 0;
+            sbyte dir2Y = 0;
+            sbyte dir3X = 0;
+            sbyte dir3Y = 0;
+
+            if (count > 1)
+            {
+                dir1X = _recentX[1];
+                dir1Y = _recentY[1];
+            }
+
+            if (count > 2)
+            {
+                dir2X = _recentX[2];
+                dir2Y = _recentY[2];
+            }
+
+            if (count > 3)
+            {
+                dir3X = _recentX[3];
+                dir3Y = _recentY[3];
+            }
+
+            return MessageCodec.EncodeMoveInput(new MoveInputMessage(
+                newestSequence,
+                count,
+                _recentX[0],
+                _recentY[0],
+                dir1X,
+                dir1Y,
+                dir2X,
+                dir2Y,
+                dir3X,
+                dir3Y));
         }
 
         /// <summary>Repite secuencias ya usadas: duplicadas y muy viejas, sin mover la posición.</summary>
@@ -776,15 +942,6 @@ namespace Avelora.Bots
             SendRawMoveInput(_sequence, _directionX, _directionY);
             SendRawMoveInput(_sequence > 30 ? _sequence - 30 : 1, _directionX, _directionY);
             SendRawMoveInput(1, _directionX, _directionY);
-        }
-
-        private void SendRawMoveInput(uint sequence, sbyte directionX, sbyte directionY)
-        {
-            byte[] input = MessageCodec.EncodeMoveInput(
-                new MoveInputMessage(sequence, directionX, directionY));
-
-            _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
-            Interlocked.Increment(ref _sentReplayInputs);
         }
 
         /// <summary>
@@ -806,7 +963,7 @@ namespace Avelora.Bots
                     break;
 
                 case 1:
-                    // MoveInput truncado: 3 de sus 7 bytes.
+                    // MoveInput truncado: 3 de sus bytes de cabecera.
                     garbage = new byte[]
                     {
                         (byte)MessageType.MoveInput,
@@ -856,6 +1013,20 @@ namespace Avelora.Bots
                 _speed = welcome.Speed;
                 _hasPosition = true;
                 Status = "conectado";
+
+                // Igual que el cliente de Unity: si el bot es un jugador normal, predice su
+                // posición y mide las correcciones que le costaría la red.
+                if (_behavior == BotBehavior.Random && _map != null)
+                {
+                    _prediction = new ClientPrediction(
+                        _map,
+                        new Vec2(welcome.HalfWidth, welcome.HalfHeight),
+                        welcome.Speed,
+                        SimulationConstants.FixedDt);
+
+                    _prediction.Reset(new Vec2(welcome.SpawnX, welcome.SpawnY));
+                }
+
                 return;
             }
 
@@ -910,6 +1081,17 @@ namespace Avelora.Bots
                         _x = x;
                         _y = y;
                         _hasPosition = true;
+
+                        if (_prediction != null)
+                        {
+                            _prediction.Reconcile(
+                                new Vec2(x, y),
+                                snapshot.LastProcessedInputSequence);
+
+                            _corrections = _prediction.Corrections;
+                            _snaps = _prediction.Snaps;
+                        }
+
                         break;
                     }
                 }

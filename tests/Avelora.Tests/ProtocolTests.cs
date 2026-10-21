@@ -89,17 +89,149 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void La_Intencion_Va_Y_Vuelve_Igual()
+        public void La_Intencion_Va_Y_Vuelve_Igual_Con_Un_Input()
         {
             var original = new MoveInputMessage(4294967290u, -1, 1);
 
             byte[] bytes = MessageCodec.EncodeMoveInput(original);
 
             Assert.True(MessageCodec.TryReadMoveInput(bytes, 0, bytes.Length, out MoveInputMessage decoded));
-            Assert.Equal(7, bytes.Length);
+            Assert.Equal(8, bytes.Length);
             Assert.Equal(original.Sequence, decoded.Sequence);
-            Assert.Equal(original.DirectionX, decoded.DirectionX);
-            Assert.Equal(original.DirectionY, decoded.DirectionY);
+            Assert.Equal(1, decoded.Count);
+            Assert.True(decoded.TryGetDirection(0, out sbyte x, out sbyte y));
+            Assert.Equal((sbyte)-1, x);
+            Assert.Equal((sbyte)1, y);
+        }
+
+        [Fact]
+        public void La_Intencion_Va_Y_Vuelve_Igual_Con_Cuatro_Inputs()
+        {
+            var original = new MoveInputMessage(
+                100u,
+                4,
+                1,
+                0,
+                0,
+                1,
+                -1,
+                0,
+                0,
+                -1);
+
+            byte[] bytes = MessageCodec.EncodeMoveInput(original);
+
+            Assert.True(MessageCodec.TryReadMoveInput(bytes, 0, bytes.Length, out MoveInputMessage decoded));
+            Assert.Equal(6 + (2 * 4), bytes.Length);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(4, decoded.Count);
+
+            // Del más nuevo al más viejo: cada par es la secuencia Sequence - i.
+            Assert.Equal((sbyte)1, GetX(decoded, 0));
+            Assert.Equal((sbyte)0, GetX(decoded, 1));
+            Assert.Equal((sbyte)-1, GetX(decoded, 2));
+            Assert.Equal((sbyte)0, GetX(decoded, 3));
+            Assert.Equal((sbyte)-1, GetY(decoded, 3));
+            Assert.False(decoded.TryGetDirection(4, out _, out _));
+        }
+
+        [Fact]
+        public void Un_Input_Con_Cero_O_Demasiados_No_Se_Puede_Codificar()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => new MoveInputMessage(4u, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => new MoveInputMessage(4u, 5, 0, 0, 0, 0, 0, 0, 0, 0));
+        }
+
+        [Fact]
+        public void Un_Input_Con_Menos_Secuencias_Que_Inputs_No_Se_Puede_Codificar()
+        {
+            // Las secuencias empiezan en 1: con n = 4 la más vieja sería Sequence - 3 = 0.
+            var message = new MoveInputMessage(3u, 4, 0, 0, 0, 0, 0, 0, 0, 0);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeMoveInput(message));
+        }
+
+        [Fact]
+        public void El_Codec_Rechaza_Un_Numero_De_Inputs_Fuera_De_Rango()
+        {
+            byte[] cero = RawMoveInput(4u, 0);
+            Assert.False(MessageCodec.TryReadMoveInput(cero, 0, cero.Length, out _));
+
+            byte[] cinco = RawMoveInput(4u, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            Assert.False(MessageCodec.TryReadMoveInput(cinco, 0, cinco.Length, out _));
+        }
+
+        [Fact]
+        public void El_Codec_Rechaza_Una_Longitud_Que_No_Es_Seis_Mas_Dos_N()
+        {
+            // n = 1 con el par a medias (truncado).
+            byte[] sinPar = RawMoveInput(4u, 1, 0, 0);
+            Assert.False(MessageCodec.TryReadMoveInput(sinPar, 0, sinPar.Length - 1, out _));
+
+            // n = 1 con dos bytes de propina.
+            byte[] conPropina = RawMoveInput(4u, 1, 0, 0);
+            Array.Resize(ref conPropina, conPropina.Length + 2);
+            Assert.False(MessageCodec.TryReadMoveInput(conPropina, 0, conPropina.Length, out _));
+
+            // n = 2 con la longitud de n = 1 (el par sobra).
+            byte[] deMas = new byte[8];
+            Array.Copy(RawMoveInput(4u, 2, 0, 0), deMas, deMas.Length);
+            deMas[5] = 2;
+            Assert.False(MessageCodec.TryReadMoveInput(deMas, 0, deMas.Length, out _));
+        }
+
+        [Fact]
+        public void El_Codec_Rechaza_Una_Secuencia_Menor_Que_El_Numero_De_Inputs()
+        {
+            // La más vieja sería la secuencia 0, que el protocolo reserva para «ninguna».
+            Assert.False(MessageCodec.TryReadMoveInput(
+                RawMoveInput(3u, 4, 0, 0, 0, 0, 0, 0, 0, 0), 0, 6 + (2 * 4), out _));
+
+            Assert.True(MessageCodec.TryReadMoveInput(
+                RawMoveInput(4u, 4, 0, 0, 0, 0, 0, 0, 0, 0), 0, 6 + (2 * 4), out _));
+        }
+
+        [Fact]
+        public void El_Codec_Rechaza_Una_Direccion_Invalida_En_Cualquier_Posicion()
+        {
+            // El par más viejo (i = 3) también se valida.
+            byte[] bytes = RawMoveInput(10u, 4, 0, 0, 0, 0, 0, 0, 5, 0);
+
+            Assert.False(MessageCodec.TryReadMoveInput(bytes, 0, bytes.Length, out _));
+        }
+
+        private static sbyte GetX(in MoveInputMessage message, int index)
+        {
+            Assert.True(message.TryGetDirection(index, out sbyte x, out _));
+            return x;
+        }
+
+        private static sbyte GetY(in MoveInputMessage message, int index)
+        {
+            Assert.True(message.TryGetDirection(index, out _, out sbyte y));
+            return y;
+        }
+
+        /// <summary>Construye un MoveInput a mano, sin pasar por las validaciones del codificador.</summary>
+        private static byte[] RawMoveInput(uint sequence, int count, params sbyte[] directions)
+        {
+            var bytes = new byte[6 + (2 * count)];
+            bytes[0] = (byte)MessageType.MoveInput;
+            bytes[1] = (byte)(sequence & 0xFF);
+            bytes[2] = (byte)((sequence >> 8) & 0xFF);
+            bytes[3] = (byte)((sequence >> 16) & 0xFF);
+            bytes[4] = (byte)((sequence >> 24) & 0xFF);
+            bytes[5] = (byte)count;
+
+            for (int i = 0; i < directions.Length && (6 + i) < bytes.Length; i++)
+            {
+                bytes[6 + i] = unchecked((byte)directions[i]);
+            }
+
+            return bytes;
         }
 
         [Fact]

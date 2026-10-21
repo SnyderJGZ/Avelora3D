@@ -14,12 +14,13 @@ namespace Avelora.Server.Simulation
     /// </remarks>
     public readonly struct MoveIntent
     {
-        public MoveIntent(int entityId, uint sequence, sbyte directionX, sbyte directionY)
+        public MoveIntent(int entityId, uint sequence, sbyte directionX, sbyte directionY, bool isRedundant = false)
         {
             EntityId = entityId;
             Sequence = sequence;
             DirectionX = directionX;
             DirectionY = directionY;
+            IsRedundant = isRedundant;
         }
 
         /// <summary>Entidad que pide moverse.</summary>
@@ -34,6 +35,14 @@ namespace Avelora.Server.Simulation
         /// <summary>Dirección en Y: -1, 0 o 1.</summary>
         public sbyte DirectionY { get; }
 
-        public override string ToString() => "input#" + Sequence + " ent=" + EntityId + " dir=(" + DirectionX + "," + DirectionY + ")";
+        /// <summary>
+        /// <c>true</c> si es una copia de un input anterior que viajó en el mismo mensaje (G-03).
+        /// Que el búfer la rechace por <c>OutOfOrder</c> es lo normal y no gasta el tope por tick.
+        /// </summary>
+        public bool IsRedundant { get; }
+
+        public override string ToString() =>
+            "input#" + Sequence + " ent=" + EntityId + " dir=(" + DirectionX + "," + DirectionY + ")" +
+            (IsRedundant ? " redundante" : string.Empty);
     }
 }

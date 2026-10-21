@@ -501,6 +501,92 @@ namespace Avelora.Tests
             Assert.Equal(RejectReason.RateLimited, reject.Reason);
         }
 
+        [Fact]
+        public void Un_Input_Con_Redundancia_Encola_Solo_Los_Nuevos_Y_Cuenta_Las_Copias()
+        {
+            using var harness = new Harness();
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            SendMoveInput(harness, 1, new MoveInputMessage(1u, 1, 0));
+            harness.Zone.Tick();
+            Assert.Equal(1u, harness.Zone.Players[0].LastProcessedSequence);
+
+            // n = 4 con base en la secuencia 4: la 1 ya estaba y las nuevas son 2, 3 y 4.
+            SendMoveInput(harness, 1, new MoveInputMessage(4u, 4, 1, 0, 1, 0, 1, 0, 1, 0));
+            harness.Zone.Tick();
+
+            Assert.Equal(5, harness.Zone.Inputs.Received);
+            Assert.Equal(1, harness.Zone.RedundantDuplicates);
+            Assert.Equal(0, harness.Zone.RejectedOutOfOrder);
+            Assert.Equal(4u, ((PlayerEntity)harness.Zone.Entities.Get(1)!).Input.LastAcceptedSequence);
+
+            // Un input por tick: el primero se aplica ya y los demás esperan.
+            Assert.Equal(2u, harness.Zone.Players[0].LastProcessedSequence);
+            harness.Zone.Tick();
+            harness.Zone.Tick();
+            Assert.Equal(4u, harness.Zone.Players[0].LastProcessedSequence);
+        }
+
+        [Fact]
+        public void Si_Se_Pierde_Un_Mensaje_El_Siguiente_Rellena_El_Hueco()
+        {
+            using var harness = new Harness();
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            SendMoveInput(harness, 1, new MoveInputMessage(1u, 1, 0));
+            harness.Zone.Tick();
+            Assert.Equal(1u, harness.Zone.Players[0].LastProcessedSequence);
+
+            // El mensaje de la secuencia 2 se pierde. El 3 lleva la 2 (más vieja) y la 3 (nueva),
+            // en ese orden: el servidor debe aplicar las dos, una por tick.
+            SendMoveInput(harness, 1, new MoveInputMessage(3u, 2, 1, 0, 0, 1, 0, 0, 0, 0));
+
+            harness.Zone.Tick();
+            Assert.Equal(2u, harness.Zone.Players[0].LastProcessedSequence);
+
+            harness.Zone.Tick();
+            Assert.Equal(3u, harness.Zone.Players[0].LastProcessedSequence);
+
+            Assert.Equal(0, harness.Zone.RedundantDuplicates);
+            Assert.Equal(0, harness.Zone.RejectedOutOfOrder);
+            Assert.Equal(0, harness.Zone.RejectedPerPlayerLimit);
+        }
+
+        [Fact]
+        public void Las_Copias_Redundantes_No_Gastan_El_Tope_Por_Jugador()
+        {
+            using var harness = new Harness(config => config.MaxIntentsPerPlayerPerTick = 2);
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            SendMoveInput(harness, 1, new MoveInputMessage(1u, 1, 0));
+            harness.Zone.Tick();
+
+            SendMoveInput(harness, 1, new MoveInputMessage(4u, 4, 1, 0, 1, 0, 1, 0, 1, 0));
+            harness.Zone.Tick();
+
+            // La 1 es una copia y no gasta plaza; 2 y 3 se aceptan; 4 topa. Si la copia gastara
+            // tope, solo cabría una nueva y el tope subiría a dos.
+            Assert.Equal(1, harness.Zone.RedundantDuplicates);
+            Assert.Equal(1, harness.Zone.RejectedPerPlayerLimit);
+            Assert.Equal(0, harness.Zone.RejectedOutOfOrder);
+            Assert.Equal(3u, ((PlayerEntity)harness.Zone.Entities.Get(1)!).Input.LastAcceptedSequence);
+        }
+
+        private static void SendMoveInput(Harness harness, int connectionId, in MoveInputMessage message)
+        {
+            byte[] bytes = MessageCodec.EncodeMoveInput(message);
+            harness.Transport.RaiseReceived(connectionId, bytes);
+        }
+
         /// <summary>
         /// Espera a empezar un segundo nuevo: el contador de frecuencia se reinicia cada segundo y
         /// una ráfaga a caballo entre dos falsearía la prueba.

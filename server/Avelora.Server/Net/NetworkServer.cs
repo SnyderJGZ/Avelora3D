@@ -382,15 +382,16 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            if (!MovementSimulator.IsValidDirection(input.DirectionX, input.DirectionY))
+            // G-03: el mensaje lleva el input más nuevo y copias de los anteriores. Se encolan del
+            // más viejo al más nuevo para que el búfer los vea en orden; el tope de mensajes por
+            // segundo no cambia, porque esto es un solo datagrama.
+            for (int i = input.Count - 1; i >= 0; i--)
             {
-                // El códec ya lo rechaza, pero se comprueba también aquí: la red no debe encolar
-                // direcciones que la simulación no sabe interpretar.
-                Interlocked.Increment(ref _messagesRejected);
-                return;
-            }
+                input.TryGetDirection(i, out sbyte directionX, out sbyte directionY);
+                uint sequence = input.Sequence - (uint)i;
 
-            _zone.Inputs.TryEnqueue(new MoveIntent(entityId, input.Sequence, input.DirectionX, input.DirectionY));
+                _zone.Inputs.TryEnqueue(new MoveIntent(entityId, sequence, directionX, directionY, isRedundant: i > 0));
+            }
         }
 
         private void HandleHello(int connectionId, byte[] buffer, int offset, int length)

@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using Avelora.Shared;
 
 namespace Avelora.Shared.Protocol
@@ -82,28 +83,118 @@ namespace Avelora.Shared.Protocol
     }
 
     /// <summary>
-    /// Intención de movimiento de un tick: solo dirección y número de secuencia (guía §4.3).
+    /// Intención de movimiento: la secuencia más nueva y las direcciones de este input y de los
+    /// anteriores (guía §4.3 y G-03).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>Sequence</c> crece de uno en uno por input. El servidor la usa para descartar repetidos
     /// y viejos y, en la Etapa D, el cliente para saber qué ha confirmado ya el servidor.
+    /// </para>
+    /// <para>
+    /// Cada mensaje lleva hasta <see cref="ProtocolConstants.MaxInputsPerMessage"/> pares
+    /// <c>dirX, dirY</c>, del más nuevo al más viejo: el par <c>i</c> corresponde a la secuencia
+    /// <c>Sequence - i</c>. Así una pérdida de UDP no se convierte en un paso perdido: el mensaje
+    /// siguiente rellena el hueco. Se guardan cuatro pares fijos para no reservar memoria por
+    /// mensaje (el camino caliente no debe generar basura).
+    /// </para>
     /// </remarks>
     public readonly struct MoveInputMessage
     {
+        private readonly sbyte _dir0X;
+        private readonly sbyte _dir0Y;
+        private readonly sbyte _dir1X;
+        private readonly sbyte _dir1Y;
+        private readonly sbyte _dir2X;
+        private readonly sbyte _dir2Y;
+        private readonly sbyte _dir3X;
+        private readonly sbyte _dir3Y;
+
+        /// <summary>Un input sin redundancia: el formato de las etapas anteriores.</summary>
         public MoveInputMessage(uint sequence, sbyte directionX, sbyte directionY)
+            : this(sequence, 1, directionX, directionY, 0, 0, 0, 0, 0, 0)
         {
-            Sequence = sequence;
-            DirectionX = directionX;
-            DirectionY = directionY;
         }
 
+        /// <summary>
+        /// Un mensaje con <paramref name="count"/> inputs, del más nuevo (<c>dir0</c>) al más viejo.
+        /// Los pares que no se usan se ignoran.
+        /// </summary>
+        public MoveInputMessage(
+            uint sequence,
+            int count,
+            sbyte dir0X,
+            sbyte dir0Y,
+            sbyte dir1X,
+            sbyte dir1Y,
+            sbyte dir2X,
+            sbyte dir2Y,
+            sbyte dir3X,
+            sbyte dir3Y)
+        {
+            if (count < 1 || count > ProtocolConstants.MaxInputsPerMessage)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(count),
+                    count,
+                    "El mensaje debe llevar entre 1 y " + ProtocolConstants.MaxInputsPerMessage + " inputs.");
+            }
+
+            Sequence = sequence;
+            Count = count;
+            _dir0X = dir0X;
+            _dir0Y = dir0Y;
+            _dir1X = dir1X;
+            _dir1Y = dir1Y;
+            _dir2X = dir2X;
+            _dir2Y = dir2Y;
+            _dir3X = dir3X;
+            _dir3Y = dir3Y;
+        }
+
+        /// <summary>Secuencia del input más nuevo del mensaje.</summary>
         public uint Sequence { get; }
 
-        /// <summary>-1, 0 o 1. La validación semántica la hace la simulación, en la frontera.</summary>
-        public sbyte DirectionX { get; }
+        /// <summary>Cuántos inputs lleva, entre 1 y <see cref="ProtocolConstants.MaxInputsPerMessage"/>.</summary>
+        public int Count { get; }
 
-        /// <inheritdoc cref="DirectionX"/>
-        public sbyte DirectionY { get; }
+        /// <summary>
+        /// Dirección del input <paramref name="index"/>: 0 es el más nuevo y <c>Count - 1</c> el más
+        /// viejo. Devuelve <c>false</c> si el índice no corresponde a un input del mensaje.
+        /// </summary>
+        public bool TryGetDirection(int index, out sbyte directionX, out sbyte directionY)
+        {
+            if (index < 0 || index >= Count)
+            {
+                directionX = 0;
+                directionY = 0;
+                return false;
+            }
+
+            switch (index)
+            {
+                case 0:
+                    directionX = _dir0X;
+                    directionY = _dir0Y;
+                    return true;
+                case 1:
+                    directionX = _dir1X;
+                    directionY = _dir1Y;
+                    return true;
+                case 2:
+                    directionX = _dir2X;
+                    directionY = _dir2Y;
+                    return true;
+                case 3:
+                    directionX = _dir3X;
+                    directionY = _dir3Y;
+                    return true;
+                default:
+                    directionX = 0;
+                    directionY = 0;
+                    return false;
+            }
+        }
     }
 
     /// <summary>Respuesta afirmativa al saludo: identidad, punto de aparición y reglas del servidor.</summary>

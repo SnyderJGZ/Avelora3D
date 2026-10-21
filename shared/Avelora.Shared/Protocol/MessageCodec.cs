@@ -19,7 +19,10 @@ namespace Avelora.Shared.Protocol
         // después, cada una con su longitud uint16 (plan §8: cuenta, contraseña, personaje e
         // invitación). El tamaño total es variable, pero siempre menor que el tope del mensaje.
         private const int HelloFixedSize = 1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize;
-        private const int MoveInputSize = 1 + 4 + 1 + 1;
+
+        // Tipo, secuencia del más nuevo y número de inputs. Cada input añade dos bytes
+        // (dirX, dirY), así que el mensaje mide 6 + 2n entre 8 y 14 bytes.
+        private const int MoveInputHeaderSize = 1 + 4 + 1;
         private const int RejectSize = 1 + 1;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1;
@@ -142,24 +145,64 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica una intención de movimiento: 7 bytes.</summary>
+        /// <summary>
+        /// Codifica una intención de movimiento con sus copias redundantes: 6 + 2n bytes.
+        /// </summary>
+        /// <remarks>
+        /// No se valida la dirección al codificar: el modo <c>speed</c> de los bots debe poder
+        /// mandar un mensaje inválido para comprobar que el servidor lo rechaza. La longitud y la
+        /// secuencia sí se comprueban porque determinan el tamaño del búfer.
+        /// </remarks>
         public static byte[] EncodeMoveInput(in MoveInputMessage message)
         {
-            var buffer = new byte[MoveInputSize];
+            int count = message.Count;
+
+            if (count < 1 || count > ProtocolConstants.MaxInputsPerMessage)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(message),
+                    count,
+                    "El mensaje debe llevar entre 1 y " + ProtocolConstants.MaxInputsPerMessage + " inputs.");
+            }
+
+            if (message.Sequence < (uint)count)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(message),
+                    "La secuencia más nueva (" + message.Sequence + ") no puede ser menor que el número de inputs (" + count + ").");
+            }
+
+            var buffer = new byte[MoveInputHeaderSize + (count * 2)];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.MoveInput);
             writer.WriteUInt32(message.Sequence);
-            writer.WriteSByte(message.DirectionX);
-            writer.WriteSByte(message.DirectionY);
+            writer.WriteByte((byte)count);
+
+            for (int i = 0; i < count; i++)
+            {
+                message.TryGetDirection(i, out sbyte directionX, out sbyte directionY);
+                writer.WriteSByte(directionX);
+                writer.WriteSByte(directionY);
+            }
+
             return buffer;
         }
 
-        /// <summary>Lee una intención de movimiento.</summary>
+        /// <summary>
+        /// Lee una intención de movimiento. Rechaza <c>n</c> fuera de 1..4, una longitud distinta de
+        /// <c>6 + 2n</c>, una dirección inválida y una secuencia más nueva menor que <c>n</c> (la
+        /// aritmética <c>sequence - i</c> no puede llegar a 0).
+        /// </summary>
         public static bool TryReadMoveInput(byte[] buffer, int offset, int length, out MoveInputMessage message)
         {
             message = default;
 
-            if (!HasExactHeader(buffer, offset, length, MessageType.MoveInput, MoveInputSize))
+            if (buffer is null ||
+                offset < 0 ||
+                length < MoveInputHeaderSize ||
+                length > ProtocolConstants.MaxMessageSize ||
+                offset + length > buffer.Length ||
+                buffer[offset] != (byte)MessageType.MoveInput)
             {
                 return false;
             }
@@ -168,17 +211,69 @@ namespace Avelora.Shared.Protocol
             {
                 var reader = new WireReader(buffer, offset + 1, length - 1);
                 uint sequence = reader.ReadUInt32();
-                sbyte directionX = reader.ReadSByte();
-                sbyte directionY = reader.ReadSByte();
+                int count = reader.ReadByte();
 
-                // La dirección es parte del formato (-1, 0 o 1). Un ángulo arbitrario no es una
-                // intención rara: es un mensaje malformado (plan §4, validación al deserializar).
-                if (!MovementSimulator.IsValidDirection(directionX, directionY))
+                if (count < 1 ||
+                    count > ProtocolConstants.MaxInputsPerMessage ||
+                    length != MoveInputHeaderSize + (count * 2) ||
+                    sequence < (uint)count)
                 {
                     return false;
                 }
 
-                message = new MoveInputMessage(sequence, directionX, directionY);
+                sbyte dir0X = 0;
+                sbyte dir0Y = 0;
+                sbyte dir1X = 0;
+                sbyte dir1Y = 0;
+                sbyte dir2X = 0;
+                sbyte dir2Y = 0;
+                sbyte dir3X = 0;
+                sbyte dir3Y = 0;
+
+                for (int i = 0; i < count; i++)
+                {
+                    sbyte directionX = reader.ReadSByte();
+                    sbyte directionY = reader.ReadSByte();
+
+                    // La dirección es parte del formato (-1, 0 o 1). Un ángulo arbitrario no es una
+                    // intención rara: es un mensaje malformado (plan §4, validación al deserializar).
+                    if (!MovementSimulator.IsValidDirection(directionX, directionY))
+                    {
+                        return false;
+                    }
+
+                    switch (i)
+                    {
+                        case 0:
+                            dir0X = directionX;
+                            dir0Y = directionY;
+                            break;
+                        case 1:
+                            dir1X = directionX;
+                            dir1Y = directionY;
+                            break;
+                        case 2:
+                            dir2X = directionX;
+                            dir2Y = directionY;
+                            break;
+                        default:
+                            dir3X = directionX;
+                            dir3Y = directionY;
+                            break;
+                    }
+                }
+
+                message = new MoveInputMessage(
+                    sequence,
+                    count,
+                    dir0X,
+                    dir0Y,
+                    dir1X,
+                    dir1Y,
+                    dir2X,
+                    dir2Y,
+                    dir3X,
+                    dir3Y);
                 return true;
             }
             catch (ProtocolException)

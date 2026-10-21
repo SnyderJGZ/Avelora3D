@@ -14,9 +14,16 @@ namespace Avelora.Shared.Protocol
     {
         /// <summary>
         /// Versión del protocolo. Cambia con el formato, no con el contenido de los mensajes.
-        /// La Etapa F sube a 2 porque el saludo incorpora las credenciales y el personaje.
+        /// La Etapa F sube a 2 porque el saludo incorpora las credenciales y el personaje; G-03 a 3
+        /// porque el <c>MoveInput</c> lleva la dirección de los inputs anteriores (redundancia).
         /// </summary>
-        public const ushort Version = 2;
+        public const ushort Version = 3;
+
+        /// <summary>
+        /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias
+        /// redundantes de los anteriores (8 a 14 bytes).
+        /// </summary>
+        public const int MaxInputsPerMessage = 4;
 
         /// <summary>
         /// Tamaño máximo de un mensaje de aplicación. LiteNetLib ya limita el paquete UDP, pero un

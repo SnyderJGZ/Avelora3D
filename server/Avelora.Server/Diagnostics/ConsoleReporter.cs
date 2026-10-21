@@ -104,6 +104,7 @@ namespace Avelora.Server.Diagnostics
                 " ents=" + network.EntitiesSent +
                 " bytes=" + network.SnapshotBytes +
                 "  inputs ok=" + zone.Inputs.Received +
+                " redundantes=" + zone.RedundantDuplicates +
                 " fuera_de_orden=" + zone.RejectedOutOfOrder +
                 " buffer_lleno=" + zone.RejectedBufferFull +
                 " tope_jugador=" + zone.RejectedPerPlayerLimit +
@@ -200,6 +201,11 @@ namespace Avelora.Server.Diagnostics
                 network.RateLimitedDisconnects + " cortes por abuso), " +
                 network.SnapshotsSent + " snapshots, " + network.EntitiesSent + " entidades, " +
                 network.SnapshotBytes + " bytes, " + network.DroppedOutbound + " descartados en cola");
+            Console.WriteLine(
+                "  Inputs          : " + zone.Inputs.Received + " ok, " +
+                zone.RedundantDuplicates + " redundantes, " + zone.RejectedOutOfOrder +
+                " fuera de orden, " + zone.RejectedPerPlayerLimit + " por tope de jugador, " +
+                zone.RejectedBufferFull + " por búfer lleno");
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +

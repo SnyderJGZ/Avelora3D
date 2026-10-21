@@ -126,6 +126,12 @@ namespace Avelora.Server.Simulation
         /// <summary>Inputs descartados por llegar con secuencia repetida o vieja.</summary>
         public long RejectedOutOfOrder { get; private set; }
 
+        /// <summary>
+        /// Copias redundantes que el búfer ya tenía: llegaron antes en otro mensaje (G-03). Se
+        /// cuentan aparte para que <see cref="RejectedOutOfOrder"/> siga midiendo lo de siempre.
+        /// </summary>
+        public long RedundantDuplicates { get; private set; }
+
         /// <summary>Inputs descartados porque la cola del jugador estaba llena.</summary>
         public long RejectedBufferFull { get; private set; }
 
@@ -281,6 +287,23 @@ namespace Avelora.Server.Simulation
                     continue;
                 }
 
+                // Las copias redundantes son lo normal desde G-03: el input ya llegó en un mensaje
+                // anterior. Se clasifican antes del tope porque no gastan una plaza: el tope cuenta
+                // solo las intenciones que el búfer acepta de verdad.
+                if (!SequenceMath.IsNewer(intent.Sequence, player.Input.LastAcceptedSequence))
+                {
+                    if (intent.IsRedundant)
+                    {
+                        RedundantDuplicates++;
+                    }
+                    else
+                    {
+                        RejectedOutOfOrder++;
+                    }
+
+                    continue;
+                }
+
                 _acceptedPerPlayer.TryGetValue(intent.EntityId, out int alreadyAccepted);
                 if (alreadyAccepted >= _maxIntentsPerPlayerPerTick)
                 {
@@ -288,15 +311,23 @@ namespace Avelora.Server.Simulation
                     continue;
                 }
 
-                _acceptedPerPlayer[intent.EntityId] = alreadyAccepted + 1;
-
                 InputAcceptResult result = player.Input.TryAccept(intent);
                 switch (result)
                 {
                     case InputAcceptResult.Accepted:
+                        _acceptedPerPlayer[intent.EntityId] = alreadyAccepted + 1;
                         break;
                     case InputAcceptResult.OutOfOrder:
-                        RejectedOutOfOrder++;
+                        // No puede pasar (ya se comprobó), pero el interruptor cubre el futuro.
+                        if (intent.IsRedundant)
+                        {
+                            RedundantDuplicates++;
+                        }
+                        else
+                        {
+                            RejectedOutOfOrder++;
+                        }
+
                         break;
                     case InputAcceptResult.BufferFull:
                         RejectedBufferFull++;
