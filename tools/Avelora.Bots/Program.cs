@@ -18,6 +18,8 @@ namespace Avelora.Bots
     /// dotnet run --project tools/Avelora.Bots
     /// dotnet run --project tools/Avelora.Bots -- --bots 3 --seconds 10
     /// dotnet run --project tools/Avelora.Bots -- --bots 50 --ramp-ms 200 --behavior crowd
+    /// dotnet run --project tools/Avelora.Bots -- --bots 20 --latency-ms 80 --jitter-ms 20 --loss 0.02
+    /// dotnet run --project tools/Avelora.Bots -- --bots 5 --behavior flood --account-prefix abuso
     /// dotnet run --project tools/Avelora.Bots -- --host 127.0.0.1 --port 7777 --bots 10
     /// </code>
     /// </remarks>
@@ -50,73 +52,123 @@ namespace Avelora.Bots
 
             byte[] mapHash = MapFile.ComputeContentHashBytes(map);
 
-            Console.WriteLine("Avelora · bots (Etapa G: prueba de carga)");
-            Console.WriteLine("  Servidor : " + options.Host + ":" + options.Port);
-            Console.WriteLine("  Bots     : " + options.Bots + " durante " + Invariant(options.Seconds) + " s" +
-                " (rampa " + options.RampMs + " ms, " + BehaviorName(options.Behavior) + ")");
-            Console.WriteLine("  Reintento: hasta " + options.Retries + " vez/veces si el login se limita; " +
-                "saludo esperado " + options.WelcomeTimeoutMs + " ms por intento");
-            Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
-                " (invitación '" + options.InvitationCode + "')");
-            Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
-            Console.WriteLine();
+            // Mala red: si hay pérdida, retardo o jitter, los bots hablan con un proxy local que
+            // reenvía al servidor real. Sin esas opciones, todo funciona como hasta ahora.
+            LossyUdpProxy? proxy = null;
+            string botHost = options.Host;
+            int botPort = options.Port;
+            bool lossy = options.LatencyMs > 0 || options.JitterMs > 0 || options.Loss > 0d;
 
-            // El margen cubre la rampa y lo que puede tardar un reintento; las esperas de cada
-            // bot ya tienen su propio tope, así que esto solo evita que la prueba no acabe nunca.
-            double rampSeconds = (options.Bots - 1) * options.RampMs / 1000d;
-            double retrySeconds = options.Retries * ((options.WelcomeTimeoutMs / 1000d) + 5d);
-            using var cancellation = new CancellationTokenSource(
-                TimeSpan.FromSeconds(options.Seconds + rampSeconds + retrySeconds + 30d));
-
-            Console.CancelKeyPress += (sender, eventArgs) =>
+            if (lossy)
             {
-                eventArgs.Cancel = true;
-                cancellation.Cancel();
-            };
-
-            int runMs = (int)Math.Round(options.Seconds * 1000d, MidpointRounding.AwayFromZero);
-            var bots = new List<BotClient>(options.Bots);
-            var threads = new List<Thread>(options.Bots);
-
-            for (int i = 1; i <= options.Bots; i++)
-            {
-                var bot = new BotClient(
-                    i,
-                    options.Host,
-                    options.Port,
-                    mapHash,
-                    options.Seed,
-                    runMs,
-                    options.AccountPrefix,
-                    options.Password,
-                    options.InvitationCode,
-                    startDelayMs: (i - 1) * options.RampMs,
-                    retries: options.Retries,
-                    welcomeTimeoutMs: options.WelcomeTimeoutMs,
-                    behavior: options.Behavior);
-                bots.Add(bot);
-
-                var thread = new Thread(() => RunBot(bot, cancellation.Token))
+                try
                 {
-                    Name = "avelora-bot-" + i,
-                    IsBackground = true,
+                    proxy = new LossyUdpProxy(
+                        options.Host,
+                        options.Port,
+                        options.Loss,
+                        options.LatencyMs,
+                        options.JitterMs,
+                        options.Seed);
+
+                    proxy.Start();
+                    botHost = "127.0.0.1";
+                    botPort = proxy.Port;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("ERROR: no se pudo arrancar el proxy de mala red: " + ex.Message);
+                    proxy?.Dispose();
+                    return 4;
+                }
+            }
+
+            using (proxy)
+            {
+                Console.WriteLine("Avelora · bots (Etapa G: prueba de carga)");
+                Console.WriteLine("  Servidor : " + options.Host + ":" + options.Port);
+                Console.WriteLine("  Bots     : " + options.Bots + " durante " + Invariant(options.Seconds) + " s" +
+                    " (rampa " + options.RampMs + " ms, " + BehaviorName(options.Behavior) + ")");
+
+                if (proxy != null)
+                {
+                    Console.WriteLine("  Mala red : retardo " + options.LatencyMs + " ms ± " + options.JitterMs +
+                        " ms, pérdida " + Fraction(options.Loss) +
+                        " (proxy 127.0.0.1:" + proxy.Port + " → " + options.Host + ":" + options.Port + ")");
+                }
+
+                Console.WriteLine("  Reintento: hasta " + options.Retries + " vez/veces si el login se limita; " +
+                    "saludo esperado " + options.WelcomeTimeoutMs + " ms por intento");
+                Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
+                    " (invitación '" + options.InvitationCode + "')");
+                Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
+                Console.WriteLine();
+
+                // El margen cubre la rampa y lo que puede tardar un reintento; las esperas de cada
+                // bot ya tienen su propio tope, así que esto solo evita que la prueba no acabe nunca.
+                double rampSeconds = (options.Bots - 1) * options.RampMs / 1000d;
+                double retrySeconds = options.Retries * ((options.WelcomeTimeoutMs / 1000d) + 5d);
+                using var cancellation = new CancellationTokenSource(
+                    TimeSpan.FromSeconds(options.Seconds + rampSeconds + retrySeconds + 30d));
+
+                Console.CancelKeyPress += (sender, eventArgs) =>
+                {
+                    eventArgs.Cancel = true;
+                    cancellation.Cancel();
                 };
 
-                threads.Add(thread);
-                thread.Start();
-            }
+                int runMs = (int)Math.Round(options.Seconds * 1000d, MidpointRounding.AwayFromZero);
+                var bots = new List<BotClient>(options.Bots);
+                var threads = new List<Thread>(options.Bots);
 
-            for (int i = 0; i < threads.Count; i++)
-            {
-                threads[i].Join();
-            }
+                for (int i = 1; i <= options.Bots; i++)
+                {
+                    var bot = new BotClient(
+                        i,
+                        botHost,
+                        botPort,
+                        mapHash,
+                        options.Seed,
+                        runMs,
+                        options.AccountPrefix,
+                        options.Password,
+                        options.InvitationCode,
+                        startDelayMs: (i - 1) * options.RampMs,
+                        retries: options.Retries,
+                        welcomeTimeoutMs: options.WelcomeTimeoutMs,
+                        behavior: options.Behavior);
+                    bots.Add(bot);
 
-            for (int i = 0; i < bots.Count; i++)
-            {
-                bots[i].Dispose();
-            }
+                    var thread = new Thread(() => RunBot(bot, cancellation.Token))
+                    {
+                        Name = "avelora-bot-" + i,
+                        IsBackground = true,
+                    };
 
-            return WriteSummary(bots, options);
+                    threads.Add(thread);
+                    thread.Start();
+                }
+
+                for (int i = 0; i < threads.Count; i++)
+                {
+                    threads[i].Join();
+                }
+
+                for (int i = 0; i < bots.Count; i++)
+                {
+                    bots[i].Dispose();
+                }
+
+                if (proxy != null)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("  Proxy    : " + proxy.ClientDatagrams + " datagramas de bots, " +
+                        proxy.ServerDatagrams + " del servidor, " + proxy.Dropped + " perdidos a propósito " +
+                        "(" + proxy.ForwardedToServer + " al servidor, " + proxy.ForwardedToClient + " a los bots)");
+                }
+
+                return WriteSummary(bots, options);
+            }
         }
 
         private static int WriteSummary(List<BotClient> bots, Options options)
@@ -132,6 +184,15 @@ namespace Avelora.Bots
             double snapshotsPerSecond = 0d;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
+
+            long sentValid = 0;
+            long sentInvalid = 0;
+            long sentReplay = 0;
+            long sentGarbage = 0;
+            long sentHellos = 0;
+            var responses = new SortedDictionary<string, int>(StringComparer.Ordinal);
+
+            bool abusive = BotClient.IsAbusive(options.Behavior);
 
             for (int i = 0; i < bots.Count; i++)
             {
@@ -162,6 +223,16 @@ namespace Avelora.Bots
                     rejects[reason] = count + 1;
                 }
 
+                if (abusive)
+                {
+                    sentValid += bot.SentValidInputs;
+                    sentInvalid += bot.SentInvalidInputs;
+                    sentReplay += bot.SentReplayInputs;
+                    sentGarbage += bot.SentGarbage;
+                    sentHellos += bot.SentHellos;
+                    bot.AccumulateRejectCounts(responses);
+                }
+
                 Console.WriteLine(
                     "  bot " + bot.Index + ": " + bot.Status.PadRight(14) +
                     " cuenta=" + bot.AccountName +
@@ -173,6 +244,18 @@ namespace Avelora.Bots
                     " pos=(" + Invariant(bot.X) + "; " + Invariant(bot.Y) + ")" +
                     " inputs=" + bot.Sequence +
                     " snapshots=" + bot.Snapshots);
+
+                if (abusive)
+                {
+                    Console.WriteLine(
+                        "      abuso: validos=" + bot.SentValidInputs +
+                        " invalidos=" + bot.SentInvalidInputs +
+                        " replay=" + bot.SentReplayInputs +
+                        " basura=" + bot.SentGarbage +
+                        " hellos=" + bot.SentHellos +
+                        " respuestas=[" + bot.DescribeRejectResponses() + "]" +
+                        " distancia=" + Invariant(bot.TravelledDistance) + " tiles");
+                }
             }
 
             welcomeTimes.Sort();
@@ -192,7 +275,82 @@ namespace Avelora.Bots
             Console.WriteLine("  Snapshots  : " + Invariant(meanPerBot) + "/s por bot de media, " +
                 snapshots + " en total");
             Console.WriteLine("  Peor hueco : " + worstGap + " ms entre snapshots");
+
+            if (abusive)
+            {
+                Console.WriteLine(
+                    "  Enviado    : " + sentValid + " inputs válidos, " + sentInvalid +
+                    " con dirección fuera de rango, " + sentReplay + " secuencias viejas, " +
+                    sentGarbage + " datagramas basura, " + sentHellos + " saludos");
+                Console.WriteLine("  Respuestas : " + DescribeCounts(responses));
+
+                if (options.Behavior == BotBehavior.Speed)
+                {
+                    Console.WriteLine("  Velocidad  : " + DescribeSpeedCheck(bots));
+                }
+            }
+
             return ok == bots.Count ? 0 : 3;
+        }
+
+        /// <summary>Compara la distancia recorrida con el máximo que permite la velocidad del servidor.</summary>
+        private static string DescribeSpeedCheck(List<BotClient> bots)
+        {
+            const float Margin = 1f;
+            int exceeded = 0;
+            int measured = 0;
+            float worst = 0f;
+
+            for (int i = 0; i < bots.Count; i++)
+            {
+                BotClient bot = bots[i];
+                if (bot.Speed <= 0f || bot.PlayedMs <= 0)
+                {
+                    continue;
+                }
+
+                measured++;
+                float maximum = (bot.Speed * bot.PlayedMs / 1000f) + Margin;
+
+                if (bot.TravelledDistance > maximum)
+                {
+                    exceeded++;
+
+                    if (bot.TravelledDistance - maximum > worst)
+                    {
+                        worst = bot.TravelledDistance - maximum;
+                    }
+                }
+            }
+
+            return measured == 0
+                ? "sin datos (ningún bot llegó a jugar)"
+                : exceeded == 0
+                    ? "todos dentro del máximo (velocidad × tiempo + 1 tile) en " + measured + " bot(s)"
+                    : exceeded + " de " + measured + " bot(s) por encima del máximo (peor exceso " +
+                      Invariant(worst) + " tiles)";
+        }
+
+        private static string DescribeCounts(SortedDictionary<string, int> counts)
+        {
+            if (counts.Count == 0)
+            {
+                return "ninguna";
+            }
+
+            var text = new System.Text.StringBuilder();
+
+            foreach (KeyValuePair<string, int> pair in counts)
+            {
+                if (text.Length > 0)
+                {
+                    text.Append(", ");
+                }
+
+                text.Append(pair.Key).Append('=').Append(pair.Value);
+            }
+
+            return text.ToString();
         }
 
         private static string DescribeRejects(SortedDictionary<string, int> rejects)
@@ -217,7 +375,16 @@ namespace Avelora.Bots
         }
 
         private static string BehaviorName(BotBehavior behavior) =>
-            behavior == BotBehavior.Crowd ? "todos en el mismo punto" : "direcciones al azar";
+            behavior switch
+            {
+                BotBehavior.Crowd => "todos en el mismo punto",
+                BotBehavior.Flood => "flood (200 inputs/s)",
+                BotBehavior.Garbage => "garbage (basura a 5/s)",
+                BotBehavior.Speed => "speed (direcciones fuera de rango)",
+                BotBehavior.Replay => "replay (secuencias viejas)",
+                BotBehavior.BadLogin => "badlogin (contraseña incorrecta)",
+                _ => "direcciones al azar",
+            };
 
         private static void RunBot(BotClient bot, CancellationToken cancellationToken)
         {
@@ -257,6 +424,9 @@ namespace Avelora.Bots
 
         private static string Invariant(double value) =>
             value.ToString("0.000", CultureInfo.InvariantCulture);
+
+        private static string Fraction(double value) =>
+            value.ToString("0.###", CultureInfo.InvariantCulture);
 
         private static string ShortHash(string hash) =>
             hash.Length <= 16 ? hash : hash.Substring(0, 16) + "…";
@@ -350,10 +520,42 @@ namespace Avelora.Bots
                         options.WelcomeTimeoutMs = welcomeTimeoutMs;
                         break;
 
+                    case "--latency-ms":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int latencyMs) || latencyMs < 0)
+                        {
+                            error = "Retardo inválido: " + value + " (>= 0)";
+                            return false;
+                        }
+
+                        options.LatencyMs = latencyMs;
+                        break;
+
+                    case "--jitter-ms":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int jitterMs) || jitterMs < 0)
+                        {
+                            error = "Jitter inválido: " + value + " (>= 0)";
+                            return false;
+                        }
+
+                        options.JitterMs = jitterMs;
+                        break;
+
+                    case "--loss":
+                        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double loss) ||
+                            loss < 0d || loss >= 1d)
+                        {
+                            error = "Pérdida inválida: " + value + " (0 <= P < 1)";
+                            return false;
+                        }
+
+                        options.Loss = loss;
+                        break;
+
                     case "--behavior":
                         if (!TryParseBehavior(value, out BotBehavior behavior))
                         {
-                            error = "Comportamiento desconocido: " + value + " (random|crowd)";
+                            error = "Comportamiento desconocido: " + value +
+                                " (random|crowd|flood|garbage|speed|replay|badlogin)";
                             return false;
                         }
 
@@ -421,6 +623,36 @@ namespace Avelora.Bots
                 return true;
             }
 
+            if (string.Equals(value, "flood", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Flood;
+                return true;
+            }
+
+            if (string.Equals(value, "garbage", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Garbage;
+                return true;
+            }
+
+            if (string.Equals(value, "speed", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Speed;
+                return true;
+            }
+
+            if (string.Equals(value, "replay", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Replay;
+                return true;
+            }
+
+            if (string.Equals(value, "badlogin", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.BadLogin;
+                return true;
+            }
+
             behavior = BotBehavior.Random;
             return false;
         }
@@ -452,6 +684,12 @@ namespace Avelora.Bots
             public string Password { get; set; } = "avelora-dev";
 
             public string InvitationCode { get; set; } = "avelora-dev";
+
+            public int LatencyMs { get; set; }
+
+            public int JitterMs { get; set; }
+
+            public double Loss { get; set; }
         }
     }
 }

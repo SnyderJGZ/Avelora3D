@@ -1,5 +1,7 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Shared;
@@ -7,7 +9,7 @@ using Avelora.Shared.Protocol;
 
 namespace Avelora.Bots
 {
-    /// <summary>Cómo se mueve un bot durante la prueba de carga.</summary>
+    /// <summary>Cómo se mueve (o cómo abusa) un bot durante la prueba de carga.</summary>
     public enum BotBehavior
     {
         /// <summary>Cambia de dirección al azar, como un jugador que pasea.</summary>
@@ -15,6 +17,21 @@ namespace Avelora.Bots
 
         /// <summary>Manda siempre <c>(0, 0)</c>: todos se quedan donde aparecen (peor caso del área de interés).</summary>
         Crowd = 1,
+
+        /// <summary>Inunda con <c>MoveInput</c> válidos a 200/s (10 por intervalo de 50 ms).</summary>
+        Flood = 2,
+
+        /// <summary>Mezcla inputs normales con datagramas basura cinco veces por segundo.</summary>
+        Garbage = 3,
+
+        /// <summary>Manda direcciones fuera de rango además de sus inputs normales.</summary>
+        Speed = 4,
+
+        /// <summary>Repite secuencias viejas además de sus inputs normales.</summary>
+        Replay = 5,
+
+        /// <summary>Saluda con la contraseña incorrecta, una y otra vez, sin rampa de reintento.</summary>
+        BadLogin = 6,
     }
 
     /// <summary>
@@ -27,10 +44,13 @@ namespace Avelora.Bots
     /// cliente de Unity. Si el bot se mueve, la costura cliente-servidor está bien.
     /// </para>
     /// <para>
-    /// Para la prueba de carga (G-01): el bot puede arrancar con retraso, reintentar cuando el
-    /// servidor le contesta <c>RateLimited</c> (con un transporte nuevo), quedarse quieto
+    /// Para la prueba de carga: el bot puede arrancar con retraso, reintentar cuando el servidor le
+    /// contesta <c>RateLimited</c> (con un transporte nuevo), quedarse quieto
     /// (<see cref="BotBehavior.Crowd"/>) y medir su tiempo hasta el <c>Welcome</c> y el hueco máximo
-    /// entre snapshots.
+    /// entre snapshots. Desde G-02 también puede abusar (<see cref="BotBehavior.Flood"/>,
+    /// <see cref="BotBehavior.Garbage"/>, <see cref="BotBehavior.Speed"/>,
+    /// <see cref="BotBehavior.Replay"/> y <see cref="BotBehavior.BadLogin"/>) y contar lo que envía
+    /// de cada tipo para cruzarlo con los contadores del servidor.
     /// </para>
     /// </remarks>
     public sealed class BotClient : IDisposable
@@ -38,8 +58,36 @@ namespace Avelora.Bots
         /// <summary>Un input cada 50 ms, igual que el tick del servidor.</summary>
         private const int InputIntervalMs = 50;
 
+        /// <summary>En <c>flood</c>, inputs válidos por intervalo (10 × 20 = 200/s).</summary>
+        private const int FloodInputsPerInterval = 10;
+
+        /// <summary>En <c>garbage</c>, un datagrama basura cada 200 ms (5/s).</summary>
+        private const int GarbageIntervalMs = 200;
+
+        /// <summary>En <c>speed</c>, una dirección fuera de rango por intervalo de 50 ms.</summary>
+        private const int InvalidDirectionIntervalMs = 50;
+
+        /// <summary>En <c>replay</c>, una ráfaga de secuencias viejas cada 200 ms.</summary>
+        private const int ReplayIntervalMs = 200;
+
+        /// <summary>Intentos de login fallido de un <c>badlogin</c> antes de darse por vencido.</summary>
+        private const int MaxBadLoginAttempts = 10;
+
+        /// <summary>Pausa entre intentos fallidos: no es la rampa de G-01, solo evita llenar la cola de logins.</summary>
+        private const int BadLoginPauseMs = 250;
+
         /// <summary>Cuánto se espera entre reintentos, multiplicado por el número de intento.</summary>
         private const int RetryDelayMs = 1000;
+
+        /// <summary>Direcciones fuera de rango que usa el modo <c>speed</c>.</summary>
+        private static readonly sbyte[,] InvalidDirections =
+        {
+            { 5, 0 },
+            { 0, -128 },
+            { 127, 1 },
+            { -2, 0 },
+            { 0, 3 },
+        };
 
         private readonly Func<IClientTransport> _transportFactory;
         private readonly string _host;
@@ -73,10 +121,28 @@ namespace Avelora.Bots
         private sbyte _directionY;
         private long _nextInputAt;
         private long _nextDirectionChangeAt;
+        private long _nextGarbageAt;
+        private long _nextInvalidDirectionAt;
+        private long _nextReplayAt;
+        private int _garbageKind;
+        private int _invalidDirectionKind;
 
         private long _snapshots;
         private float _x;
         private float _y;
+        private float _speed;
+        private uint _lastSnapshotTick;
+        private bool _hasPosition;
+        private float _travelled;
+
+        // Lo que mandó el bot, por tipo. Es la otra mitad de la tabla del informe.
+        private long _sentValidInputs;
+        private long _sentInvalidInputs;
+        private long _sentReplayInputs;
+        private long _sentGarbage;
+        private long _sentHellos;
+        private readonly SortedDictionary<RejectReason, int> _rejectCounts =
+            new SortedDictionary<RejectReason, int>();
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -146,6 +212,8 @@ namespace Avelora.Bots
         /// <summary>Motivo del rechazo final, o <c>null</c> si el bot llegó a entrar o no fue rechazado.</summary>
         public string? RejectReasonText { get; private set; }
 
+        public BotBehavior Behavior => _behavior;
+
         public long Snapshots => Interlocked.Read(ref _snapshots);
 
         /// <summary>Milisegundos desde el primer intento hasta el <c>Welcome</c>; <c>-1</c> si no llegó.</summary>
@@ -167,12 +235,80 @@ namespace Avelora.Bots
 
         public uint Sequence => _sequence;
 
+        /// <summary>Velocidad que impuso el servidor en el <c>Welcome</c>.</summary>
+        public float Speed => _speed;
+
+        /// <summary>Milisegundos que estuvo jugando (desde el <c>Welcome</c> hasta el final).</summary>
+        public long PlayedMs => _playedMs;
+
+        /// <summary>Distancia recorrida según sus propios snapshots, en tiles.</summary>
+        public float TravelledDistance => _travelled;
+
+        /// <summary>Inputs válidos enviados (cada uno es un paso en el servidor).</summary>
+        public long SentValidInputs => Interlocked.Read(ref _sentValidInputs);
+
+        /// <summary>Inputs con dirección fuera de rango enviados (modo <c>speed</c>).</summary>
+        public long SentInvalidInputs => Interlocked.Read(ref _sentInvalidInputs);
+
+        /// <summary>Secuencias viejas o repetidas enviadas (modo <c>replay</c>).</summary>
+        public long SentReplayInputs => Interlocked.Read(ref _sentReplayInputs);
+
+        /// <summary>Datagramas basura enviados (modo <c>garbage</c>).</summary>
+        public long SentGarbage => Interlocked.Read(ref _sentGarbage);
+
+        /// <summary>Saludos enviados (modo <c>badlogin</c> y reintentos).</summary>
+        public long SentHellos => Interlocked.Read(ref _sentHellos);
+
+        /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
+        public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
+
+        /// <summary>Suma los <c>Reject</c> recibidos a un acumulador, para el resumen de la ejecución.</summary>
+        public void AccumulateRejectCounts(SortedDictionary<string, int> totals)
+        {
+            foreach (KeyValuePair<RejectReason, int> pair in _rejectCounts)
+            {
+                string reason = pair.Key.ToString();
+                totals.TryGetValue(reason, out int previous);
+                totals[reason] = previous + pair.Value;
+            }
+        }
+
+        /// <summary>Resumen de los <c>Reject</c> recibidos, por motivo: <c>InvalidCredentials=5, RateLimited=1</c>.</summary>
+        public string DescribeRejectResponses()
+        {
+            if (_rejectCounts.Count == 0)
+            {
+                return "ninguna";
+            }
+
+            var text = new StringBuilder();
+
+            foreach (KeyValuePair<RejectReason, int> pair in _rejectCounts)
+            {
+                if (text.Length > 0)
+                {
+                    text.Append(", ");
+                }
+
+                text.Append(pair.Key).Append('=').Append(pair.Value);
+            }
+
+            return text.ToString();
+        }
+
         /// <summary>Conecta y juega durante el tiempo pedido. Bloquea el hilo que lo llama.</summary>
         public void Run(CancellationToken cancellationToken)
         {
             if (!Sleep(_startDelayMs, cancellationToken))
             {
                 Status = "cancelado antes de empezar";
+                return;
+            }
+
+            if (_behavior == BotBehavior.BadLogin)
+            {
+                RunBadLogin(cancellationToken);
+                _transport?.Disconnect();
                 return;
             }
 
@@ -235,14 +371,15 @@ namespace Avelora.Bots
         {
             DiscardTransport();
 
-            _connected = false;
-            _helloSent = false;
-            _welcomed = false;
-            _disconnected = false;
-            _reject = null;
+            ResetAttemptState();
             _attemptStartedAt = Environment.TickCount64;
             _nextInputAt = _attemptStartedAt;
             _nextDirectionChangeAt = _attemptStartedAt;
+            _nextGarbageAt = _attemptStartedAt;
+            _nextInvalidDirectionAt = _attemptStartedAt;
+            _nextReplayAt = _attemptStartedAt;
+            _lastSnapshotTick = 0;
+            _hasPosition = false;
             PickDirection();
 
             if (_firstAttemptAt < 0)
@@ -285,7 +422,7 @@ namespace Avelora.Bots
 
                 if (_connected && !_helloSent)
                 {
-                    SendHello();
+                    SendHello(_password);
                 }
 
                 if (_reject.HasValue)
@@ -323,7 +460,7 @@ namespace Avelora.Bots
                             PickDirection();
                         }
 
-                        SendMoveInput();
+                        SendMoveInputs();
 
                         _nextInputAt += InputIntervalMs;
                         if (_nextInputAt < now)
@@ -331,6 +468,26 @@ namespace Avelora.Bots
                             // Si el hilo se durmió de más, no acumular una ráfaga de inputs viejos.
                             _nextInputAt = now + InputIntervalMs;
                         }
+                    }
+
+                    // Los abusos van en su propio temporizador: el bot sigue moviéndose normal
+                    // salvo en flood, donde los inputs válidos ya van a 200/s.
+                    if (_behavior == BotBehavior.Garbage && now >= _nextGarbageAt)
+                    {
+                        SendGarbage();
+                        _nextGarbageAt += GarbageIntervalMs;
+                    }
+
+                    if (_behavior == BotBehavior.Speed && now >= _nextInvalidDirectionAt)
+                    {
+                        SendInvalidDirection();
+                        _nextInvalidDirectionAt += InvalidDirectionIntervalMs;
+                    }
+
+                    if (_behavior == BotBehavior.Replay && now >= _nextReplayAt)
+                    {
+                        SendReplayedSequences();
+                        _nextReplayAt += ReplayIntervalMs;
                     }
                 }
                 else if (now - _attemptStartedAt >= _welcomeTimeoutMs)
@@ -346,6 +503,175 @@ namespace Avelora.Bots
 
                 Thread.Sleep(2);
             }
+        }
+
+        /// <summary>
+        /// Modo <c>badlogin</c>: prepara la cuenta y luego falla la contraseña una y otra vez, sin
+        /// la rampa de G-01, hasta ver el <c>RateLimited</c> del servidor.
+        /// </summary>
+        /// <remarks>
+        /// En una base nueva, una cuenta que no existe se <b>registra</b> con un saludo correcto: no
+        /// habría <c>InvalidCredentials</c> sino <c>RegistrationClosed</c> o un alta. Por eso el
+        /// primer saludo es correcto (solo para crear la cuenta) y los demás llevan la contraseña
+        /// mal a propósito. Esa preparación se cuenta aparte y se ve en el resumen.
+        /// </remarks>
+        private void RunBadLogin(CancellationToken cancellationToken)
+        {
+            if (_firstAttemptAt < 0)
+            {
+                _firstAttemptAt = Environment.TickCount64;
+            }
+
+            bool prepared = false;
+
+            for (int attempt = 1; attempt <= _maxRetries + 2 && !cancellationToken.IsCancellationRequested; attempt++)
+            {
+                LoginOutcome outcome = AttemptLogin(cancellationToken, _password, _welcomeTimeoutMs);
+
+                if (outcome.Kind == LoginOutcomeKind.Welcomed)
+                {
+                    prepared = true;
+                    break;
+                }
+
+                if (outcome.Kind == LoginOutcomeKind.Rejected && outcome.Reason == RejectReason.RateLimited)
+                {
+                    // Puede ser el tope global de logins en vuelo: se espera y se reintenta.
+                    if (!Sleep(RetryDelayMs, cancellationToken))
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                break;
+            }
+
+            if (!prepared)
+            {
+                Status = "no se pudo preparar la cuenta";
+                return;
+            }
+
+            // La preparación entra al mundo un instante y se va; el bot no es un jugador
+            // conectado al final, así que el resumen no debe contarlo como tal.
+            EntityId = -1;
+
+            string wrongPassword = _password + "-incorrecta";
+            RejectReason lastReject = RejectReason.Unknown;
+
+            for (int attempt = 1; attempt <= MaxBadLoginAttempts && !cancellationToken.IsCancellationRequested; attempt++)
+            {
+                LoginOutcome outcome = AttemptLogin(cancellationToken, wrongPassword, 5000);
+
+                if (outcome.Kind == LoginOutcomeKind.Welcomed)
+                {
+                    Status = "entró con contraseña incorrecta (el servidor falló)";
+                    return;
+                }
+
+                if (outcome.Kind == LoginOutcomeKind.Rejected)
+                {
+                    lastReject = outcome.Reason;
+
+                    if (outcome.Reason == RejectReason.RateLimited)
+                    {
+                        Status = "rechazado (RateLimited)";
+                        RejectReasonText = RejectReason.RateLimited.ToString();
+                        return;
+                    }
+                }
+
+                if (!Sleep(BadLoginPauseMs, cancellationToken))
+                {
+                    Status = "cancelado";
+                    return;
+                }
+            }
+
+            Status = "rechazado (" + lastReject + ")";
+            RejectReasonText = lastReject.ToString();
+        }
+
+        /// <summary>Un intento de login suelto: conectar, saludar y esperar <c>Welcome</c> o <c>Reject</c>.</summary>
+        private LoginOutcome AttemptLogin(CancellationToken cancellationToken, string password, int timeoutMs)
+        {
+            DiscardTransport();
+            ResetAttemptState();
+
+            IClientTransport transport;
+
+            try
+            {
+                transport = _transportFactory();
+            }
+            catch (Exception ex)
+            {
+                Status = "no se pudo crear el transporte: " + ex.Message;
+                return LoginOutcome.Failed();
+            }
+
+            _transport = transport;
+            transport.Connected += OnConnected;
+            transport.Disconnected += OnDisconnected;
+            transport.Received += OnReceived;
+
+            try
+            {
+                transport.Connect(_host, _port);
+            }
+            catch (Exception ex)
+            {
+                Status = "no se pudo conectar: " + ex.Message;
+                return LoginOutcome.Failed();
+            }
+
+            long deadline = Environment.TickCount64 + timeoutMs;
+
+            while (Environment.TickCount64 < deadline && !cancellationToken.IsCancellationRequested)
+            {
+                transport.Poll();
+
+                if (_connected && !_helloSent)
+                {
+                    SendHello(password);
+                }
+
+                if (_reject.HasValue)
+                {
+                    RejectReason reason = _reject.Value;
+                    DiscardTransport();
+                    return LoginOutcome.Rejected(reason);
+                }
+
+                if (_welcomed)
+                {
+                    DiscardTransport();
+                    return LoginOutcome.Welcomed();
+                }
+
+                if (_disconnected)
+                {
+                    DiscardTransport();
+                    return LoginOutcome.Failed();
+                }
+
+                Thread.Sleep(2);
+            }
+
+            DiscardTransport();
+            Status = "sin respuesta del servidor";
+            return LoginOutcome.Failed();
+        }
+
+        private void ResetAttemptState()
+        {
+            _connected = false;
+            _helloSent = false;
+            _welcomed = false;
+            _disconnected = false;
+            _reject = null;
         }
 
         private void DiscardTransport()
@@ -383,29 +709,135 @@ namespace Avelora.Bots
             _disconnected = true;
         }
 
-        private void SendHello()
+        private void SendHello(string password)
         {
             _helloSent = true;
+            Interlocked.Increment(ref _sentHellos);
+
             byte[] hello = MessageCodec.EncodeHello(new HelloMessage(
                 ProtocolConstants.Version,
                 (ushort)SimulationConstants.TickRate,
                 _mapHash,
                 _clientToken,
                 _accountName,
-                _password,
+                password,
                 _accountName,
                 _invitationCode));
 
             _transport!.Send(hello, hello.Length, DeliveryMode.ReliableOrdered);
         }
 
-        private void SendMoveInput()
+        /// <summary>Manda los inputs válidos del intervalo: uno normal, diez si es <c>flood</c>.</summary>
+        private void SendMoveInputs()
         {
-            _sequence++;
-            byte[] input = MessageCodec.EncodeMoveInput(new MoveInputMessage(_sequence, _directionX, _directionY));
+            int count = _behavior == BotBehavior.Flood ? FloodInputsPerInterval : 1;
 
-            // Secuenciado: si un input se pierde, el siguiente lo reemplaza; no se reintenta.
+            for (int i = 0; i < count; i++)
+            {
+                _sequence++;
+                byte[] input = MessageCodec.EncodeMoveInput(
+                    new MoveInputMessage(_sequence, _directionX, _directionY));
+
+                // Secuenciado: si un input se pierde, el siguiente lo reemplaza; no se reintenta.
+                _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
+                Interlocked.Increment(ref _sentValidInputs);
+            }
+        }
+
+        /// <summary>
+        /// Manda una intención con la dirección fuera de rango. El códec del bot no la valida (solo
+        /// escribe el byte): la rechaza el servidor al deserializar.
+        /// </summary>
+        private void SendInvalidDirection()
+        {
+            int index = _invalidDirectionKind % (InvalidDirections.GetLength(0));
+            _invalidDirectionKind++;
+
+            sbyte directionX = InvalidDirections[index, 0];
+            sbyte directionY = InvalidDirections[index, 1];
+
+            _sequence++;
+            byte[] input = MessageCodec.EncodeMoveInput(
+                new MoveInputMessage(_sequence, directionX, directionY));
+
             _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
+            Interlocked.Increment(ref _sentInvalidInputs);
+        }
+
+        /// <summary>Repite secuencias ya usadas: duplicadas y muy viejas, sin mover la posición.</summary>
+        private void SendReplayedSequences()
+        {
+            if (_sequence <= 0)
+            {
+                return;
+            }
+
+            // Tres saltos hacia atrás: una repetida, una vieja y la primera de todas.
+            SendRawMoveInput(_sequence, _directionX, _directionY);
+            SendRawMoveInput(_sequence > 30 ? _sequence - 30 : 1, _directionX, _directionY);
+            SendRawMoveInput(1, _directionX, _directionY);
+        }
+
+        private void SendRawMoveInput(uint sequence, sbyte directionX, sbyte directionY)
+        {
+            byte[] input = MessageCodec.EncodeMoveInput(
+                new MoveInputMessage(sequence, directionX, directionY));
+
+            _transport!.Send(input, input.Length, DeliveryMode.Sequenced);
+            Interlocked.Increment(ref _sentReplayInputs);
+        }
+
+        /// <summary>
+        /// Manda un datagrama que el servidor no puede interpretar. Se rota entre tipo desconocido,
+        /// truncado, longitud de más y bytes al azar; siempre por <see cref="IClientTransport.Send"/>
+        /// con bytes crudos, sin tocar el códec compartido.
+        /// </summary>
+        private void SendGarbage()
+        {
+            byte[] garbage;
+            int kind = _garbageKind % 4;
+            _garbageKind++;
+
+            switch (kind)
+            {
+                case 0:
+                    // Tipo que no existe en el protocolo.
+                    garbage = new byte[] { 0x7F, 0x01, 0x02, 0x03 };
+                    break;
+
+                case 1:
+                    // MoveInput truncado: 3 de sus 7 bytes.
+                    garbage = new byte[]
+                    {
+                        (byte)MessageType.MoveInput,
+                        (byte)(_sequence & 0xFF),
+                        (byte)((_sequence >> 8) & 0xFF),
+                    };
+                    break;
+
+                case 2:
+                {
+                    // Longitud de más: un MoveInput válido con dos bytes de propina.
+                    byte[] valid = MessageCodec.EncodeMoveInput(
+                        new MoveInputMessage(_sequence, 1, 0));
+
+                    garbage = new byte[valid.Length + 2];
+                    Buffer.BlockCopy(valid, 0, garbage, 0, valid.Length);
+                    garbage[valid.Length] = 0xAA;
+                    garbage[valid.Length + 1] = 0xBB;
+                    break;
+                }
+
+                default:
+                    // Bytes al azar. Como no hay saludo de por medio, el servidor los rechaza al
+                    // intentar leerlos como MoveInput.
+                    garbage = new byte[16 + _random.Next(32)];
+                    _random.NextBytes(garbage);
+                    break;
+            }
+
+            _transport!.Send(garbage, garbage.Length, DeliveryMode.Sequenced);
+            Interlocked.Increment(ref _sentGarbage);
         }
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
@@ -421,6 +853,8 @@ namespace Avelora.Bots
                 EntityId = welcome.EntityId;
                 _x = welcome.SpawnX;
                 _y = welcome.SpawnY;
+                _speed = welcome.Speed;
+                _hasPosition = true;
                 Status = "conectado";
                 return;
             }
@@ -428,6 +862,9 @@ namespace Avelora.Bots
             if (MessageCodec.TryReadReject(buffer, offset, length, out RejectMessage reject))
             {
                 _reject = reject.Reason;
+
+                _rejectCounts.TryGetValue(reject.Reason, out int count);
+                _rejectCounts[reject.Reason] = count + 1;
                 return;
             }
 
@@ -447,12 +884,32 @@ namespace Avelora.Bots
                     _lastSnapshotAt = now;
                 }
 
+                // Con jitter los snapshots pueden llegar reordenados: un estado viejo no debe
+                // pisar la posición ni contar como un viaje de ida y vuelta del personaje.
+                if (_lastSnapshotTick != 0 && !SequenceMath.IsNewer(snapshot.ServerTick, _lastSnapshotTick))
+                {
+                    return;
+                }
+
+                _lastSnapshotTick = snapshot.ServerTick;
+
                 for (int i = 0; i < snapshot.Entities.Length; i++)
                 {
                     if (snapshot.Entities[i].Id == EntityId)
                     {
-                        _x = ProtocolConstants.DequantizePosition(snapshot.Entities[i].X);
-                        _y = ProtocolConstants.DequantizePosition(snapshot.Entities[i].Y);
+                        float x = ProtocolConstants.DequantizePosition(snapshot.Entities[i].X);
+                        float y = ProtocolConstants.DequantizePosition(snapshot.Entities[i].Y);
+
+                        if (_hasPosition)
+                        {
+                            float dx = x - _x;
+                            float dy = y - _y;
+                            _travelled += MathF.Sqrt((dx * dx) + (dy * dy));
+                        }
+
+                        _x = x;
+                        _y = y;
+                        _hasPosition = true;
                         break;
                     }
                 }
@@ -504,6 +961,32 @@ namespace Avelora.Bots
             RejectedFinally,
             Failed,
             Cancelled,
+        }
+
+        private enum LoginOutcomeKind
+        {
+            Welcomed,
+            Rejected,
+            Failed,
+        }
+
+        private readonly struct LoginOutcome
+        {
+            private LoginOutcome(LoginOutcomeKind kind, RejectReason reason)
+            {
+                Kind = kind;
+                Reason = reason;
+            }
+
+            public LoginOutcomeKind Kind { get; }
+
+            public RejectReason Reason { get; }
+
+            public static LoginOutcome Welcomed() => new LoginOutcome(LoginOutcomeKind.Welcomed, RejectReason.Unknown);
+
+            public static LoginOutcome Rejected(RejectReason reason) => new LoginOutcome(LoginOutcomeKind.Rejected, reason);
+
+            public static LoginOutcome Failed() => new LoginOutcome(LoginOutcomeKind.Failed, RejectReason.Unknown);
         }
     }
 }

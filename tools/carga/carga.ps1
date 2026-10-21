@@ -2,10 +2,12 @@
 #
 # Uso:
 #   .\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior random -NuevaBase
-#   .\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior crowd -NuevaBase
+#   .\tools\carga\carga.ps1 -Bots 20 -Seconds 60 -LatencyMs 80 -JitterMs 20 -Loss 0.02 -NuevaBase
+#   .\tools\carga\carga.ps1 -Bots 20 -Seconds 60 -Abusivos 5 -Abuso flood -NuevaBase
 #
 # Compila en Release una vez, arranca el servidor con tools\carga\server-carga.json, espera 2 s,
-# lanza los bots y deja servidor.log y bots.log en tools\carga\resultados\<fecha-hora>-<behavior>-<bots>\.
+# lanza los bots (y, si se pide, un segundo proceso de bots abusivos en paralelo) y deja
+# servidor.log, bots.log y abusivos.log en tools\carga\resultados\<fecha-hora>-...\.
 
 [CmdletBinding()]
 param(
@@ -14,10 +16,28 @@ param(
     [ValidateSet('random', 'crowd')]
     [string]$Behavior = 'random',
     [int]$RampMs = 200,
+    [int]$LatencyMs = 0,
+    [int]$JitterMs = 0,
+    [double]$Loss = 0,
+    [int]$Abusivos = 0,
+    [ValidateSet('flood', 'garbage', 'speed', 'replay', 'badlogin')]
+    [string]$Abuso = 'flood',
     [switch]$NuevaBase
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($LatencyMs -lt 0 -or $JitterMs -lt 0) {
+    throw "El retardo y el jitter no pueden ser negativos."
+}
+
+if ($Loss -lt 0 -or $Loss -ge 1) {
+    throw "La pérdida debe cumplir 0 <= P < 1."
+}
+
+if ($Abusivos -lt 0) {
+    throw "El número de bots abusivos no puede ser negativo."
+}
 
 $cargaDir = $PSScriptRoot
 $root = Split-Path -Parent (Split-Path -Parent $cargaDir)
@@ -40,7 +60,8 @@ if (-not (Test-Path $dotnet)) {
 }
 
 # El tiempo del servidor cubre la rampa completa y deja margen para que los bots terminen.
-$rampTotal = [math]::Ceiling((($Bots - 1) * $RampMs) / 1000.0)
+$maxBots = [math]::Max($Bots, $Abusivos)
+$rampTotal = [math]::Ceiling((($maxBots - 1) * $RampMs) / 1000.0)
 $serverSeconds = $Seconds + $rampTotal + 30
 
 Write-Host "Compilando en Release…"
@@ -60,15 +81,41 @@ if ($NuevaBase) {
     Write-Host "Base de la prueba borrada: $database"
 }
 
+# La «mala red» se pasa tal cual a los bots; el proxy UDP se arranca dentro del proceso de bots.
+$invariant = [System.Globalization.CultureInfo]::InvariantCulture
+$lossText = $Loss.ToString($invariant)
+$networkArguments = ''
+$networkSuffix = ''
+if ($LatencyMs -gt 0 -or $JitterMs -gt 0 -or $Loss -gt 0) {
+    $networkArguments = ' --latency-ms ' + $LatencyMs + ' --jitter-ms ' + $JitterMs + ' --loss ' + $lossText
+    $networkSuffix = '-red' + $LatencyMs + '+' + $JitterMs + '-loss' + $lossText
+}
+
+$abuseSuffix = ''
+if ($Abusivos -gt 0) {
+    $abuseSuffix = '-abuso' + $Abuso + $Abusivos
+}
+
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$runDir = Join-Path $resultados "$stamp-$Behavior-$Bots"
+$runDir = Join-Path $resultados "$stamp-$Behavior-$Bots$networkSuffix$abuseSuffix"
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
 $serverOut = Join-Path $runDir 'servidor.log'
 $botsOut = Join-Path $runDir 'bots.log'
+$abuseOut = Join-Path $runDir 'abusivos.log'
 
 # Se arranca a través de cmd con la página de códigos UTF-8 para no perder los acentos al
-# redirigir la salida a un archivo.
+# redirigir la salida a un archivo. ProcessStartInfo (y no Start-Process) para poder leer el
+# código de salida de dos procesos que corren en paralelo.
+function Start-LoggedCommand([string]$commandLine) {
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = 'cmd.exe'
+    $startInfo.Arguments = '/c ' + $commandLine
+    $startInfo.WorkingDirectory = $root
+    $startInfo.UseShellExecute = $false
+    return [System.Diagnostics.Process]::Start($startInfo)
+}
+
 $serverCommand = 'chcp 65001 >nul & "' + $serverExe + '" "' + $config + '" --seconds ' + $serverSeconds +
     ' > "' + $serverOut + '" 2>&1'
 
@@ -84,19 +131,33 @@ if ($server.HasExited) {
     throw "El servidor terminó antes de lanzar los bots. Revisa $serverOut."
 }
 
-$botsCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Bots + ' --seconds ' + $Seconds +
-    ' --ramp-ms ' + $RampMs + ' --behavior ' + $Behavior + ' > "' + $botsOut + '" 2>&1'
+$commonArguments = ' --seconds ' + $Seconds + ' --ramp-ms ' + $RampMs + $networkArguments
+
+$botsCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Bots + $commonArguments +
+    ' --behavior ' + $Behavior + ' > "' + $botsOut + '" 2>&1'
 
 Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior"
-$botsProcess = Start-Process -FilePath 'cmd.exe' `
-    -ArgumentList @('/c', $botsCommand) `
-    -WorkingDirectory $root `
-    -NoNewWindow -Wait -PassThru
+$botsProcess = Start-LoggedCommand $botsCommand
 
+$abuseProcess = $null
+if ($Abusivos -gt 0) {
+    $abuseCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Abusivos + $commonArguments +
+        ' --behavior ' + $Abuso + ' --account-prefix abuso > "' + $abuseOut + '" 2>&1'
+
+    Write-Host "Abusivos: $Abusivos bots '$Abuso' en paralelo (cuentas abuso*)"
+    $abuseProcess = Start-LoggedCommand $abuseCommand
+}
+
+$botsProcess.WaitForExit()
 $botsCode = $botsProcess.ExitCode
 
 if ($botsCode -ne 0) {
     Write-Warning "Los bots salieron con código $botsCode (revisa $botsOut)."
+}
+
+if ($null -ne $abuseProcess) {
+    $abuseProcess.WaitForExit()
+    Write-Host "Bots abusivos terminados con código $($abuseProcess.ExitCode) (informativo)."
 }
 
 $deadline = (Get-Date).AddSeconds($serverSeconds + 60)
@@ -113,3 +174,6 @@ Write-Host ""
 Write-Host "Resultados en: $runDir"
 Write-Host "  servidor : $serverOut"
 Write-Host "  bots     : $botsOut"
+if ($Abusivos -gt 0) {
+    Write-Host "  abusivos : $abuseOut"
+}
