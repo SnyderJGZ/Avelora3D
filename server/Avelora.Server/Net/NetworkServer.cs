@@ -81,6 +81,7 @@ namespace Avelora.Server.Net
         private volatile bool _stopping;
 
         private long _messagesReceived;
+        private long _bytesReceived;
         private long _messagesRejected;
         private long _handshakesRejected;
         private long _rateLimited;
@@ -268,6 +269,7 @@ namespace Avelora.Server.Net
         public NetworkStats Snapshot() => new NetworkStats(
             _transport.ConnectionCount,
             Interlocked.Read(ref _messagesReceived),
+            Interlocked.Read(ref _bytesReceived),
             Interlocked.Read(ref _messagesRejected),
             Interlocked.Read(ref _handshakesRejected),
             Interlocked.Read(ref _rateLimited),
@@ -320,6 +322,13 @@ namespace Avelora.Server.Net
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
             Interlocked.Increment(ref _messagesReceived);
+
+            // Bytes de carga útil que llegan a la sesión, se acepten o se rechacen después: es lo
+            // que cuesta atender a la red y lo que pide el informe de resistencia (G-05).
+            if (length > 0)
+            {
+                Interlocked.Add(ref _bytesReceived, length);
+            }
 
             if (_pendingDisconnects.ContainsKey(connectionId))
             {
@@ -1149,6 +1158,7 @@ namespace Avelora.Server.Net
         public NetworkStats(
             int connections,
             long messagesReceived,
+            long bytesReceived,
             long messagesRejected,
             long handshakesRejected,
             long rateLimited,
@@ -1169,6 +1179,7 @@ namespace Avelora.Server.Net
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
+            BytesReceived = bytesReceived;
             MessagesRejected = messagesRejected;
             HandshakesRejected = handshakesRejected;
             RateLimited = rateLimited;
@@ -1191,6 +1202,9 @@ namespace Avelora.Server.Net
         public int Connections { get; }
 
         public long MessagesReceived { get; }
+
+        /// <summary>Bytes de carga útil recibidos (lo que llega a <c>OnReceived</c>).</summary>
+        public long BytesReceived { get; }
 
         public long MessagesRejected { get; }
 

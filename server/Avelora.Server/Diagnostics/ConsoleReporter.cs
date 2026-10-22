@@ -102,7 +102,8 @@ namespace Avelora.Server.Diagnostics
                 " cola=" + network.DroppedOutbound +
                 " snaps=" + network.SnapshotsSent +
                 " ents=" + network.EntitiesSent +
-                " bytes=" + network.SnapshotBytes +
+                " enviados=" + network.SnapshotBytes +
+                " recibidos=" + network.BytesReceived +
                 "  inputs ok=" + zone.Inputs.Received +
                 " redundantes=" + zone.RedundantDuplicates +
                 " fuera_de_orden=" + zone.RejectedOutOfOrder +
@@ -200,7 +201,8 @@ namespace Avelora.Server.Diagnostics
                 network.HandshakesRejected + " saludos rechazados, " + network.RateLimited + " limitados (" +
                 network.RateLimitedDisconnects + " cortes por abuso), " +
                 network.SnapshotsSent + " snapshots, " + network.EntitiesSent + " entidades, " +
-                network.SnapshotBytes + " bytes, " + network.DroppedOutbound + " descartados en cola");
+                network.SnapshotBytes + " bytes enviados, " + network.BytesReceived +
+                " bytes recibidos, " + network.DroppedOutbound + " descartados en cola");
             Console.WriteLine(
                 "  Inputs          : " + zone.Inputs.Received + " ok, " +
                 zone.RedundantDuplicates + " redundantes, " + zone.RejectedOutOfOrder +

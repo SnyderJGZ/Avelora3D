@@ -446,6 +446,38 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Los_Bytes_Recibidos_Cuentan_La_Carga_Util()
+        {
+            using var harness = new Harness();
+
+            harness.Connect(1);
+
+            var hello = new HelloMessage(
+                ProtocolConstants.Version,
+                (ushort)SimulationConstants.TickRate,
+                harness.MapHash,
+                4242u + 1u);
+
+            byte[] helloBytes = MessageCodec.EncodeHello(hello);
+            harness.Transport.RaiseReceived(1, helloBytes);
+            harness.Pump();
+
+            Assert.Equal(helloBytes.Length, harness.Server.Snapshot().BytesReceived);
+
+            // Un input válido suma su datagrama…
+            byte[] input = MessageCodec.EncodeMoveInput(new MoveInputMessage(1u, 1, 0));
+            harness.Transport.RaiseReceived(1, input);
+            Assert.Equal(helloBytes.Length + input.Length, harness.Server.Snapshot().BytesReceived);
+
+            // …y uno rechazado también: el coste de recibirlo ya lo pagó la red.
+            byte[] garbage = { 0x7F, 0x01, 0x02 };
+            harness.Transport.RaiseReceived(1, garbage);
+            Assert.Equal(
+                helloBytes.Length + input.Length + garbage.Length,
+                harness.Server.Snapshot().BytesReceived);
+        }
+
+        [Fact]
         public void El_Limite_De_Mensajes_Por_Segundo_Descarta_El_Exceso()
         {
             using var harness = new Harness(config => config.MaxMessagesPerSecondPerConnection = 20);

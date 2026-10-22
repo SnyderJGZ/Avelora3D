@@ -36,7 +36,12 @@ namespace Avelora.Server
     {
         private static int Main(string[] args)
         {
-            if (!TryParseArguments(args, out string? configArgument, out double? secondsOverride, out string? parseError))
+            if (!TryParseArguments(
+                args,
+                out string? configArgument,
+                out double? secondsOverride,
+                out bool checkDatabase,
+                out string? parseError))
             {
                 ConsoleReporter.WriteError(parseError!);
                 return 1;
@@ -59,6 +64,12 @@ namespace Avelora.Server
             if (secondsOverride.HasValue)
             {
                 config.RunSeconds = secondsOverride.Value;
+            }
+
+            // --check-db no arranca el servidor: comprueba la base de esta configuración y sale.
+            if (checkDatabase)
+            {
+                return CheckDatabase(configPath, config);
             }
 
             string mapPath;
@@ -224,22 +235,96 @@ namespace Avelora.Server
         }
 
         /// <summary>
-        /// Lee los argumentos: el primero que no empiece por <c>--</c> es la configuración y
-        /// <c>--seconds N</c> fija la duración (útil para pruebas automáticas).
+        /// <c>--check-db</c>: abre la base de la configuración en solo lectura, ejecuta
+        /// <c>integrity_check</c> y <c>foreign_key_check</c> e imprime el recuento de cuentas y
+        /// personajes. Devuelve 0 si todo está bien y 1 si no.
+        /// </summary>
+        private static int CheckDatabase(string configPath, ServerConfig config)
+        {
+            Console.WriteLine("Avelora · comprobación de la base de datos");
+            Console.WriteLine("  Configuración : " + configPath);
+
+            if (!config.PersistenceEnabled)
+            {
+                ConsoleReporter.WriteError(
+                    "La persistencia está desactivada en esta configuración: no hay base que comprobar.");
+                return 1;
+            }
+
+            string databasePath;
+
+            try
+            {
+                databasePath = config.ResolveDatabasePath(configPath);
+            }
+            catch (InvalidOperationException ex)
+            {
+                ConsoleReporter.WriteError(ex.Message);
+                return 1;
+            }
+
+            DatabaseCheckResult result = DatabaseCheck.Run(databasePath);
+
+            Console.WriteLine("  Base          : " + result.DatabasePath);
+
+            if (result.Error != null)
+            {
+                ConsoleReporter.WriteError("No se pudo comprobar la base: " + result.Error);
+                return 1;
+            }
+
+            Console.WriteLine("  Integridad    : " + DescribeLines(result.IntegrityMessages));
+
+            if (result.ForeignKeyViolations.Count == 0)
+            {
+                Console.WriteLine("  Claves ajenas : ok (0 filas huérfanas)");
+            }
+            else
+            {
+                Console.WriteLine(
+                    "  Claves ajenas : " + result.ForeignKeyViolations.Count + " fila(s) huérfana(s)");
+
+                for (int i = 0; i < result.ForeignKeyViolations.Count; i++)
+                {
+                    Console.WriteLine("                  " + result.ForeignKeyViolations[i]);
+                }
+            }
+
+            Console.WriteLine("  Cuentas       : " + result.Accounts);
+            Console.WriteLine("  Personajes    : " + result.Characters);
+            Console.WriteLine("  Resultado     : " + (result.Ok ? "correcta" : "CON ERRORES"));
+
+            return result.Ok ? 0 : 1;
+        }
+
+        private static string DescribeLines(System.Collections.Generic.IReadOnlyList<string> lines) =>
+            lines.Count == 0 ? "(sin respuesta)" : string.Join("; ", lines);
+
+        /// <summary>
+        /// Lee los argumentos: el primero que no empiece por <c>--</c> es la configuración,
+        /// <c>--seconds N</c> fija la duración y <c>--check-db</c> comprueba la base y sale.
         /// </summary>
         private static bool TryParseArguments(
             string[] args,
             out string? configArgument,
             out double? secondsOverride,
+            out bool checkDatabase,
             out string? error)
         {
             configArgument = null;
             secondsOverride = null;
+            checkDatabase = false;
             error = null;
 
             for (int i = 0; i < args.Length; i++)
             {
                 string argument = args[i];
+
+                if (string.Equals(argument, "--check-db", StringComparison.Ordinal))
+                {
+                    checkDatabase = true;
+                    continue;
+                }
 
                 if (string.Equals(argument, "--seconds", StringComparison.Ordinal))
                 {

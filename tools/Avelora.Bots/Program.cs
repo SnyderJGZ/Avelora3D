@@ -39,6 +39,13 @@ namespace Avelora.Bots
                 return 1;
             }
 
+            // Modo de análisis de caídas: no lanza bots ni toca la red, solo compara los archivos
+            // que dejó tools/carga/caida.ps1 (G-05). Es la misma lógica que prueban los xUnit.
+            if (options.CompareTrace)
+            {
+                return RunCompareTraces(options);
+            }
+
             string mapPath;
             MapCollisionGrid map;
 
@@ -109,6 +116,16 @@ namespace Avelora.Bots
                 {
                     Console.WriteLine("  Correcciones: se registra cada una (--log-corrections)");
                 }
+
+                if (!string.IsNullOrEmpty(options.TracePositionsPath))
+                {
+                    Console.WriteLine("  Traza       : " + options.TracePositionsPath + " (1 muestra/s por bot)");
+                }
+
+                if (!string.IsNullOrEmpty(options.ReportWelcomePath))
+                {
+                    Console.WriteLine("  Welcome     : " + options.ReportWelcomePath + " (posición guardada por cuenta)");
+                }
                 Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
                     " (invitación '" + options.InvitationCode + "')");
                 Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
@@ -149,7 +166,9 @@ namespace Avelora.Bots
                         behavior: options.Behavior,
                         map: map,
                         inputRedundancy: options.InputRedundancy,
-                        logCorrections: options.LogCorrections);
+                        logCorrections: options.LogCorrections,
+                        tracePositionsPath: options.TracePositionsPath,
+                        reportWelcomePath: options.ReportWelcomePath);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -429,6 +448,69 @@ namespace Avelora.Bots
             Console.WriteLine("  [bot " + bot.Index + "] " + bot.Status + " ent=" + bot.EntityId);
         }
 
+        /// <summary>
+        /// Compara la traza de posiciones con los <c>Welcome</c> tras la caída (G-05). Imprime la
+        /// tabla por cuenta y devuelve 0 si todas cumplen el tope y 1 si alguna falla.
+        /// </summary>
+        private static int RunCompareTraces(Options options)
+        {
+            if (string.IsNullOrWhiteSpace(options.TracePath))
+            {
+                Console.Error.WriteLine("ERROR: --compare-trace necesita --trace <archivo>.");
+                return 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(options.WelcomePath))
+            {
+                Console.Error.WriteLine("ERROR: --compare-trace necesita --welcome <archivo>.");
+                return 1;
+            }
+
+            if (!options.DeathUtcMs.HasValue)
+            {
+                Console.Error.WriteLine("ERROR: --compare-trace necesita --death-ms <instante UTC en ms>.");
+                return 1;
+            }
+
+            if (!options.MaxLossSeconds.HasValue || options.MaxLossSeconds.Value <= 0d)
+            {
+                Console.Error.WriteLine("ERROR: --compare-trace necesita --max-loss <segundos>.");
+                return 1;
+            }
+
+            if (!File.Exists(options.TracePath))
+            {
+                Console.Error.WriteLine("ERROR: no existe la traza '" + options.TracePath + "'.");
+                return 1;
+            }
+
+            if (!File.Exists(options.WelcomePath))
+            {
+                Console.Error.WriteLine("ERROR: no existe el archivo de Welcome '" + options.WelcomePath + "'.");
+                return 1;
+            }
+
+            List<TraceSample> trace = TraceComparer.ReadTrace(options.TracePath);
+            List<WelcomeSpawn> welcomes = TraceComparer.ReadWelcomes(options.WelcomePath);
+            TraceComparison comparison = TraceComparer.Compare(
+                trace,
+                welcomes,
+                options.DeathUtcMs.Value,
+                options.MaxLossSeconds.Value);
+
+            Console.WriteLine("Avelora · comparación de trazas (caída del servidor)");
+            Console.WriteLine("  Traza   : " + options.TracePath + " (" + trace.Count + " muestras)");
+            Console.WriteLine("  Welcome : " + options.WelcomePath + " (" + welcomes.Count + " cuenta(s))");
+            Console.WriteLine(
+                "  Muerte  : " + options.DeathUtcMs.Value + " ms UTC; margen " +
+                TraceComparer.MatchTolerance.ToString("0.00000", CultureInfo.InvariantCulture) + " tiles");
+            Console.WriteLine();
+
+            TraceComparer.WriteTable(Console.Out, comparison);
+
+            return comparison.AllOk ? 0 : 1;
+        }
+
         private static string ResolveMapPath(string requested)
         {
             if (Path.IsPathRooted(requested))
@@ -479,6 +561,12 @@ namespace Avelora.Bots
                 {
                     // Opción sin valor: no se consume el argumento siguiente.
                     options.LogCorrections = true;
+                    continue;
+                }
+
+                if (string.Equals(argument, "--compare-trace", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.CompareTrace = true;
                     continue;
                 }
 
@@ -624,6 +712,42 @@ namespace Avelora.Bots
                         options.MapPath = value;
                         break;
 
+                    case "--trace-positions":
+                        options.TracePositionsPath = value;
+                        break;
+
+                    case "--report-welcome":
+                        options.ReportWelcomePath = value;
+                        break;
+
+                    case "--trace":
+                        options.TracePath = value;
+                        break;
+
+                    case "--welcome":
+                        options.WelcomePath = value;
+                        break;
+
+                    case "--death-ms":
+                        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long deathUtcMs) || deathUtcMs <= 0)
+                        {
+                            error = "Instante de muerte inválido: " + value;
+                            return false;
+                        }
+
+                        options.DeathUtcMs = deathUtcMs;
+                        break;
+
+                    case "--max-loss":
+                        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double maxLoss) || maxLoss <= 0d)
+                        {
+                            error = "Pérdida máxima inválida: " + value;
+                            return false;
+                        }
+
+                        options.MaxLossSeconds = maxLoss;
+                        break;
+
                     case "--account-prefix":
                         if (string.IsNullOrWhiteSpace(value) || value.Length > 28)
                         {
@@ -742,6 +866,20 @@ namespace Avelora.Bots
             public int InputRedundancy { get; set; } = ProtocolConstants.MaxInputsPerMessage;
 
             public bool LogCorrections { get; set; }
+
+            public string? TracePositionsPath { get; set; }
+
+            public string? ReportWelcomePath { get; set; }
+
+            public bool CompareTrace { get; set; }
+
+            public string? TracePath { get; set; }
+
+            public string? WelcomePath { get; set; }
+
+            public long? DeathUtcMs { get; set; }
+
+            public double? MaxLossSeconds { get; set; }
         }
     }
 }

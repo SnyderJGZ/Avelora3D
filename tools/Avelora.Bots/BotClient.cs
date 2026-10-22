@@ -59,6 +59,13 @@ namespace Avelora.Bots
         /// <summary>Un input cada 50 ms, igual que el tick del servidor.</summary>
         private const int InputIntervalMs = 50;
 
+        /// <summary>
+        /// Archivos compartidos por todos los bots del proceso (traza e informe de <c>Welcome</c>,
+        /// G-05): un escritor por ruta, abierto una vez, para no abrir el archivo en cada línea.
+        /// </summary>
+        private static readonly Dictionary<string, StreamWriter> SharedWriters =
+            new Dictionary<string, StreamWriter>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>En <c>flood</c>, inputs válidos por intervalo (10 × 20 = 200/s).</summary>
         private const int FloodInputsPerInterval = 10;
 
@@ -107,6 +114,8 @@ namespace Avelora.Bots
         private readonly string _password;
         private readonly string _invitationCode;
         private readonly bool _logCorrections;
+        private readonly string? _tracePositionsPath;
+        private readonly string? _reportWelcomePath;
 
         private IClientTransport? _transport;
 
@@ -186,7 +195,9 @@ namespace Avelora.Bots
             Func<IClientTransport>? transportFactory = null,
             MapCollisionGrid? map = null,
             int inputRedundancy = ProtocolConstants.MaxInputsPerMessage,
-            bool logCorrections = false)
+            bool logCorrections = false,
+            string? tracePositionsPath = null,
+            string? reportWelcomePath = null)
         {
             if (startDelayMs < 0)
             {
@@ -222,6 +233,8 @@ namespace Avelora.Bots
             _welcomeTimeoutMs = welcomeTimeoutMs;
             _behavior = behavior;
             _logCorrections = logCorrections;
+            _tracePositionsPath = tracePositionsPath;
+            _reportWelcomePath = reportWelcomePath;
             _accountName = accountPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
             _password = password;
             _invitationCode = invitationCode;
@@ -1018,6 +1031,14 @@ namespace Avelora.Bots
                 _hasPosition = true;
                 Status = "conectado";
 
+                // Posición guardada con la que el servidor hace aparecer al personaje (G-05).
+                if (_reportWelcomePath != null)
+                {
+                    AppendSharedLine(
+                        _reportWelcomePath,
+                        _accountName + ";" + Fixed(welcome.SpawnX) + ";" + Fixed(welcome.SpawnY));
+                }
+
                 // Igual que el cliente de Unity: si el bot es un jugador normal, predice su
                 // posición y mide las correcciones que le costaría la red.
                 if (_behavior == BotBehavior.Random && _map != null)
@@ -1087,6 +1108,16 @@ namespace Avelora.Bots
                         _x = x;
                         _y = y;
                         _hasPosition = true;
+
+                        // Traza de caídas (G-05): cada snapshot. El servidor guarda la posición de
+                        // un tick, que es la de un snapshot; a 1 Hz casi nunca coincidía.
+                        if (_tracePositionsPath != null)
+                        {
+                            AppendSharedLine(
+                                _tracePositionsPath,
+                                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                                ";" + _accountName + ";" + Fixed(x) + ";" + Fixed(y));
+                        }
 
                         if (_prediction != null)
                         {
@@ -1269,6 +1300,22 @@ namespace Avelora.Bots
 
         private static string Fixed(float value) =>
             value.ToString("0.00000", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>Añade una línea a un archivo compartido por los bots del proceso.</summary>
+        private static void AppendSharedLine(string path, string line)
+        {
+            lock (SharedWriters)
+            {
+                if (!SharedWriters.TryGetValue(path, out StreamWriter? writer))
+                {
+                    // AutoFlush: cada línea llega al disco aunque el proceso acabe sin cerrar nada.
+                    writer = new StreamWriter(path, append: true) { AutoFlush = true, NewLine = "\n" };
+                    SharedWriters[path] = writer;
+                }
+
+                writer.WriteLine(line);
+            }
+        }
 
         private void PickDirection()
         {
