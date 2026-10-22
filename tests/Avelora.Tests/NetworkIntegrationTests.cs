@@ -232,6 +232,7 @@ namespace Avelora.Tests
                     HandshakeTimeoutSeconds = 10d,
                     PersistenceEnabled = true,
                     DatabasePath = databasePath,
+                    RegistrationInvitationCode = "avelora-dev",
                     SaveIntervalSeconds = 60d,
                 };
 

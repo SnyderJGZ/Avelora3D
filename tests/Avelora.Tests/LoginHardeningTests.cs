@@ -277,7 +277,152 @@ namespace Avelora.Tests
             Assert.Equal(2, repository.Calls);
         }
 
+        [Fact]
+        public void El_Limite_De_Fallos_No_Distingue_Mayusculas()
+        {
+            WaitForStableMinute();
+
+            var repository = new CountingRepository();
+            using var harness = new Harness(repository, config => config.MaxFailedLoginsPerAccountPerMinute = 5);
+
+            string[] variantes = { "dev", "Dev", "DEV", "dev", "Dev" };
+
+            for (int i = 0; i < variantes.Length; i++)
+            {
+                int connectionId = i + 1;
+                harness.Connect(connectionId);
+                harness.Handshake(connectionId, variantes[i], "mala-clave");
+                harness.Pump(connectionId);
+
+                Assert.True(harness.HasReject(connectionId, out RejectMessage reject));
+                Assert.Equal(RejectReason.InvalidCredentials, reject.Reason);
+            }
+
+            Assert.Equal(5, repository.Calls);
+
+            // Cualquier variante de mayúsculas encuentra la misma cuenta agotada.
+            harness.Connect(6);
+            harness.Handshake(6, "DeV", "mala-clave");
+            harness.Pump(6);
+
+            Assert.True(harness.HasReject(6, out RejectMessage limited));
+            Assert.Equal(RejectReason.RateLimited, limited.Reason);
+            Assert.Equal(5, repository.Calls);
+        }
+
+        [Fact]
+        public void Los_Saludos_En_Vuelo_Cuentan_Para_El_Limite_Por_Cuenta()
+        {
+            WaitForStableMinute();
+
+            var repository = new CountingRepository();
+            using var harness = new Harness(repository, config => config.MaxFailedLoginsPerAccountPerMinute = 5);
+
+            // Cinco saludos seguidos sin recoger ningún resultado: aunque el repositorio aún no
+            // haya contestado, ya ocupan el cupo de la cuenta.
+            for (int i = 1; i <= 5; i++)
+            {
+                harness.Connect(i);
+                harness.Handshake(i, "dev", "mala-clave");
+                Assert.False(harness.HasReject(i));
+            }
+
+            harness.Connect(6);
+            harness.Handshake(6, "dev", "mala-clave");
+
+            Assert.True(harness.HasReject(6, out RejectMessage reject));
+            Assert.Equal(RejectReason.RateLimited, reject.Reason);
+
+            // El sexto no llegó al repositorio; los cinco primeros sí.
+            harness.Pump(6);
+            Assert.Equal(5, repository.Calls);
+        }
+
+        [Fact]
+        public void Un_Login_Correcto_Deja_El_Contador_En_Vuelo_A_Cero()
+        {
+            var repository = new BlockingRepository();
+            repository.Gate.Set();
+
+            using var harness = new Harness(repository, config => config.MaxFailedLoginsPerAccountPerMinute = 1);
+
+            harness.Connect(1);
+            harness.Handshake(1, "dev");
+            harness.Pump(1);
+            Assert.True(harness.HasWelcome(1));
+            Assert.False(harness.HasReject(1));
+
+            // Si el contador en vuelo no se descontara al recoger el resultado, el segundo login
+            // de la misma cuenta se rechazaría aunque no hubiera ningún fallo.
+            harness.Connect(2);
+            harness.Handshake(2, "dev");
+            harness.Pump(2);
+            Assert.True(harness.HasWelcome(2));
+            Assert.False(harness.HasReject(2));
+        }
+
+        [Fact]
+        public void Una_Invitacion_Incorrecta_De_Cuenta_Inexistente_No_Gasta_El_Cupo()
+        {
+            WaitForStableMinute();
+
+            var repository = new UnknownAccountRepository();
+            using var harness = new Harness(repository, config => config.MaxFailedLoginsPerAccountPerMinute = 1);
+
+            for (int i = 1; i <= 3; i++)
+            {
+                harness.Connect(i);
+                harness.Handshake(i, "fantasma", "mala-clave");
+                harness.Pump(i);
+
+                Assert.True(harness.HasReject(i, out RejectMessage reject));
+                Assert.Equal(RejectReason.InvalidCredentials, reject.Reason);
+            }
+
+            Assert.Equal(3, repository.Calls);
+        }
+
         // ---------------------------------------------------------------- 7: errores de guardado
+
+        [Fact]
+        public void Un_Guardado_Que_Falla_Se_Reintenta_Y_Acaba_Guardado()
+        {
+            var repository = new FlakyRepository(failures: 1);
+            using var saves = new CharacterSaveService(repository);
+
+            saves.Enqueue(NewCharacter(7));
+
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(5)));
+            Assert.Equal(1L, saves.Saved);
+            Assert.Equal(1L, saves.Failed);
+            Assert.Equal(0, saves.Pending);
+            Assert.Single(repository.Saved);
+        }
+
+        [Fact]
+        public void Una_Foto_Nueva_Reemplaza_A_La_Que_Esperaba_Reintento()
+        {
+            var repository = new FlakyRepository(failures: 1);
+            using var saves = new CharacterSaveService(repository);
+
+            saves.Enqueue(NewCharacter(7, new Vec2(1f, 2f)));
+
+            long deadline = Environment.TickCount64 + 5_000;
+            while (repository.Attempts < 1 && Environment.TickCount64 < deadline)
+            {
+                Thread.Sleep(10);
+            }
+
+            Assert.True(repository.Attempts >= 1, "El primer intento de guardado no llegó a fallar.");
+
+            // La foto vieja está esperando el reintento: la nueva del mismo personaje debe ganar.
+            saves.Enqueue(NewCharacter(7, new Vec2(9f, -9f)));
+
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(5)));
+            Assert.Equal(0, saves.Pending);
+            Assert.Single(repository.Saved);
+            Assert.Equal(new Vec2(9f, -9f), repository.Saved[0].Position);
+        }
 
         [Fact]
         public void Un_Fallo_De_Guardado_Deja_LastError_Y_Cuenta_El_Fallo()
@@ -286,9 +431,10 @@ namespace Avelora.Tests
 
             saves.Enqueue(NewCharacter(7));
 
-            Assert.True(saves.Flush(TimeSpan.FromSeconds(5)));
-            Assert.Equal(1L, saves.Failed);
-            Assert.Equal(0, saves.Pending);
+            // El servicio reintenta en vez de descartar la foto: si el fallo es permanente, el
+            // Flush se agota y la foto sigue pendiente.
+            Assert.False(saves.Flush(TimeSpan.FromSeconds(2)));
+            Assert.True(saves.Failed >= 1);
             Assert.Contains("disco lleno", saves.LastError);
         }
 
@@ -331,7 +477,7 @@ namespace Avelora.Tests
             }
         }
 
-        private static CharacterRecord NewCharacter(int id)
+        private static CharacterRecord NewCharacter(int id, Vec2 position = default)
         {
             DateTime now = DateTime.UtcNow;
             var hash = new byte[ProtocolConstants.MapHashSize];
@@ -345,7 +491,7 @@ namespace Avelora.Tests
                 100,
                 100,
                 1,
-                new Vec2(0f, 0f),
+                position,
                 hash,
                 now,
                 now);
@@ -452,6 +598,47 @@ namespace Avelora.Tests
                 string registrationCode)
             {
                 Interlocked.Increment(ref _calls);
+                return AccountLoginResult.Failed(
+                    RejectReason.InvalidCredentials,
+                    countsAsFailedAttempt: true);
+            }
+
+            public CharacterRecord GetOrCreateCharacter(
+                int accountId,
+                string characterName,
+                int zoneId,
+                Vec2 spawn,
+                byte[] mapHash) =>
+                throw new NotSupportedException();
+
+            public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
+
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>
+        /// Repositorio que responde «credenciales inválidas» sin decir que la cuenta exista: es lo
+        /// que hace SQLite cuando el nombre no está y la invitación no vale.
+        /// </summary>
+        private sealed class UnknownAccountRepository : IPlayerRepository
+        {
+            private int _calls;
+
+            public int Calls => Volatile.Read(ref _calls);
+
+            public void Initialize()
+            {
+            }
+
+            public AccountLoginResult Login(
+                string accountName,
+                string password,
+                string invitationCode,
+                string registrationCode)
+            {
+                Interlocked.Increment(ref _calls);
                 return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
             }
 
@@ -464,6 +651,71 @@ namespace Avelora.Tests
                 throw new NotSupportedException();
 
             public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
+
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>Repositorio que falla al guardar las primeras veces y después funciona.</summary>
+        private sealed class FlakyRepository : IPlayerRepository
+        {
+            private readonly object _gate = new object();
+            private readonly List<CharacterRecord> _saved = new List<CharacterRecord>();
+            private int _failuresLeft;
+            private int _attempts;
+
+            public FlakyRepository(int failures)
+            {
+                _failuresLeft = failures;
+            }
+
+            public int Attempts => Volatile.Read(ref _attempts);
+
+            public IReadOnlyList<CharacterRecord> Saved
+            {
+                get
+                {
+                    lock (_gate)
+                    {
+                        return new List<CharacterRecord>(_saved);
+                    }
+                }
+            }
+
+            public void Initialize()
+            {
+            }
+
+            public AccountLoginResult Login(
+                string accountName,
+                string password,
+                string invitationCode,
+                string registrationCode) =>
+                throw new NotSupportedException();
+
+            public CharacterRecord GetOrCreateCharacter(
+                int accountId,
+                string characterName,
+                int zoneId,
+                Vec2 spawn,
+                byte[] mapHash) =>
+                throw new NotSupportedException();
+
+            public void SaveCharacter(CharacterRecord character)
+            {
+                Interlocked.Increment(ref _attempts);
+
+                if (Interlocked.Decrement(ref _failuresLeft) >= 0)
+                {
+                    throw new IOException("disco lleno");
+                }
+
+                lock (_gate)
+                {
+                    _saved.Add(character);
+                }
+            }
 
             public void Dispose()
             {

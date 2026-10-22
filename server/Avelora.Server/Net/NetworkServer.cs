@@ -67,7 +67,15 @@ namespace Avelora.Server.Net
             new Dictionary<int, PendingDisconnect>();
         private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
         private readonly Dictionary<string, int> _failedLogins =
-            new Dictionary<string, int>(StringComparer.Ordinal);
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Logins en vuelo por cuenta. Cuenta los encolados y el que se está calculando, igual que
+        /// el tope global, pero por cuenta: cinco saludos seguidos no se escapan por llegar antes
+        /// de que vuelva el primer resultado. Solo la toca el hilo de red.
+        /// </summary>
+        private readonly Dictionary<string, int> _loginsInFlightPerAccount =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
         private long _currentSecond;
         private long _currentMinute;
@@ -472,6 +480,11 @@ namespace Avelora.Server.Net
             _pendingLogins[connectionId] = hello;
             _handshakeDeadlines.Remove(connectionId);
 
+            // Se cuenta en vuelo antes de encolar: mientras el resultado no se recoja, este saludo
+            // sigue ocupando un intento de la cuenta.
+            _loginsInFlightPerAccount.TryGetValue(accountName, out int inFlight);
+            _loginsInFlightPerAccount[accountName] = inFlight + 1;
+
             // El alta la resolverá el hilo de login y llegará por la cola de resultados.
             _login!.Enqueue(new LoginRequest(
                 connectionId,
@@ -497,6 +510,10 @@ namespace Avelora.Server.Net
 
             while (_login.TryDequeueResult(out LoginResult? result))
             {
+                // El intento deja de estar en vuelo aunque la conexión se haya ido: el hueco del
+                // tope global y el de la cuenta se liberan al sacar el resultado, como antes.
+                ReleaseLoginInFlight(result.AccountName);
+
                 if (!_pendingLogins.TryGetValue(result.ConnectionId, out HelloMessage hello))
                 {
                     // La conexión se cerró mientras se autenticaba: el resultado se descarta y no
@@ -518,7 +535,9 @@ namespace Avelora.Server.Net
                 {
                     Interlocked.Increment(ref _loginsRejected);
 
-                    if (result.Failure == RejectReason.InvalidCredentials)
+                    // Solo cuenta el fallo de una cuenta que existe: una invitación incorrecta de
+                    // una cuenta inexistente no debe llenarle el cupo a ese nombre.
+                    if (result.Failure == RejectReason.InvalidCredentials && result.CountsAsFailedAttempt)
                     {
                         RecordFailedLogin(result.AccountName);
                     }
@@ -565,14 +584,38 @@ namespace Avelora.Server.Net
             }
         }
 
-        /// <summary>¿La cuenta ya agotó los intentos fallidos del minuto actual?</summary>
+        /// <summary>
+        /// ¿La cuenta ya agotó los intentos del minuto actual? Se cuentan los fallos y los logins
+        /// que aún están en vuelo: si no, dieciséis saludos seguidos entrarían todos antes de que
+        /// volviera el primer resultado.
+        /// </summary>
         private bool IsAccountRateLimited(string accountName)
         {
             long minute = Environment.TickCount64 / 60_000;
             ExpireFailedLogins(minute);
 
-            return _failedLogins.TryGetValue(accountName, out int failures) &&
-                failures >= _config.MaxFailedLoginsPerAccountPerMinute;
+            _failedLogins.TryGetValue(accountName, out int failures);
+            _loginsInFlightPerAccount.TryGetValue(accountName, out int inFlight);
+
+            return failures + inFlight >= _config.MaxFailedLoginsPerAccountPerMinute;
+        }
+
+        /// <summary>Descuenta un login en vuelo de su cuenta; al llegar a cero se quita la entrada.</summary>
+        private void ReleaseLoginInFlight(string accountName)
+        {
+            if (!_loginsInFlightPerAccount.TryGetValue(accountName, out int inFlight))
+            {
+                return;
+            }
+
+            if (inFlight <= 1)
+            {
+                _loginsInFlightPerAccount.Remove(accountName);
+            }
+            else
+            {
+                _loginsInFlightPerAccount[accountName] = inFlight - 1;
+            }
         }
 
         private void RecordFailedLogin(string accountName)

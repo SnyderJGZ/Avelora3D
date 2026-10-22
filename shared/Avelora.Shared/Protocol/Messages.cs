@@ -292,6 +292,10 @@ namespace Avelora.Shared.Protocol
         InvalidCredentials = 8,
 
         /// <summary>La cuenta no existe y el registro está cerrado o la invitación no coincide.</summary>
+        /// <remarks>
+        /// El servidor ya no lo emite: para no revelar qué cuentas existen, ese caso responde
+        /// <see cref="InvalidCredentials"/>. Se conserva el valor para no renumerar el resto.
+        /// </remarks>
         RegistrationClosed = 9,
 
         /// <summary>Ese personaje ya está jugando en otra conexión.</summary>
@@ -304,6 +308,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>La misma cuenta se conectó desde otra conexión: esta sesión se cierra.</summary>
         LoggedInElsewhere = 11,
+
+        /// <summary>La cuenta ya tiene el máximo de personajes permitido.</summary>
+        CharacterLimit = 12,
     }
 
     /// <summary>Respuesta negativa al saludo.</summary>

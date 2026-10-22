@@ -21,6 +21,9 @@ namespace Avelora.Server.Persistence
     {
         public const int SchemaVersion = 1;
 
+        /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
+        public const int MaxCharactersPerAccount = 3;
+
         private const string TimeFormat = "O";
 
         private readonly string _connectionString;
@@ -142,7 +145,9 @@ namespace Avelora.Server.Persistence
 
                 if (!valid)
                 {
-                    return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+                    return AccountLoginResult.Failed(
+                        RejectReason.InvalidCredentials,
+                        countsAsFailedAttempt: true);
                 }
 
                 // Rehash al entrar: la cuenta se quedó con menos iteraciones de las configuradas.
@@ -155,10 +160,12 @@ namespace Avelora.Server.Persistence
                 return AccountLoginResult.Ok(row.Id);
             }
 
+            // Misma respuesta que una contraseña mala: si dijéramos «registro cerrado» o
+            // «invitación incorrecta», se podría averiguar qué cuentas existen probando nombres.
             if (string.IsNullOrEmpty(registrationCode) ||
                 !string.Equals(invitationCode ?? string.Empty, registrationCode, StringComparison.Ordinal))
             {
-                return AccountLoginResult.Failed(RejectReason.RegistrationClosed);
+                return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
             }
 
             PasswordHasher.Create(password, _passwordIterations, out byte[] salt, out byte[] hash);
@@ -181,7 +188,7 @@ namespace Avelora.Server.Persistence
             return AccountLoginResult.Ok(accountId);
         }
 
-        public CharacterRecord GetOrCreateCharacter(
+        public CharacterRecord? GetOrCreateCharacter(
             int accountId,
             string characterName,
             int zoneId,
@@ -214,6 +221,13 @@ namespace Avelora.Server.Persistence
             if (existing != null)
             {
                 return existing;
+            }
+
+            if (CountCharacters(connection, accountId) >= MaxCharactersPerAccount)
+            {
+                // El llamador traduce el null a Reject(CharacterLimit): la cuenta existe y las
+                // credenciales eran válidas, pero no hay sitio para otro personaje.
+                return null;
             }
 
             DateTime now = DateTime.UtcNow;
@@ -408,6 +422,15 @@ CREATE INDEX characters_account_idx ON characters(account_id);
                 (byte[])reader.GetValue(1),
                 (byte[])reader.GetValue(2),
                 reader.GetInt32(3));
+        }
+
+        private static int CountCharacters(SqliteConnection connection, int accountId)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM characters WHERE account_id = @account;";
+            command.Parameters.AddWithValue("@account", accountId);
+
+            return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         }
 
         private static CharacterRecord? FindCharacter(

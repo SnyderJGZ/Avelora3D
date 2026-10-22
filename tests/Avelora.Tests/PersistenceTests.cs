@@ -73,6 +73,7 @@ namespace Avelora.Tests
 
             Assert.False(wrong.Success);
             Assert.Equal(RejectReason.InvalidCredentials, wrong.Failure);
+            Assert.True(wrong.CountsAsFailedAttempt);
 
             AccountLoginResult again = repository.Login(
                 "CUENTA",
@@ -94,9 +95,11 @@ namespace Avelora.Tests
             AccountLoginResult wrongCode = repository.Login("nadie", "secreto1", "otra", "avelora-dev");
 
             Assert.False(closed.Success);
-            Assert.Equal(RejectReason.RegistrationClosed, closed.Failure);
+            Assert.Equal(RejectReason.InvalidCredentials, closed.Failure);
+            Assert.False(closed.CountsAsFailedAttempt);
             Assert.False(wrongCode.Success);
-            Assert.Equal(RejectReason.RegistrationClosed, wrongCode.Failure);
+            Assert.Equal(RejectReason.InvalidCredentials, wrongCode.Failure);
+            Assert.False(wrongCode.CountsAsFailedAttempt);
         }
 
         [Fact]
@@ -118,13 +121,14 @@ namespace Avelora.Tests
                 Assert.True(login.Success);
                 accountId = login.AccountId;
 
-                CharacterRecord created = repository.GetOrCreateCharacter(
+                CharacterRecord? created = repository.GetOrCreateCharacter(
                     accountId,
                     "Heroe",
                     1,
                     new Vec2(-1.5f, -2.5f),
                     mapHash);
 
+                Assert.NotNull(created);
                 Assert.Equal(1, created.Level);
                 Assert.Equal(new Vec2(-1.5f, -2.5f), created.Position);
 
@@ -147,13 +151,14 @@ namespace Avelora.Tests
                 Assert.True(login.Success);
                 Assert.Equal(accountId, login.AccountId);
 
-                CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                CharacterRecord? loaded = reopened.GetOrCreateCharacter(
                     login.AccountId,
                     "heroe",
                     1,
                     new Vec2(-1.5f, -2.5f),
                     mapHash);
 
+                Assert.NotNull(loaded);
                 Assert.Equal("Heroe", loaded.Name);
                 Assert.Equal(new Vec2(3.25f, -4.5f), loaded.Position);
                 Assert.Equal(NewHash(9), loaded.MapHash);
@@ -323,6 +328,52 @@ namespace Avelora.Tests
             Assert.Equal(-3.5f, welcome.SpawnY);
         }
 
+        [Fact]
+        public void El_Cuarto_Personaje_De_Una_Cuenta_Se_Rechaza_Y_Los_Tres_Primeros_Siguen_Entrando()
+        {
+            using var harness = new ServerHarness(DatabasePath);
+
+            string[] nombres = { "uno", "dos", "tres" };
+
+            for (int i = 0; i < nombres.Length; i++)
+            {
+                int connectionId = i + 1;
+                harness.Connect(connectionId);
+                harness.Handshake(connectionId, "dev", "avelora-dev", nombres[i]);
+                harness.Pump(connectionId);
+
+                Assert.False(harness.LastReject(connectionId, out _));
+            }
+
+            harness.Connect(4);
+            harness.Handshake(4, "dev", "avelora-dev", "cuatro");
+            harness.Pump(4);
+
+            Assert.True(harness.LastReject(4, out RejectMessage reject));
+            Assert.Equal(RejectReason.CharacterLimit, reject.Reason);
+
+            // Los tres personajes que ya existían siguen valiendo: el tope no los invalida.
+            AccountLoginResult login = harness.Repository.Login(
+                "dev",
+                "avelora-dev",
+                string.Empty,
+                "avelora-dev");
+
+            Assert.True(login.Success);
+            Assert.NotNull(harness.Repository.GetOrCreateCharacter(
+                login.AccountId,
+                "uno",
+                1,
+                new Vec2(-1.5f, -2.5f),
+                harness.MapHash));
+
+            harness.Connect(5);
+            harness.Handshake(5, "dev", "avelora-dev", "uno");
+            harness.Pump(5);
+
+            Assert.False(harness.LastReject(5, out _));
+        }
+
         private static byte[] NewHash(byte seed)
         {
             var hash = new byte[ProtocolConstants.MapHashSize];
@@ -363,6 +414,7 @@ namespace Avelora.Tests
                     HandshakeTimeoutSeconds = 60d,
                     PersistenceEnabled = true,
                     DatabasePath = databasePath,
+                    RegistrationInvitationCode = "avelora-dev",
                     SaveIntervalSeconds = 60d,
 
                     // Pruebas sin sockets: el corte se pide en la vuelta siguiente y se puede

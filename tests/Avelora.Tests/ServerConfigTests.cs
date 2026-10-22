@@ -46,11 +46,22 @@ namespace Avelora.Tests
             Assert.Equal(InterestSettings.DefaultHysteresis, config.InterestHysteresis);
             Assert.True(config.PersistenceEnabled);
             Assert.Equal("data/avelora.db", config.DatabasePath);
-            Assert.Equal("avelora-dev", config.RegistrationInvitationCode);
+            Assert.Equal(string.Empty, config.RegistrationInvitationCode);
             Assert.Equal(60d, config.SaveIntervalSeconds);
             Assert.Equal(16, config.MaxPendingLogins);
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
+        }
+
+        [Fact]
+        public void El_Registro_Viene_Cerrado_Si_No_Se_Configura_La_Invitacion()
+        {
+            // Sin código a propósito, un servidor expuesto por descuido no deja crear cuentas;
+            // el servidor de desarrollo lo escribe explícitamente en server.json.
+            var config = new ServerConfig();
+
+            Assert.Equal(string.Empty, config.RegistrationInvitationCode);
+            config.Validate();
         }
 
         [Fact]

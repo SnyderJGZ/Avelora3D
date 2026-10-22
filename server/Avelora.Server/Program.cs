@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
@@ -177,6 +178,37 @@ namespace Avelora.Server
                 cancellation.Cancel();
             };
 
+            // Cerrar la consola o apagar el proceso también debe guardar. En Windows, SIGHUP es el
+            // cierre de la ventana (el sistema concede unos 5 s) y SIGTERM el apagado. Los registros
+            // viven hasta el final de Main; si se soltaran, el paro volvería al comportamiento
+            // brusco por defecto.
+            int signalStop = 0;
+
+            // Al volver del manejador de SIGHUP, Windows termina el proceso: el manejador espera a
+            // que Main guarde e imprima el resumen. Se deja sin disponer porque puede haber un
+            // manejador esperando en el mismo instante en que Main acaba.
+            var shutdownCompleted = new ManualResetEventSlim(false);
+
+            using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(
+                PosixSignal.SIGTERM,
+                context =>
+                {
+                    context.Cancel = true;
+                    Interlocked.Exchange(ref signalStop, 1);
+                    cancellation.Cancel();
+                    shutdownCompleted.Wait(TimeSpan.FromSeconds(4));
+                });
+
+            using PosixSignalRegistration sighup = PosixSignalRegistration.Create(
+                PosixSignal.SIGHUP,
+                context =>
+                {
+                    context.Cancel = true;
+                    Interlocked.Exchange(ref signalStop, 1);
+                    cancellation.Cancel();
+                    shutdownCompleted.Wait(TimeSpan.FromSeconds(4));
+                });
+
             var core = new ServerCore(zone, SimulationConstants.StepMs, config.MetricsWindowTicks)
             {
                 Observer = network,
@@ -223,7 +255,14 @@ namespace Avelora.Server
                     "El hilo de simulación no terminó a tiempo: no se guardan los jugadores conectados.");
             }
 
-            if (saves != null && !saves.Flush(TimeSpan.FromSeconds(5)))
+            // Cerrar la ventana o apagar solo da unos 5 s en total: si la parada vino por una de
+            // esas señales, se recorta la espera del guardado para intentar llegar a imprimir el
+            // resumen. Ctrl+C y el final por --seconds conservan los 5 s.
+            TimeSpan flushTimeout = signalStop != 0
+                ? TimeSpan.FromSeconds(3)
+                : TimeSpan.FromSeconds(5);
+
+            if (saves != null && !saves.Flush(flushTimeout))
             {
                 ConsoleReporter.WriteError(
                     "Quedaron " + saves.Pending + " personaje(s) sin guardar al cerrar.");
@@ -231,6 +270,10 @@ namespace Avelora.Server
 
             // Se mide antes de cerrar: el tiempo de parada no debe contar como ticks perdidos.
             ConsoleReporter.WriteSummary(elapsedSeconds, zone, core.Metrics, network.Snapshot(), 0);
+
+            // Despierta a los manejadores de SIGHUP/SIGTERM: el resumen y el guardado ya están
+            // hechos y, en el cierre de ventana, al devolver el manejador Windows mata el proceso.
+            shutdownCompleted.Set();
             return 0;
         }
 

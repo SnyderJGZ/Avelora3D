@@ -349,6 +349,16 @@ namespace Avelora.Bots
             return text.ToString();
         }
 
+        /// <summary>Texto del rechazo para la consola; el resumen sigue usando el nombre del enum.</summary>
+        private static string DescribeReject(RejectReason reason) =>
+            reason switch
+            {
+                RejectReason.InvalidCredentials => "cuenta, contraseña o invitación incorrectas",
+                RejectReason.CharacterLimit => "la cuenta ya tiene el máximo de personajes",
+                RejectReason.RateLimited => "demasiadas peticiones",
+                _ => reason.ToString(),
+            };
+
         /// <summary>Conecta y juega durante el tiempo pedido. Bloquea el hilo que lo llama.</summary>
         public void Run(CancellationToken cancellationToken)
         {
@@ -487,7 +497,7 @@ namespace Avelora.Bots
                         return AttemptResult.RateLimited;
                     }
 
-                    Status = "rechazado (" + reason + ")";
+                    Status = "rechazado (" + DescribeReject(reason) + ")";
                     RejectReasonText = reason.ToString();
                     return AttemptResult.RejectedFinally;
                 }
@@ -564,7 +574,7 @@ namespace Avelora.Bots
         /// </summary>
         /// <remarks>
         /// En una base nueva, una cuenta que no existe se <b>registra</b> con un saludo correcto: no
-        /// habría <c>InvalidCredentials</c> sino <c>RegistrationClosed</c> o un alta. Por eso el
+        /// habría un fallo que cuente para el límite sino un alta. Por eso el
         /// primer saludo es correcto (solo para crear la cuenta) y los demás llevan la contraseña
         /// mal a propósito. Esa preparación se cuenta aparte y se ve en el resumen.
         /// </remarks>
@@ -643,7 +653,7 @@ namespace Avelora.Bots
                 }
             }
 
-            Status = "rechazado (" + lastReject + ")";
+            Status = "rechazado (" + DescribeReject(lastReject) + ")";
             RejectReasonText = lastReject.ToString();
         }
 

@@ -61,10 +61,11 @@ namespace Avelora.Server.Configuration
         public string DatabasePath { get; set; } = "data/avelora.db";
 
         /// <summary>
-        /// Código necesario para crear una cuenta nueva. Vacío cierra el registro. En el MVP es un
-        /// valor de desarrollo compartido; cámbialo antes de exponer el servidor.
+        /// Código necesario para crear una cuenta nueva. Vacío cierra el registro.
         /// </summary>
-        public string RegistrationInvitationCode { get; set; } = "avelora-dev";
+        // El defecto cierra el registro: si el código de desarrollo no se escribe a propósito en
+        // la configuración, un servidor expuesto por descuido no deja crear cuentas.
+        public string RegistrationInvitationCode { get; set; } = string.Empty;
 
         /// <summary>Cada cuántos segundos se guardan los personajes conectados.</summary>
         public double SaveIntervalSeconds { get; set; } = 60d;

@@ -126,15 +126,28 @@ namespace Avelora.Server.Net
 
                 if (!login.Success)
                 {
-                    return LoginResult.Rejected(request.ConnectionId, request.AccountName, login.Failure);
+                    return LoginResult.Rejected(
+                        request.ConnectionId,
+                        request.AccountName,
+                        login.Failure,
+                        login.CountsAsFailedAttempt);
                 }
 
-                CharacterRecord character = _repository.GetOrCreateCharacter(
+                CharacterRecord? character = _repository.GetOrCreateCharacter(
                     login.AccountId,
                     request.CharacterName,
                     request.ZoneId,
                     request.Spawn,
                     request.MapHash);
+
+                if (character is null)
+                {
+                    // Credenciales válidas, pero la cuenta ya no admite más personajes.
+                    return LoginResult.Rejected(
+                        request.ConnectionId,
+                        request.AccountName,
+                        RejectReason.CharacterLimit);
+                }
 
                 return LoginResult.Accepted(
                     request.ConnectionId,
@@ -199,6 +212,7 @@ namespace Avelora.Server.Net
             string accountName,
             bool success,
             RejectReason failure,
+            bool countsAsFailedAttempt,
             int accountId,
             CharacterRecord? character,
             string? error)
@@ -207,6 +221,7 @@ namespace Avelora.Server.Net
             AccountName = accountName;
             Success = success;
             Failure = failure;
+            CountsAsFailedAttempt = countsAsFailedAttempt;
             AccountId = accountId;
             Character = character;
             Error = error;
@@ -222,6 +237,9 @@ namespace Avelora.Server.Net
         /// <summary>Motivo del rechazo cuando <see cref="Success"/> es falso y no hubo excepción.</summary>
         public RejectReason Failure { get; }
 
+        /// <summary>Si ese fallo debe sumar al cupo de intentos de la cuenta.</summary>
+        public bool CountsAsFailedAttempt { get; }
+
         public int AccountId { get; }
 
         public CharacterRecord? Character { get; }
@@ -234,15 +252,40 @@ namespace Avelora.Server.Net
             int accountId,
             string accountName,
             CharacterRecord character) =>
-            new LoginResult(connectionId, accountName, true, RejectReason.Unknown, accountId, character, null);
+            new LoginResult(
+                connectionId,
+                accountName,
+                true,
+                RejectReason.Unknown,
+                false,
+                accountId,
+                character,
+                null);
 
         public static LoginResult Rejected(
             int connectionId,
             string accountName,
-            RejectReason reason) =>
-            new LoginResult(connectionId, accountName, false, reason, 0, null, null);
+            RejectReason reason,
+            bool countsAsFailedAttempt = false) =>
+            new LoginResult(
+                connectionId,
+                accountName,
+                false,
+                reason,
+                countsAsFailedAttempt,
+                0,
+                null,
+                null);
 
         public static LoginResult Faulted(int connectionId, string accountName, string error) =>
-            new LoginResult(connectionId, accountName, false, RejectReason.Unknown, 0, null, error);
+            new LoginResult(
+                connectionId,
+                accountName,
+                false,
+                RejectReason.Unknown,
+                false,
+                0,
+                null,
+                error);
     }
 }

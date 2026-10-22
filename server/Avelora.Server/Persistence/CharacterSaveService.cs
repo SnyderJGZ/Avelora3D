@@ -93,6 +93,9 @@ namespace Avelora.Server.Persistence
         /// <summary>Espera a que no quede nada pendiente. Devuelve <c>false</c> si se agota el tiempo.</summary>
         public bool Flush(TimeSpan timeout) => _idle.Wait(timeout);
 
+        /// <summary>Milisegundos entre intentos cuando un guardado falla.</summary>
+        private const int RetryDelayMilliseconds = 1000;
+
         public void Dispose()
         {
             if (_disposed)
@@ -111,9 +114,25 @@ namespace Avelora.Server.Persistence
 
         private void Run()
         {
+            bool failed = false;
+
             while (true)
             {
-                _signal.WaitOne();
+                if (failed)
+                {
+                    // Al parar no se espera el segundo de reintento: se hace un último intento
+                    // (abajo) y se sale, para que Dispose no se quede colgado.
+                    if (!_stopping)
+                    {
+                        _signal.WaitOne(RetryDelayMilliseconds);
+                    }
+                }
+                else
+                {
+                    _signal.WaitOne();
+                }
+
+                failed = false;
 
                 while (true)
                 {
@@ -153,7 +172,29 @@ namespace Avelora.Server.Persistence
                                 "ERROR: no se pudo guardar el personaje " + character.Id + ": " + ex.Message);
 
                             Interlocked.Increment(ref _failed);
+
+                            lock (_gate)
+                            {
+                                // La foto vuelve a la cola. Si mientras tanto llegó una más nueva
+                                // del mismo personaje, esa gana y esta se descarta.
+                                _pending.TryAdd(character.Id, character);
+                            }
+
+                            failed = true;
                         }
+                    }
+
+                    // Sin bucle activo: si algo falló, la vuelta exterior espera un segundo (o una
+                    // foto nueva, que despierta la señal) antes de reintentar. Al parar ya no se
+                    // reintenta: el intento de arriba era el último.
+                    if (failed)
+                    {
+                        if (_stopping)
+                        {
+                            return;
+                        }
+
+                        break;
                     }
                 }
             }

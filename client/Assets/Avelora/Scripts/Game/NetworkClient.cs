@@ -782,13 +782,15 @@ namespace Avelora.Client
                 case RejectReason.RateLimited:
                     return "demasiados mensajes";
                 case RejectReason.InvalidCredentials:
-                    return "cuenta o contraseña incorrectas";
+                    return "cuenta, contraseña o invitación incorrectas";
                 case RejectReason.RegistrationClosed:
                     return "cuenta inexistente o invitación no válida";
                 case RejectReason.CharacterInUse:
                     return "ese personaje ya está conectado";
                 case RejectReason.LoggedInElsewhere:
                     return "tu cuenta se ha conectado desde otro sitio";
+                case RejectReason.CharacterLimit:
+                    return "la cuenta ya tiene el máximo de personajes";
                 default:
                     return "motivo desconocido";
             }

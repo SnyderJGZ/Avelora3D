@@ -1,5 +1,4 @@
 #nullable enable
-using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Persistence
 {
@@ -36,10 +35,6 @@ namespace Avelora.Server.Persistence
             password.Length >= MinPasswordLength &&
             password.Length <= MaxPasswordLength &&
             !string.IsNullOrWhiteSpace(password);
-
-        public static bool IsValidInvitation(string invitationCode) =>
-            invitationCode != null &&
-            invitationCode.Length <= ProtocolConstants.MaxInvitationCodeBytes;
 
         private static bool IsValidName(string value, int minLength, int maxLength)
         {

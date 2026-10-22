@@ -26,9 +26,10 @@ namespace Avelora.Server.Persistence
 
         /// <summary>
         /// Devuelve el personaje de esa cuenta o lo crea en <paramref name="spawn"/> si es la
-        /// primera vez. El nombre se compara sin distinguir mayúsculas.
+        /// primera vez. El nombre se compara sin distinguir mayúsculas. Devuelve <c>null</c> si la
+        /// cuenta ya tiene el máximo de personajes que admite la implementación.
         /// </summary>
-        CharacterRecord GetOrCreateCharacter(
+        CharacterRecord? GetOrCreateCharacter(
             int accountId,
             string characterName,
             int zoneId,

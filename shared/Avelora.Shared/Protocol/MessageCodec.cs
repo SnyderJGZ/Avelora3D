@@ -380,7 +380,7 @@ namespace Avelora.Shared.Protocol
                 // Un motivo inventado no se puede mostrar ni interpretar: se rechaza el mensaje.
                 // El límite es el último valor definido; la prueba
                 // Todos_Los_Valores_Definidos_De_Las_Enumeraciones_Viajan avisa si se olvida.
-                if (rawReason > (byte)RejectReason.LoggedInElsewhere)
+                if (rawReason > (byte)RejectReason.CharacterLimit)
                 {
                     return false;
                 }

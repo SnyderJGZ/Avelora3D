@@ -26,17 +26,6 @@ namespace Avelora.Server.Persistence
         private const int SaltSize = 16;
         private const int HashSize = 32;
 
-        /// <summary>Crea sal y hash nuevos para una contraseña con las iteraciones por defecto.</summary>
-        public static void Create(
-            string password,
-            out byte[] salt,
-            out byte[] hash,
-            out int iterations)
-        {
-            iterations = DefaultIterations;
-            Create(password, iterations, out salt, out hash);
-        }
-
         /// <summary>
         /// Crea sal y hash nuevos con un número de iteraciones concreto. Se usa al registrar una
         /// cuenta y al recalcular el hash de una que se quedó con menos de las configuradas.
