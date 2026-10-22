@@ -28,8 +28,11 @@ namespace Avelora.Tests
         private static readonly Vec2 Half = new Vec2(0.4f, 0.4f);
         private static readonly Vec2 Spawn = new ServerConfig().Spawn;
 
-        /// <summary>Dónde frena el jugador contra el tabique interior (columna x = 0).</summary>
-        private const float WallStopX = -0.5f;
+        /// <summary>
+        /// Dónde frena el jugador contra el tabique interior (columna x = 0). Desde G-04 se acerca
+        /// hasta tocarlo: centro = 0 − semiancho (0,4), no a un paso de la pared.
+        /// </summary>
+        private const float WallStopX = -0.4f;
 
         private static string MapPath =>
             Path.Combine(AppContext.BaseDirectory, "maps", "avelora-etapa-a.avmap");

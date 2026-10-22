@@ -21,6 +21,7 @@ namespace Avelora.Bots
     /// dotnet run --project tools/Avelora.Bots -- --bots 50 --ramp-ms 200 --behavior crowd
     /// dotnet run --project tools/Avelora.Bots -- --bots 20 --latency-ms 80 --jitter-ms 20 --loss 0.02
     /// dotnet run --project tools/Avelora.Bots -- --bots 20 --latency-ms 80 --jitter-ms 20 --loss 0.02 --input-redundancy 1
+    /// dotnet run --project tools/Avelora.Bots -- --bots 20 --log-corrections
     /// dotnet run --project tools/Avelora.Bots -- --bots 5 --behavior flood --account-prefix abuso
     /// dotnet run --project tools/Avelora.Bots -- --host 127.0.0.1 --port 7777 --bots 10
     /// </code>
@@ -103,6 +104,11 @@ namespace Avelora.Bots
                     "saludo esperado " + options.WelcomeTimeoutMs + " ms por intento");
                 Console.WriteLine("  Redundancia: " + options.InputRedundancy + " input(s) por mensaje" +
                     (options.InputRedundancy == 1 ? " (sin redundancia, como antes)" : string.Empty));
+
+                if (options.LogCorrections)
+                {
+                    Console.WriteLine("  Correcciones: se registra cada una (--log-corrections)");
+                }
                 Console.WriteLine("  Cuentas  : " + options.AccountPrefix + "1.." + options.AccountPrefix + options.Bots +
                     " (invitación '" + options.InvitationCode + "')");
                 Console.WriteLine("  Mapa     : " + mapPath + "  huella " + ShortHash(MapFile.ToHexString(mapHash)));
@@ -142,7 +148,8 @@ namespace Avelora.Bots
                         welcomeTimeoutMs: options.WelcomeTimeoutMs,
                         behavior: options.Behavior,
                         map: map,
-                        inputRedundancy: options.InputRedundancy);
+                        inputRedundancy: options.InputRedundancy,
+                        logCorrections: options.LogCorrections);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -468,6 +475,13 @@ namespace Avelora.Bots
                     return false;
                 }
 
+                if (string.Equals(argument, "--log-corrections", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Opción sin valor: no se consume el argumento siguiente.
+                    options.LogCorrections = true;
+                    continue;
+                }
+
                 if (i + 1 >= args.Length)
                 {
                     error = argument + " necesita un valor.";
@@ -726,6 +740,8 @@ namespace Avelora.Bots
             public double Loss { get; set; }
 
             public int InputRedundancy { get; set; } = ProtocolConstants.MaxInputsPerMessage;
+
+            public bool LogCorrections { get; set; }
         }
     }
 }

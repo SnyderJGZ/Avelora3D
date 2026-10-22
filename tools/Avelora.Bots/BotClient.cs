@@ -106,6 +106,7 @@ namespace Avelora.Bots
         private readonly string _accountName;
         private readonly string _password;
         private readonly string _invitationCode;
+        private readonly bool _logCorrections;
 
         private IClientTransport? _transport;
 
@@ -133,6 +134,7 @@ namespace Avelora.Bots
 
         // Predicción del jugador local (solo modo random), como la del cliente de Unity.
         private ClientPrediction? _prediction;
+        private Vec2 _halfSize;
         private long _corrections;
         private long _snaps;
 
@@ -183,7 +185,8 @@ namespace Avelora.Bots
             BotBehavior behavior = BotBehavior.Random,
             Func<IClientTransport>? transportFactory = null,
             MapCollisionGrid? map = null,
-            int inputRedundancy = ProtocolConstants.MaxInputsPerMessage)
+            int inputRedundancy = ProtocolConstants.MaxInputsPerMessage,
+            bool logCorrections = false)
         {
             if (startDelayMs < 0)
             {
@@ -218,6 +221,7 @@ namespace Avelora.Bots
             _maxRetries = retries;
             _welcomeTimeoutMs = welcomeTimeoutMs;
             _behavior = behavior;
+            _logCorrections = logCorrections;
             _accountName = accountPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
             _password = password;
             _invitationCode = invitationCode;
@@ -1018,9 +1022,11 @@ namespace Avelora.Bots
                 // posición y mide las correcciones que le costaría la red.
                 if (_behavior == BotBehavior.Random && _map != null)
                 {
+                    _halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
+
                     _prediction = new ClientPrediction(
                         _map,
-                        new Vec2(welcome.HalfWidth, welcome.HalfHeight),
+                        _halfSize,
                         welcome.Speed,
                         SimulationConstants.FixedDt);
 
@@ -1084,12 +1090,20 @@ namespace Avelora.Bots
 
                         if (_prediction != null)
                         {
-                            _prediction.Reconcile(
+                            bool corrected = _prediction.Reconcile(
                                 new Vec2(x, y),
                                 snapshot.LastProcessedInputSequence);
 
                             _corrections = _prediction.Corrections;
                             _snaps = _prediction.Snaps;
+
+                            if (corrected && _logCorrections)
+                            {
+                                LogCorrection(
+                                    snapshot.LastProcessedInputSequence,
+                                    x,
+                                    y);
+                            }
                         }
 
                         break;
@@ -1097,6 +1111,164 @@ namespace Avelora.Bots
                 }
             }
         }
+
+        /// <summary>
+        /// Deja una línea por cada corrección de predicción (solo con <c>--log-corrections</c>): bot,
+        /// secuencia confirmada, inputs pendientes reaplicados, base cuantizada, si esa base es
+        /// transitable, delta aplicado y distancia a la pared más cercana en cada eje.
+        /// </summary>
+        private void LogCorrection(uint sequence, float baseX, float baseY)
+        {
+            var basePosition = new Vec2(baseX, baseY);
+            Vec2 delta = _prediction!.LastCorrectionDelta;
+
+            bool baseWalkable = _map!.IsBoxWalkable(basePosition, _halfSize);
+
+            float wallX = NearestWallOnX(_map, basePosition, _halfSize, out string sideX);
+            float wallY = NearestWallOnY(_map, basePosition, _halfSize, out string sideY);
+
+            var pending = new System.Text.StringBuilder();
+            for (int i = 0; i < _prediction.PendingCount; i++)
+            {
+                _prediction.GetPendingInput(i, out uint pendingSequence, out sbyte pendingX, out sbyte pendingY);
+                if (i > 0)
+                {
+                    pending.Append('|');
+                }
+
+                pending.Append(pendingSequence).Append(':').Append(pendingX).Append(',').Append(pendingY);
+            }
+
+            Console.WriteLine(
+                "  [corrección] bot=" + Index +
+                " seq=" + sequence +
+                " pend=" + _prediction.LastCorrectionPendingInputs +
+                " pendientes=" + (pending.Length == 0 ? "-" : pending.ToString()) +
+                " base=(" + Fixed(baseX) + "; " + Fixed(baseY) + ")" +
+                " baseOk=" + (baseWalkable ? "sí" : "no") +
+                " pred=(" + Fixed(_prediction.LastCorrectionPredictedPosition.X) + "; " +
+                Fixed(_prediction.LastCorrectionPredictedPosition.Y) + ")" +
+                " replay=(" + Fixed(_prediction.LastCorrectionReplayedPosition.X) + "; " +
+                Fixed(_prediction.LastCorrectionReplayedPosition.Y) + ")" +
+                " delta=(" + Fixed(delta.X) + "; " + Fixed(delta.Y) + ")" +
+                " paredX=" + Fixed(wallX) + "/" + sideX +
+                " paredY=" + Fixed(wallY) + "/" + sideY);
+        }
+
+        /// <summary>Distancia de la caja a la columna bloqueada más cercana en X.</summary>
+        private static float NearestWallOnX(MapCollisionGrid map, Vec2 center, Vec2 half, out string side)
+        {
+            int minY = (int)MathF.Floor(center.Y - half.Y);
+            int maxY = (int)MathF.Floor(center.Y + half.Y);
+
+            float left = center.X - half.X;
+            float right = center.X + half.X;
+
+            float best = float.MaxValue;
+            side = "der";
+
+            for (int column = (int)MathF.Floor(right); column <= map.OriginX + map.Width; column++)
+            {
+                if (!ColumnBlocked(map, column, minY, maxY))
+                {
+                    continue;
+                }
+
+                best = column - right;
+                break;
+            }
+
+            for (int column = (int)MathF.Floor(left); column >= map.OriginX - 1; column--)
+            {
+                if (!ColumnBlocked(map, column, minY, maxY))
+                {
+                    continue;
+                }
+
+                float distance = left - (column + 1f);
+                if (distance < best)
+                {
+                    best = distance;
+                    side = "izq";
+                }
+
+                break;
+            }
+
+            return best < 0f ? 0f : best;
+        }
+
+        /// <summary>Distancia de la caja a la fila bloqueada más cercana en Y.</summary>
+        private static float NearestWallOnY(MapCollisionGrid map, Vec2 center, Vec2 half, out string side)
+        {
+            int minX = (int)MathF.Floor(center.X - half.X);
+            int maxX = (int)MathF.Floor(center.X + half.X);
+
+            float bottom = center.Y - half.Y;
+            float top = center.Y + half.Y;
+
+            float best = float.MaxValue;
+            side = "arriba";
+
+            for (int row = (int)MathF.Floor(top); row <= map.OriginY + map.Height; row++)
+            {
+                if (!RowBlocked(map, row, minX, maxX))
+                {
+                    continue;
+                }
+
+                best = row - top;
+                break;
+            }
+
+            for (int row = (int)MathF.Floor(bottom); row >= map.OriginY - 1; row--)
+            {
+                if (!RowBlocked(map, row, minX, maxX))
+                {
+                    continue;
+                }
+
+                float distance = bottom - (row + 1f);
+                if (distance < best)
+                {
+                    best = distance;
+                    side = "abajo";
+                }
+
+                break;
+            }
+
+            return best < 0f ? 0f : best;
+        }
+
+        private static bool ColumnBlocked(MapCollisionGrid map, int column, int minRow, int maxRow)
+        {
+            for (int row = minRow; row <= maxRow; row++)
+            {
+                if (map.IsTileBlocked(column, row))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool RowBlocked(MapCollisionGrid map, int row, int minColumn, int maxColumn)
+        {
+            for (int column = minColumn; column <= maxColumn; column++)
+            {
+                if (map.IsTileBlocked(column, row))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string Fixed(float value) =>
+            value.ToString("0.00000", System.Globalization.CultureInfo.InvariantCulture);
 
         private void PickDirection()
         {

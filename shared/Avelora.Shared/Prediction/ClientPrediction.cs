@@ -141,6 +141,23 @@ namespace Avelora.Shared.Prediction
         /// <summary>Inputs enviados que el servidor todavía no ha confirmado.</summary>
         public int PendingCount => _pending.Count;
 
+        /// <summary>
+        /// Dirección de un input pendiente por índice (0 = el más antiguo). Solo para diagnóstico;
+        /// no interviene en la simulación.
+        /// </summary>
+        public void GetPendingInput(int index, out uint sequence, out sbyte directionX, out sbyte directionY)
+        {
+            if (index < 0 || index >= _pending.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), index, "No hay un input pendiente en ese índice.");
+            }
+
+            PendingInput input = _pending[index];
+            sequence = input.Sequence;
+            directionX = input.DirectionX;
+            directionY = input.DirectionY;
+        }
+
         /// <summary>Correcciones suaves aplicadas desde el último <see cref="Reset"/>.</summary>
         public long Corrections { get; private set; }
 
@@ -150,6 +167,21 @@ namespace Avelora.Shared.Prediction
         /// <summary>Inputs que se descartaron por llenarse el búfer (solo pasa si no llegan snapshots).</summary>
         public long DroppedInputs { get; private set; }
 
+        /// <summary>
+        /// Diferencia <c>servidor − predicho</c> de la última corrección aplicada, para diagnóstico
+        /// (G-04). No interviene en la reconciliación: solo deja constancia de lo que se corrigió.
+        /// </summary>
+        public Vec2 LastCorrectionDelta { get; private set; }
+
+        /// <summary>Inputs pendientes que se reaplicaron en la última corrección (diagnóstico).</summary>
+        public int LastCorrectionPendingInputs { get; private set; }
+
+        /// <summary>Posición predicha justo antes de la última corrección (diagnóstico, G-04).</summary>
+        public Vec2 LastCorrectionPredictedPosition { get; private set; }
+
+        /// <summary>Posición reaplicada desde el snapshot en la última corrección (diagnóstico, G-04).</summary>
+        public Vec2 LastCorrectionReplayedPosition { get; private set; }
+
         /// <summary>Vuelve a empezar en <paramref name="position"/> (aparición o reconexión).</summary>
         public void Reset(Vec2 position)
         {
@@ -158,6 +190,10 @@ namespace Avelora.Shared.Prediction
             _visualOffset = Vec2.Zero;
             _lastSequence = 0;
             _pending.Clear();
+            LastCorrectionDelta = Vec2.Zero;
+            LastCorrectionPendingInputs = 0;
+            LastCorrectionPredictedPosition = position;
+            LastCorrectionReplayedPosition = position;
         }
 
         /// <summary>
@@ -256,8 +292,13 @@ namespace Avelora.Shared.Prediction
             }
 
             Vec2 visualBefore = Position + _visualOffset;
+            LastCorrectionPredictedPosition = Position;
+            LastCorrectionReplayedPosition = current;
             Position = current;
             PreviousPosition = previous;
+
+            LastCorrectionDelta = delta;
+            LastCorrectionPendingInputs = _pending.Count;
 
             if (delta.Length > _snapDistance)
             {
