@@ -26,45 +26,75 @@ namespace Avelora.Tests
             return hash;
         }
 
+        private static byte[] NewEncrypted(byte seed)
+        {
+            var encrypted = new byte[HelloSecrets.EncryptedSize];
+
+            for (int i = 0; i < encrypted.Length; i++)
+            {
+                encrypted[i] = (byte)(seed + i);
+            }
+
+            return encrypted;
+        }
+
         [Fact]
         public void El_Saludo_Va_Y_Vuelve_Igual()
         {
             var original = new HelloMessage(
-                3,
+                ProtocolConstants.Version,
                 20,
                 NewHash(7),
                 123456u,
                 "cuenta",
-                "contraseña",
-                "personaje",
-                "invitacion");
+                NewEncrypted(3),
+                "personaje");
 
             byte[] bytes = MessageCodec.EncodeHello(original);
 
             Assert.True(MessageCodec.TryReadHello(bytes, 0, bytes.Length, out HelloMessage decoded));
-            Assert.True(bytes.Length > 41, "El saludo de la Etapa F lleva las cuatro cadenas.");
+
+            // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más las dos
+            // cadenas con su longitud uint16.
+            Assert.Equal(297 + 2 + 6 + 2 + 9, bytes.Length);
+            Assert.Equal((ushort)4, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
             Assert.Equal(original.ClientToken, decoded.ClientToken);
             Assert.Equal(original.MapHash, decoded.MapHash);
             Assert.Equal(original.AccountName, decoded.AccountName);
-            Assert.Equal(original.Password, decoded.Password);
+            Assert.Equal(original.EncryptedSecrets, decoded.EncryptedSecrets);
             Assert.Equal(original.CharacterName, decoded.CharacterName);
-            Assert.Equal(original.InvitationCode, decoded.InvitationCode);
+        }
+
+        [Fact]
+        public void Un_Saludo_Sin_El_Bloque_Cifrado_Exacto_Se_Rechaza()
+        {
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeHello(new HelloMessage(
+                ProtocolConstants.Version,
+                20,
+                NewHash(0),
+                1u,
+                "dev",
+                new byte[HelloSecrets.EncryptedSize - 1],
+                "dev")));
+
+            // Al leer, un saludo truncado en el bloque cifrado tampoco pasa.
+            byte[] bytes = MessageCodec.EncodeHello(new HelloMessage(ProtocolConstants.Version, 20, NewHash(0), 1u));
+            Assert.False(MessageCodec.TryReadHello(bytes, 0, bytes.Length - 1, out _));
         }
 
         [Fact]
         public void Un_Saludo_Con_Una_Cadena_Demasiado_Larga_No_Se_Puede_Codificar()
         {
             var hello = new HelloMessage(
-                2,
+                ProtocolConstants.Version,
                 20,
                 NewHash(0),
                 1u,
                 new string('a', ProtocolConstants.MaxAccountNameBytes + 1),
-                "avelora-dev",
-                "dev",
-                "avelora-dev");
+                NewEncrypted(0),
+                "dev");
 
             Assert.Throws<ArgumentException>(() => MessageCodec.EncodeHello(hello));
         }
@@ -73,19 +103,91 @@ namespace Avelora.Tests
         public void Un_Saludo_Con_Bytes_De_Mas_Se_Rechaza()
         {
             byte[] bytes = MessageCodec.EncodeHello(new HelloMessage(
-                2,
+                ProtocolConstants.Version,
                 20,
                 NewHash(0),
                 1u,
                 "dev",
-                "avelora-dev",
-                "dev",
-                "avelora-dev"));
+                NewEncrypted(0),
+                "dev"));
 
             byte[] withExtra = new byte[bytes.Length + 1];
             Array.Copy(bytes, withExtra, bytes.Length);
 
             Assert.False(MessageCodec.TryReadHello(withExtra, 0, withExtra.Length, out _));
+        }
+
+        [Fact]
+        public void El_Desafio_Va_Y_Vuelve_Igual()
+        {
+            var nonce = new byte[HelloSecrets.NonceSize];
+
+            for (int i = 0; i < nonce.Length; i++)
+            {
+                nonce[i] = (byte)(i + 1);
+            }
+
+            var modulus = new byte[HelloSecrets.ModulusSize];
+            modulus[0] = 0xC5;
+            modulus[modulus.Length - 1] = 0x7A;
+
+            var original = new ChallengeMessage(nonce, modulus, new byte[] { 0x01, 0x00, 0x01 });
+
+            byte[] bytes = MessageCodec.EncodeChallenge(original);
+
+            Assert.True(MessageCodec.TryReadChallenge(bytes, 0, bytes.Length, out ChallengeMessage decoded));
+            Assert.Equal(1 + HelloSecrets.NonceSize + 1 + 3 + HelloSecrets.ModulusSize, bytes.Length);
+            Assert.Equal(original.Nonce, decoded.Nonce);
+            Assert.Equal(original.Modulus, decoded.Modulus);
+            Assert.Equal(original.Exponent, decoded.Exponent);
+        }
+
+        [Fact]
+        public void El_Desafio_Con_Longitudes_Invalidas_Se_Rechaza()
+        {
+            var nonce = new byte[HelloSecrets.NonceSize];
+            var modulus = new byte[HelloSecrets.ModulusSize];
+            modulus[0] = 1;
+
+            // Nonce corto o módulo corto: no se puede ni codificar.
+            Assert.Throws<ArgumentException>(
+                () => MessageCodec.EncodeChallenge(new ChallengeMessage(new byte[15], modulus, new byte[] { 1 })));
+
+            Assert.Throws<ArgumentException>(
+                () => MessageCodec.EncodeChallenge(new ChallengeMessage(nonce, new byte[255], new byte[] { 1 })));
+
+            // Exponente vacío o de más de 4 bytes.
+            Assert.Throws<ArgumentException>(
+                () => MessageCodec.EncodeChallenge(new ChallengeMessage(nonce, modulus, Array.Empty<byte>())));
+
+            Assert.Throws<ArgumentException>(
+                () => MessageCodec.EncodeChallenge(new ChallengeMessage(nonce, modulus, new byte[5])));
+
+            byte[] valid = MessageCodec.EncodeChallenge(new ChallengeMessage(nonce, modulus, new byte[] { 1 }));
+
+            // Un byte de más y un byte de menos.
+            byte[] longer = new byte[valid.Length + 1];
+            Array.Copy(valid, longer, valid.Length);
+            Assert.False(MessageCodec.TryReadChallenge(longer, 0, longer.Length, out _));
+            Assert.False(MessageCodec.TryReadChallenge(valid, 0, valid.Length - 1, out _));
+
+            // Longitud del exponente 0 o 5.
+            byte[] zeroExponent = (byte[])valid.Clone();
+            zeroExponent[1 + HelloSecrets.NonceSize] = 0;
+            Assert.False(MessageCodec.TryReadChallenge(zeroExponent, 0, zeroExponent.Length, out _));
+
+            byte[] fiveExponent = (byte[])valid.Clone();
+            fiveExponent[1 + HelloSecrets.NonceSize] = 5;
+            Assert.False(MessageCodec.TryReadChallenge(fiveExponent, 0, fiveExponent.Length, out _));
+
+            // Exponente todo a cero y módulo todo a cero.
+            byte[] zeroExponentValue = (byte[])valid.Clone();
+            zeroExponentValue[1 + HelloSecrets.NonceSize + 1] = 0;
+            Assert.False(MessageCodec.TryReadChallenge(zeroExponentValue, 0, zeroExponentValue.Length, out _));
+
+            byte[] zeroModulus = (byte[])valid.Clone();
+            Array.Clear(zeroModulus, 1 + HelloSecrets.NonceSize + 1 + 1, HelloSecrets.ModulusSize);
+            Assert.False(MessageCodec.TryReadChallenge(zeroModulus, 0, zeroModulus.Length, out _));
         }
 
         [Fact]

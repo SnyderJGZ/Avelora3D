@@ -61,6 +61,12 @@ namespace Avelora.Server.Configuration
         public string DatabasePath { get; set; } = "data/avelora.db";
 
         /// <summary>
+        /// Ruta de la clave RSA-2048 con la que se cifra el saludo (H-02). Si es relativa se
+        /// resuelve junto a la configuración. Sin persistencia la clave es efímera y no se guarda.
+        /// </summary>
+        public string ServerKeyPath { get; set; } = "data/server-key.pem";
+
+        /// <summary>
         /// Código necesario para crear una cuenta nueva. Vacío cierra el registro.
         /// </summary>
         // El defecto cierra el registro: si el código de desarrollo no se escribe a propósito en
@@ -121,8 +127,20 @@ namespace Avelora.Server.Configuration
         /// </summary>
         public int MaxConnections { get; set; } = 16;
 
+        /// <summary>
+        /// Conexiones que admite cada IP. Por defecto 4: varias personas pueden compartir una casa
+        /// y un router sin que el límite las confunda con un abuso (H-02).
+        /// </summary>
+        public int MaxConnectionsPerIp { get; set; } = 4;
+
         /// <summary>Tope de mensajes por conexión y segundo (los inputs van a 20/s: deja margen al jitter).</summary>
         public int MaxMessagesPerSecondPerConnection { get; set; } = 90;
+
+        /// <summary>
+        /// Segundos, dentro del mismo minuto, en los que una conexión puede superar el límite de
+        /// mensajes sin ser cortada. Al llegar al tope se desconecta (H-02).
+        /// </summary>
+        public int MaxSecondsOverMessageLimit { get; set; } = 5;
 
         /// <summary>Tope de mensajes pendientes de enviar. Si se llena, se tiran los snapshots viejos.</summary>
         public int MaxQueuedOutboundMessages { get; set; } = 512;
@@ -311,6 +329,11 @@ namespace Avelora.Server.Configuration
                 throw new InvalidOperationException("saveIntervalSeconds debe ser un número positivo.");
             }
 
+            if (string.IsNullOrWhiteSpace(ServerKeyPath))
+            {
+                throw new InvalidOperationException("serverKeyPath está vacío y la persistencia está activada.");
+            }
+
             if (RegistrationInvitationCode is null)
             {
                 throw new InvalidOperationException("registrationInvitationCode no puede ser null.");
@@ -343,6 +366,27 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", DatabasePath));
+        }
+
+        /// <summary>
+        /// Resuelve el archivo de la clave del servidor. Como la base de datos, si la ruta es
+        /// relativa se crea junto a la configuración: la clave es del servidor, no un contenido
+        /// que se busque en varios directorios.
+        /// </summary>
+        public string ResolveServerKeyPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(ServerKeyPath))
+            {
+                throw new InvalidOperationException("serverKeyPath está vacío.");
+            }
+
+            if (Path.IsPathRooted(ServerKeyPath))
+            {
+                return ServerKeyPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ServerKeyPath));
         }
 
         /// <summary>
@@ -395,11 +439,21 @@ namespace Avelora.Server.Configuration
                     "los jugadores que sobran deben poder recibir un rechazo.");
             }
 
+            if (MaxConnectionsPerIp < 1)
+            {
+                throw new InvalidOperationException("maxConnectionsPerIp debe ser >= 1.");
+            }
+
             if (MaxMessagesPerSecondPerConnection < SimulationConstants.TickRate)
             {
                 throw new InvalidOperationException(
                     "maxMessagesPerSecondPerConnection debe cubrir al menos los inputs de un tick (" +
                     SimulationConstants.TickRate + "/s).");
+            }
+
+            if (MaxSecondsOverMessageLimit < 1)
+            {
+                throw new InvalidOperationException("maxSecondsOverMessageLimit debe ser >= 1.");
             }
 
             if (MaxQueuedOutboundMessages < 1)

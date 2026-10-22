@@ -22,5 +22,11 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: estado del mundo en un tick.</summary>
         Snapshot = 12,
+
+        /// <summary>
+        /// Servidor → cliente: nonce y clave pública con la que cifrar el saludo (protocolo v4).
+        /// Se envía nada más conectar, antes de que el cliente mande <see cref="Hello"/>.
+        /// </summary>
+        Challenge = 13,
     }
 }

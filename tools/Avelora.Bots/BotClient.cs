@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using Avelora.Net;
@@ -81,6 +82,9 @@ namespace Avelora.Bots
         /// <summary>Intentos de login fallido de un <c>badlogin</c> antes de darse por vencido.</summary>
         private const int MaxBadLoginAttempts = 10;
 
+        /// <summary>Para avisar una sola vez por proceso de que no se configuró la huella esperada.</summary>
+        private static int _missingFingerprintWarned;
+
         /// <summary>Pausa entre intentos fallidos: no es la rampa de G-01, solo evita llenar la cola de logins.</summary>
         private const int BadLoginPauseMs = 250;
 
@@ -113,6 +117,7 @@ namespace Avelora.Bots
         private readonly string _accountName;
         private readonly string _password;
         private readonly string _invitationCode;
+        private readonly string _serverKeyFingerprint;
         private readonly bool _logCorrections;
         private readonly string? _tracePositionsPath;
         private readonly string? _reportWelcomePath;
@@ -123,6 +128,11 @@ namespace Avelora.Bots
         private bool _connected;
         private bool _helloSent;
         private bool _welcomed;
+        private bool _challengeReceived;
+        private bool _keyMismatch;
+        private byte[]? _challengeNonce;
+        private RSAParameters _serverPublicKey;
+        private byte[]? _helloBytes;
         private bool _disconnected;
         private RejectReason? _reject;
         private long _attemptStartedAt;
@@ -197,7 +207,8 @@ namespace Avelora.Bots
             int inputRedundancy = ProtocolConstants.MaxInputsPerMessage,
             bool logCorrections = false,
             string? tracePositionsPath = null,
-            string? reportWelcomePath = null)
+            string? reportWelcomePath = null,
+            string? serverKeyFingerprint = null)
         {
             if (startDelayMs < 0)
             {
@@ -238,6 +249,7 @@ namespace Avelora.Bots
             _accountName = accountPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
             _password = password;
             _invitationCode = invitationCode;
+            _serverKeyFingerprint = (serverKeyFingerprint ?? string.Empty).Trim();
             _random = new Random(seed + (index * 7919));
             _clientToken = (uint)(seed + (index * 104729));
 
@@ -257,6 +269,12 @@ namespace Avelora.Bots
         public string? RejectReasonText { get; private set; }
 
         public BotBehavior Behavior => _behavior;
+
+        /// <summary>
+        /// En modo <c>replay</c>, si el servidor rechazó un saludo reenviado en otra conexión.
+        /// <c>null</c> si no se llegó a comprobar.
+        /// </summary>
+        public bool? ReplayedHelloRejected { get; private set; }
 
         public long Snapshots => Interlocked.Read(ref _snapshots);
 
@@ -422,6 +440,13 @@ namespace Avelora.Bots
             }
 
             _transport?.Disconnect();
+
+            if (_behavior == BotBehavior.Replay && _helloBytes != null)
+            {
+                // H-02: un saludo reenviado en otra conexión lleva el nonce de la anterior, así que
+                // el servidor debe rechazarlo sin llegar a la base de datos.
+                ReplayedHelloRejected = VerifyReplayedHelloRejected(cancellationToken);
+            }
         }
 
         public void Dispose()
@@ -483,9 +508,15 @@ namespace Avelora.Bots
 
                 long now = Environment.TickCount64;
 
-                if (_connected && !_helloSent)
+                if (_connected && _challengeReceived && !_helloSent)
                 {
                     SendHello(_password);
+                }
+
+                if (_keyMismatch)
+                {
+                    Status = "la clave del servidor no coincide";
+                    return AttemptResult.Failed;
                 }
 
                 if (_reject.HasValue)
@@ -696,9 +727,16 @@ namespace Avelora.Bots
             {
                 transport.Poll();
 
-                if (_connected && !_helloSent)
+                if (_connected && _challengeReceived && !_helloSent)
                 {
                     SendHello(password);
+                }
+
+                if (_keyMismatch)
+                {
+                    DiscardTransport();
+                    Status = "la clave del servidor no coincide";
+                    return LoginOutcome.Failed();
                 }
 
                 if (_reject.HasValue)
@@ -735,6 +773,9 @@ namespace Avelora.Bots
             _welcomed = false;
             _disconnected = false;
             _reject = null;
+            _challengeReceived = false;
+            _keyMismatch = false;
+            _challengeNonce = null;
 
             // La sesión es nueva: los inputs del intento anterior no sirven como redundancia.
             _recentCount = 0;
@@ -781,17 +822,148 @@ namespace Avelora.Bots
             _helloSent = true;
             Interlocked.Increment(ref _sentHellos);
 
+            // Protocolo v4: la contraseña y la invitación van cifradas con la clave pública del
+            // desafío. El nonce ata el saludo a esta conexión.
+            byte[] encrypted = HelloSecrets.Encrypt(
+                _serverPublicKey,
+                _challengeNonce!,
+                password,
+                _invitationCode);
+
             byte[] hello = MessageCodec.EncodeHello(new HelloMessage(
                 ProtocolConstants.Version,
                 (ushort)SimulationConstants.TickRate,
                 _mapHash,
                 _clientToken,
                 _accountName,
-                password,
-                _accountName,
-                _invitationCode));
+                encrypted,
+                _accountName));
 
+            // Se guarda el saludo tal cual para que el modo replay lo reenvíe en otra conexión.
+            _helloBytes = hello;
             _transport!.Send(hello, hello.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        /// <summary>
+        /// Comprueba la huella del servidor y guarda el nonce del desafío. Si la huella configurada
+        /// no coincide, corta: es la única forma de detectar un servidor impostor.
+        /// </summary>
+        private void HandleChallenge(in ChallengeMessage challenge)
+        {
+            _serverPublicKey = HelloSecrets.ToPublicKey(challenge.Modulus, challenge.Exponent);
+            string fingerprint = HelloSecrets.Fingerprint(_serverPublicKey);
+
+            if (_serverKeyFingerprint.Length > 0)
+            {
+                if (!string.Equals(_serverKeyFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase))
+                {
+                    _keyMismatch = true;
+                    Status = "la clave del servidor no coincide";
+                    _transport?.Disconnect();
+                    return;
+                }
+            }
+            else
+            {
+                WarnMissingFingerprint(fingerprint);
+            }
+
+            _challengeNonce = challenge.Nonce;
+            _challengeReceived = true;
+        }
+
+        /// <summary>
+        /// Avisa una sola vez por proceso: sin <c>--server-key</c> se acepta la clave recibida, pero
+        /// se deja su huella para poder configurarla la próxima vez.
+        /// </summary>
+        private static void WarnMissingFingerprint(string fingerprint)
+        {
+            if (Interlocked.Exchange(ref _missingFingerprintWarned, 1) == 0)
+            {
+                Console.WriteLine(
+                    "AVISO: no se configuró --server-key; se acepta el servidor con huella " + fingerprint + ".");
+            }
+        }
+
+        /// <summary>
+        /// Reenvía el saludo de la sesión anterior en una conexión nueva (modo <c>replay</c>, H-02):
+        /// lleva el nonce viejo, así que el servidor debe rechazarlo sin llegar al repositorio.
+        /// Devuelve <c>true</c> si el servidor rechazó el saludo reenviado.
+        /// </summary>
+        private bool VerifyReplayedHelloRejected(CancellationToken cancellationToken)
+        {
+            byte[] hello = _helloBytes!;
+
+            DiscardTransport();
+
+            _connected = false;
+            _helloSent = false;
+            _welcomed = false;
+            _disconnected = false;
+            _reject = null;
+            _challengeReceived = false;
+            _keyMismatch = false;
+            _challengeNonce = null;
+
+            IClientTransport transport;
+
+            try
+            {
+                transport = _transportFactory();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            _transport = transport;
+            transport.Connected += OnConnected;
+            transport.Disconnected += OnDisconnected;
+            transport.Received += OnReceived;
+
+            try
+            {
+                transport.Connect(_host, _port);
+            }
+            catch (Exception)
+            {
+                DiscardTransport();
+                return false;
+            }
+
+            long deadline = Environment.TickCount64 + _welcomeTimeoutMs;
+            bool replayed = false;
+
+            while (Environment.TickCount64 < deadline && !cancellationToken.IsCancellationRequested)
+            {
+                transport.Poll();
+
+                // No se manda el saludo nuevo: en cuanto llega el desafío, se reenvía el viejo.
+                if (_challengeReceived && !replayed)
+                {
+                    replayed = true;
+                    Interlocked.Increment(ref _sentHellos);
+                    transport.Send(hello, hello.Length, DeliveryMode.ReliableOrdered);
+                }
+
+                if (_reject.HasValue)
+                {
+                    bool rejected = !_welcomed;
+                    DiscardTransport();
+                    return rejected;
+                }
+
+                if (_welcomed || _disconnected)
+                {
+                    DiscardTransport();
+                    return false;
+                }
+
+                Thread.Sleep(2);
+            }
+
+            DiscardTransport();
+            return false;
         }
 
         /// <summary>
@@ -1026,6 +1198,12 @@ namespace Avelora.Bots
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
+            if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
+            {
+                HandleChallenge(challenge);
+                return;
+            }
+
             if (MessageCodec.TryReadWelcome(buffer, offset, length, out WelcomeMessage welcome))
             {
                 long now = Environment.TickCount64;

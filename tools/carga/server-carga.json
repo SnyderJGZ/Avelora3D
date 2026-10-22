@@ -5,6 +5,7 @@
   "port": 7777,
   "maxPlayers": 50,
   "maxConnections": 64,
+  "maxConnectionsPerIp": 100,
   "spawnX": -1.5,
   "spawnY": -2.5,
   "firstCharacterId": 1,

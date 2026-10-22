@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Threading;
 using Avelora.Server.Persistence;
 using Avelora.Shared;
@@ -27,6 +28,7 @@ namespace Avelora.Server.Net
     {
         private readonly IPlayerRepository _repository;
         private readonly string _registrationCode;
+        private readonly RSAParameters _serverKey;
         private readonly ConcurrentQueue<LoginRequest> _requests = new ConcurrentQueue<LoginRequest>();
         private readonly ConcurrentQueue<LoginResult> _results = new ConcurrentQueue<LoginResult>();
         private readonly AutoResetEvent _signal = new AutoResetEvent(false);
@@ -36,10 +38,11 @@ namespace Avelora.Server.Net
         private bool _disposed;
         private int _inFlight;
 
-        public LoginWorker(IPlayerRepository repository, string? registrationCode)
+        public LoginWorker(IPlayerRepository repository, string? registrationCode, RSAParameters serverKey)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _registrationCode = registrationCode ?? string.Empty;
+            _serverKey = serverKey;
 
             _thread = new Thread(Run)
             {
@@ -118,10 +121,27 @@ namespace Avelora.Server.Net
         {
             try
             {
+                // Descifrar aquí, en el hilo de login, quita unos milisegundos al hilo de red. Si
+                // el bloque no se descifra o el nonce no es el de esta conexión, no se llega al
+                // repositorio: es un saludo reenviado o manipulado.
+                if (!HelloSecrets.TryDecrypt(
+                    _serverKey,
+                    request.EncryptedSecrets,
+                    request.Nonce,
+                    out string password,
+                    out string invitationCode,
+                    out string cryptoError))
+                {
+                    return LoginResult.CryptoRejected(
+                        request.ConnectionId,
+                        request.AccountName,
+                        cryptoError);
+                }
+
                 AccountLoginResult login = _repository.Login(
                     request.AccountName,
-                    request.Password,
-                    request.InvitationCode,
+                    password,
+                    invitationCode,
                     _registrationCode);
 
                 if (!login.Success)
@@ -170,8 +190,8 @@ namespace Avelora.Server.Net
         public LoginRequest(
             int connectionId,
             string accountName,
-            string password,
-            string invitationCode,
+            byte[] encryptedSecrets,
+            byte[] nonce,
             string characterName,
             int zoneId,
             Vec2 spawn,
@@ -179,8 +199,8 @@ namespace Avelora.Server.Net
         {
             ConnectionId = connectionId;
             AccountName = accountName;
-            Password = password;
-            InvitationCode = invitationCode;
+            EncryptedSecrets = encryptedSecrets;
+            Nonce = nonce;
             CharacterName = characterName;
             ZoneId = zoneId;
             Spawn = spawn;
@@ -191,9 +211,11 @@ namespace Avelora.Server.Net
 
         public string AccountName { get; }
 
-        public string Password { get; }
+        /// <summary>Bloque RSA-OAEP-SHA1 del saludo; se descifra en este hilo.</summary>
+        public byte[] EncryptedSecrets { get; }
 
-        public string InvitationCode { get; }
+        /// <summary>Nonce del desafío de esta conexión; el bloque tiene que llevarlo dentro.</summary>
+        public byte[] Nonce { get; }
 
         public string CharacterName { get; }
 
@@ -215,7 +237,8 @@ namespace Avelora.Server.Net
             bool countsAsFailedAttempt,
             int accountId,
             CharacterRecord? character,
-            string? error)
+            string? error,
+            string? cryptoFailure)
         {
             ConnectionId = connectionId;
             AccountName = accountName;
@@ -225,6 +248,7 @@ namespace Avelora.Server.Net
             AccountId = accountId;
             Character = character;
             Error = error;
+            CryptoFailure = cryptoFailure;
         }
 
         public int ConnectionId { get; }
@@ -247,6 +271,12 @@ namespace Avelora.Server.Net
         /// <summary>Mensaje de la excepción del repositorio, si la hubo.</summary>
         public string? Error { get; }
 
+        /// <summary>
+        /// Motivo por el que no se pudo descifrar el saludo, si fue ese el fallo. No suma al cupo
+        /// de la cuenta: un bloque manipulado no es un intento de adivinar la contraseña.
+        /// </summary>
+        public string? CryptoFailure { get; }
+
         public static LoginResult Accepted(
             int connectionId,
             int accountId,
@@ -260,6 +290,7 @@ namespace Avelora.Server.Net
                 false,
                 accountId,
                 character,
+                null,
                 null);
 
         public static LoginResult Rejected(
@@ -275,7 +306,24 @@ namespace Avelora.Server.Net
                 countsAsFailedAttempt,
                 0,
                 null,
+                null,
                 null);
+
+        /// <summary>
+        /// El saludo no se pudo descifrar (o el nonce no era el de esta conexión). Se responde
+        /// <see cref="RejectReason.InvalidCredentials"/> sin tocar el repositorio.
+        /// </summary>
+        public static LoginResult CryptoRejected(int connectionId, string accountName, string reason) =>
+            new LoginResult(
+                connectionId,
+                accountName,
+                false,
+                RejectReason.InvalidCredentials,
+                false,
+                0,
+                null,
+                null,
+                reason);
 
         public static LoginResult Faulted(int connectionId, string accountName, string error) =>
             new LoginResult(
@@ -286,6 +334,7 @@ namespace Avelora.Server.Net
                 false,
                 0,
                 null,
-                error);
+                error,
+                null);
     }
 }

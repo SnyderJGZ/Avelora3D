@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Net;
 using LiteNetLib;
 
 namespace Avelora.Net
@@ -25,16 +26,23 @@ namespace Avelora.Net
         private readonly NetManager _manager;
         private readonly Dictionary<int, NetPeer> _peers = new Dictionary<int, NetPeer>();
         private readonly int _maxConnections;
+        private readonly int _maxConnectionsPerIp;
         private bool _started;
 
-        public LiteNetLibServerTransport(int maxConnections)
+        public LiteNetLibServerTransport(int maxConnections, int maxConnectionsPerIp = 4)
         {
             if (maxConnections < 1)
             {
                 throw new ArgumentOutOfRangeException(nameof(maxConnections), "Debe caber al menos una conexión.");
             }
 
+            if (maxConnectionsPerIp < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxConnectionsPerIp), "Debe caber al menos una conexión por IP.");
+            }
+
             _maxConnections = maxConnections;
+            _maxConnectionsPerIp = maxConnectionsPerIp;
             _manager = new NetManager(_listener)
             {
                 AutoRecycle = true,
@@ -123,7 +131,30 @@ namespace Avelora.Net
                 return;
             }
 
+            // Varias personas pueden compartir una IP (una casa, un router), pero una sola máquina
+            // no puede acaparar las conexiones. Recorrer _peers basta: el máximo es pequeño.
+            if (CountPeersFrom(request.RemoteEndPoint.Address) >= _maxConnectionsPerIp)
+            {
+                request.Reject();
+                return;
+            }
+
             request.AcceptIfKey(ConnectionKey);
+        }
+
+        private int CountPeersFrom(IPAddress address)
+        {
+            int count = 0;
+
+            foreach (KeyValuePair<int, NetPeer> pair in _peers)
+            {
+                if (pair.Value.Address.Equals(address))
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         private void OnPeerConnected(NetPeer peer)

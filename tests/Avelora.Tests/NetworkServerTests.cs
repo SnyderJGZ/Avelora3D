@@ -40,14 +40,16 @@ namespace Avelora.Tests
 
         private sealed class Harness : IDisposable
         {
-            public Harness(Action<ServerConfig>? configure = null)
+            private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+
+            public Harness(Action<ServerConfig>? configure = null, Func<long>? clock = null)
             {
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
                 Zone = NewZone(Config);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
-                Server = new NetworkServer(Zone, Config, Transport, MapHash);
+                Server = new NetworkServer(Zone, Config, Transport, MapHash, clock: clock);
             }
 
             public ServerConfig Config { get; }
@@ -60,15 +62,48 @@ namespace Avelora.Tests
 
             public NetworkServer Server { get; }
 
-            public void Connect(int connectionId) => Transport.RaiseConnected(connectionId);
+            /// <summary>
+            /// Simula la conexión y guarda el nonce del <c>Challenge</c> que manda el servidor. El
+            /// desafío se retira de <see cref="FakeServerTransport.Sent"/> para que las pruebas
+            /// sigan contando solo lo que ocurre después del saludo.
+            /// </summary>
+            public void Connect(int connectionId)
+            {
+                Transport.RaiseConnected(connectionId);
+
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadChallenge(sent.Data, 0, sent.Data.Length, out ChallengeMessage challenge))
+                    {
+                        _challengeNonces[connectionId] = challenge.Nonce;
+                        Transport.Sent.RemoveAt(i);
+                        return;
+                    }
+                }
+
+                throw new InvalidOperationException(
+                    "La conexión " + connectionId + " no recibió el desafío del servidor.");
+            }
 
             public void Handshake(int connectionId, ushort? version = null, byte[]? mapHash = null)
             {
+                byte[] encrypted = HelloSecrets.Encrypt(
+                    Server.PublicKey,
+                    _challengeNonces[connectionId],
+                    "avelora-dev",
+                    "avelora-dev");
+
                 var hello = new HelloMessage(
                     version ?? ProtocolConstants.Version,
                     (ushort)SimulationConstants.TickRate,
                     mapHash ?? MapHash,
-                    4242u + (uint)connectionId);
+                    4242u + (uint)connectionId,
+                    "dev",
+                    encrypted,
+                    "dev");
 
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
             }
@@ -531,6 +566,60 @@ namespace Avelora.Tests
             SentMessage last = harness.Transport.Sent[harness.Transport.Sent.Count - 1];
             Assert.True(MessageCodec.TryReadReject(last.Data, 0, last.Data.Length, out RejectMessage reject));
             Assert.Equal(RejectReason.RateLimited, reject.Reason);
+        }
+
+        [Fact]
+        public void Inundar_Durante_Cinco_Segundos_Desconecta_Y_Cuatro_No()
+        {
+            // Superar el tope de forma sostenida no puede dejar la sesión abierta para siempre.
+            Assert.False(FloodForSeconds(4), "Cuatro segundos por encima del tope no deben cortar la sesión.");
+            Assert.True(FloodForSeconds(5), "Cinco segundos por encima del tope deben cortar la sesión.");
+        }
+
+        /// <summary>
+        /// Simula <paramref name="seconds"/> segundos mandando el límite + 1 mensajes por segundo.
+        /// Devuelve si el servidor desconectó por inundación sostenida.
+        /// </summary>
+        private static bool FloodForSeconds(int seconds)
+        {
+            // Un minuto del reloj inyectado lejos de un cambio de minuto, para que la ventana no
+            // se reinicie a mitad de la prueba.
+            long now = 1_000_000;
+
+            using var harness = new Harness(
+                config =>
+                {
+                    config.MaxMessagesPerSecondPerConnection = 5;
+                    config.MaxSecondsOverMessageLimit = 5;
+                    config.RejectDisconnectDelayMilliseconds = 0;
+                },
+                () => now);
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            uint sequence = 0;
+
+            for (int second = 0; second < seconds; second++)
+            {
+                for (int i = 0; i < 6; i++)
+                {
+                    sequence++;
+                    harness.Transport.RaiseReceived(
+                        1,
+                        MessageCodec.EncodeMoveInput(new MoveInputMessage(sequence, 1, 0)));
+                }
+
+                if (harness.Server.Snapshot().RateLimitedDisconnects > 0)
+                {
+                    return true;
+                }
+
+                now += 1000;
+            }
+
+            return harness.Server.Snapshot().RateLimitedDisconnects > 0;
         }
 
         [Fact]

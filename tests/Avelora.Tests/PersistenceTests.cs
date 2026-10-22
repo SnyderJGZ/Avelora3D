@@ -407,6 +407,8 @@ namespace Avelora.Tests
 
         private sealed class ServerHarness : IDisposable
         {
+            private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+
             public ServerHarness(string databasePath)
             {
                 Config = new ServerConfig
@@ -466,19 +468,43 @@ namespace Avelora.Tests
 
             public NetworkServer Server { get; }
 
-            public void Connect(int connectionId) => Transport.RaiseConnected(connectionId);
+            public void Connect(int connectionId)
+            {
+                Transport.RaiseConnected(connectionId);
+
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadChallenge(sent.Data, 0, sent.Data.Length, out ChallengeMessage challenge))
+                    {
+                        _challengeNonces[connectionId] = challenge.Nonce;
+                        Transport.Sent.RemoveAt(i);
+                        return;
+                    }
+                }
+
+                throw new InvalidOperationException(
+                    "La conexión " + connectionId + " no recibió el desafío del servidor.");
+            }
 
             public void Handshake(int connectionId, string account, string password, string character)
             {
+                byte[] encrypted = HelloSecrets.Encrypt(
+                    Server.PublicKey,
+                    _challengeNonces[connectionId],
+                    password,
+                    Config.RegistrationInvitationCode);
+
                 var hello = new HelloMessage(
                     ProtocolConstants.Version,
                     (ushort)SimulationConstants.TickRate,
                     MapHash,
                     1000u + (uint)connectionId,
                     account,
-                    password,
-                    character,
-                    Config.RegistrationInvitationCode);
+                    encrypted,
+                    character);
 
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
             }

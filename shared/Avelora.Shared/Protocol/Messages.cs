@@ -5,7 +5,34 @@ using Avelora.Shared;
 namespace Avelora.Shared.Protocol
 {
     /// <summary>
-    /// Saludo inicial del cliente: versión, tick, mapa y credenciales (plan §4 y §8).
+    /// Desafío que el servidor manda nada más conectar (protocolo v4): el nonce de esta sesión y
+    /// la clave pública RSA con la que el cliente debe cifrar el saludo.
+    /// </summary>
+    /// <remarks>
+    /// El nonce es de un solo uso: el servidor lo borra al recibir el <see cref="HelloMessage"/> o
+    /// al desconectar. Así un saludo reenviado en otra conexión no puede descifrarse.
+    /// </remarks>
+    public readonly struct ChallengeMessage
+    {
+        public ChallengeMessage(byte[] nonce, byte[] modulus, byte[] exponent)
+        {
+            Nonce = nonce ?? Array.Empty<byte>();
+            Modulus = modulus ?? Array.Empty<byte>();
+            Exponent = exponent ?? Array.Empty<byte>();
+        }
+
+        /// <summary>Nonce aleatorio de esta conexión (<see cref="HelloSecrets.NonceSize"/> bytes).</summary>
+        public byte[] Nonce { get; }
+
+        /// <summary>Módulo RSA de 2048 bits (<see cref="HelloSecrets.ModulusSize"/> bytes).</summary>
+        public byte[] Modulus { get; }
+
+        /// <summary>Exponente público (de 1 a 4 bytes).</summary>
+        public byte[] Exponent { get; }
+    }
+
+    /// <summary>
+    /// Saludo inicial del cliente: versión, tick, mapa y credenciales cifradas (plan §4 y §8).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -14,8 +41,9 @@ namespace Avelora.Shared.Protocol
     /// quién dice ser y qué personaje quiere usar.
     /// </para>
     /// <para>
-    /// La contraseña viaja en claro sobre UDP en esta etapa. El MVP está pensado para localhost;
-    /// el cifrado del transporte y los límites de intentos llegan en la Etapa H.
+    /// Desde el protocolo v4 la contraseña y la invitación ya no viajan en el saludo: van cifradas
+    /// con RSA-OAEP-SHA1 en <see cref="EncryptedSecrets"/>, usando el nonce y la clave pública del
+    /// <see cref="ChallengeMessage"/>. El nombre de cuenta y el de personaje siguen en claro.
     /// </para>
     /// </remarks>
     public readonly struct HelloMessage
@@ -31,9 +59,8 @@ namespace Avelora.Shared.Protocol
                 mapHash,
                 clientToken,
                 "dev",
-                "avelora-dev",
-                string.Empty,
-                "avelora-dev")
+                new byte[HelloSecrets.EncryptedSize],
+                "dev")
         {
         }
 
@@ -43,18 +70,16 @@ namespace Avelora.Shared.Protocol
             byte[] mapHash,
             uint clientToken,
             string accountName,
-            string password,
-            string characterName,
-            string invitationCode)
+            byte[] encryptedSecrets,
+            string characterName)
         {
             ProtocolVersion = protocolVersion;
             TickRate = tickRate;
             MapHash = mapHash;
             ClientToken = clientToken;
             AccountName = accountName ?? string.Empty;
-            Password = password ?? string.Empty;
+            EncryptedSecrets = encryptedSecrets ?? Array.Empty<byte>();
             CharacterName = characterName ?? string.Empty;
-            InvitationCode = invitationCode ?? string.Empty;
         }
 
         /// <summary>Versión del protocolo que habla el cliente.</summary>
@@ -72,14 +97,14 @@ namespace Avelora.Shared.Protocol
         /// <summary>Nombre de la cuenta. El servidor lo compara sin distinguir mayúsculas.</summary>
         public string AccountName { get; }
 
-        /// <summary>Contraseña de la cuenta. No se registra en logs.</summary>
-        public string Password { get; }
+        /// <summary>
+        /// Bloque de <see cref="HelloSecrets.EncryptedSize"/> bytes con
+        /// <c>nonce ‖ contraseña ‖ invitación</c> cifrado con RSA-OAEP-SHA1.
+        /// </summary>
+        public byte[] EncryptedSecrets { get; }
 
         /// <summary>Personaje que se quiere usar. Vacío significa «el mismo nombre que la cuenta».</summary>
         public string CharacterName { get; }
-
-        /// <summary>Código necesario para registrar una cuenta nueva (el MVP no tiene registro abierto).</summary>
-        public string InvitationCode { get; }
     }
 
     /// <summary>

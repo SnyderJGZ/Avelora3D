@@ -112,6 +112,11 @@ namespace Avelora.Bots
                 Console.WriteLine("  Redundancia: " + options.InputRedundancy + " input(s) por mensaje" +
                     (options.InputRedundancy == 1 ? " (sin redundancia, como antes)" : string.Empty));
 
+                Console.WriteLine("  Clave    : " +
+                    (string.IsNullOrEmpty(options.ServerKeyFingerprint)
+                        ? "sin huella esperada (modo desarrollo, se acepta la del servidor)"
+                        : options.ServerKeyFingerprint));
+
                 if (options.LogCorrections)
                 {
                     Console.WriteLine("  Correcciones: se registra cada una (--log-corrections)");
@@ -168,7 +173,8 @@ namespace Avelora.Bots
                         inputRedundancy: options.InputRedundancy,
                         logCorrections: options.LogCorrections,
                         tracePositionsPath: options.TracePositionsPath,
-                        reportWelcomePath: options.ReportWelcomePath);
+                        reportWelcomePath: options.ReportWelcomePath,
+                        serverKeyFingerprint: options.ServerKeyFingerprint);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -335,6 +341,31 @@ namespace Avelora.Bots
                 if (options.Behavior == BotBehavior.Speed)
                 {
                     Console.WriteLine("  Velocidad  : " + DescribeSpeedCheck(bots));
+                }
+
+                if (options.Behavior == BotBehavior.Replay)
+                {
+                    int checkedBots = 0;
+                    int replayedRejected = 0;
+
+                    for (int i = 0; i < bots.Count; i++)
+                    {
+                        bool? rejected = bots[i].ReplayedHelloRejected;
+
+                        if (rejected.HasValue)
+                        {
+                            checkedBots++;
+
+                            if (rejected.Value)
+                            {
+                                replayedRejected++;
+                            }
+                        }
+                    }
+
+                    Console.WriteLine(
+                        "  Replay     : saludo reenviado rechazado en " + replayedRejected + "/" +
+                        checkedBots + " bot(s)");
                 }
             }
 
@@ -772,9 +803,36 @@ namespace Avelora.Bots
                         options.InvitationCode = value;
                         break;
 
+                    case "--server-key":
+                        if (!IsHex(value) || value.Length == 0)
+                        {
+                            error = "La huella del servidor debe ser hexadecimal (64 caracteres).";
+                            return false;
+                        }
+
+                        options.ServerKeyFingerprint = value;
+                        break;
+
                     default:
                         error = "Opción desconocida: " + argument;
                         return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsHex(string value)
+        {
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+
+                if (!((c >= '0' && c <= '9') ||
+                      (c >= 'a' && c <= 'f') ||
+                      (c >= 'A' && c <= 'F')))
+                {
+                    return false;
                 }
             }
 
@@ -856,6 +914,8 @@ namespace Avelora.Bots
             public string Password { get; set; } = "avelora-dev";
 
             public string InvitationCode { get; set; } = "avelora-dev";
+
+            public string ServerKeyFingerprint { get; set; } = string.Empty;
 
             public int LatencyMs { get; set; }
 

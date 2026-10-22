@@ -43,11 +43,14 @@ namespace Avelora.Client
 
         [SerializeField] private int port = ProtocolConstants.DefaultPort;
 
+        [Tooltip("Huella SHA-256 esperada de la clave pública del servidor (64 hex). Vacía = aceptar la que llegue y avisar por consola; es el modo de desarrollo.")]
+        [SerializeField] private string serverKeyFingerprint = string.Empty;
+
         [Header("Cuenta (Etapa F)")]
         [Tooltip("Cuenta registrada en el servidor. La primera vez se crea con el código de invitación.")]
         [SerializeField] private string accountName = "dev";
 
-        [Tooltip("Contraseña de la cuenta. Viaja sin cifrar sobre UDP: úsala solo en localhost hasta la Etapa H.")]
+        [Tooltip("Contraseña de la cuenta. Viaja cifrada con RSA-OAEP-SHA1 dentro del saludo (protocolo v4).")]
         [SerializeField] private string password = "avelora-dev";
 
         [Tooltip("Personaje a cargar. Vacío usa el mismo nombre que la cuenta.")]
@@ -112,6 +115,10 @@ namespace Avelora.Client
         private bool _connecting;
         private bool _welcomeReceived;
         private bool _disconnectRequested;
+        private bool _challengeReceived;
+        private bool _fingerprintWarned;
+        private byte[] _challengeNonce;
+        private System.Security.Cryptography.RSAParameters _serverPublicKey;
         private string _status = "sin conectar";
         private RejectReason? _lastReject;
 
@@ -235,6 +242,8 @@ namespace Avelora.Client
             _lastReject = null;
             _welcomeReceived = false;
             _disconnectRequested = false;
+            _challengeReceived = false;
+            _challengeNonce = null;
             _clientToken = (uint)UnityEngine.Random.Range(1, int.MaxValue);
             _connectStartedAt = Time.unscaledTimeAsDouble;
             _connecting = true;
@@ -407,10 +416,69 @@ namespace Avelora.Client
                 return;
             }
 
+            // Protocolo v4: el servidor manda primero un Challenge con su clave pública y un nonce.
+            // Hasta recibirlo no se puede cifrar el saludo.
+            _challengeReceived = false;
+            _challengeNonce = null;
+            _status = "esperando desafío...";
+        }
+
+        /// <summary>
+        /// Comprueba la huella del servidor (si está configurada) y manda el saludo con las
+        /// credenciales cifradas y el nonce de esta conexión.
+        /// </summary>
+        private void HandleChallenge(ChallengeMessage challenge)
+        {
+            if (_transport == null || _challengeReceived)
+            {
+                return;
+            }
+
+            _serverPublicKey = HelloSecrets.ToPublicKey(challenge.Modulus, challenge.Exponent);
+            string fingerprint = HelloSecrets.Fingerprint(_serverPublicKey);
+            string expected = serverKeyFingerprint == null ? string.Empty : serverKeyFingerprint.Trim();
+
+            if (expected.Length > 0)
+            {
+                if (!string.Equals(expected, fingerprint, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Solo se corta aquí: es la única forma de no hablar con un servidor impostor.
+                    _status = "la clave del servidor no coincide";
+                    _disconnectRequested = true;
+                    return;
+                }
+            }
+            else if (!_fingerprintWarned)
+            {
+                _fingerprintWarned = true;
+                Debug.LogWarning(
+                    "[Avelora] serverKeyFingerprint está vacío: se acepta el servidor con huella " +
+                    fingerprint + " (modo desarrollo).",
+                    this);
+            }
+
+            _challengeNonce = challenge.Nonce;
+            _challengeReceived = true;
+            SendHello();
+        }
+
+        private void SendHello()
+        {
+            if (_transport == null || _map == null || _map.ContentHashBytes == null || _challengeNonce == null)
+            {
+                return;
+            }
+
             string account = accountName == null ? string.Empty : accountName.Trim();
             string character = string.IsNullOrWhiteSpace(characterName)
                 ? account
                 : characterName.Trim();
+
+            byte[] encrypted = HelloSecrets.Encrypt(
+                _serverPublicKey,
+                _challengeNonce,
+                password,
+                invitationCode);
 
             var hello = new HelloMessage(
                 ProtocolConstants.Version,
@@ -418,9 +486,8 @@ namespace Avelora.Client
                 _map.ContentHashBytes,
                 _clientToken,
                 account,
-                password,
-                character,
-                invitationCode);
+                encrypted,
+                character);
 
             byte[] bytes = MessageCodec.EncodeHello(hello);
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
@@ -432,6 +499,8 @@ namespace Avelora.Client
             _connecting = false;
             _welcomeReceived = false;
             _disconnectRequested = true;
+            _challengeReceived = false;
+            _challengeNonce = null;
 
             if (_lastReject.HasValue)
             {
@@ -454,6 +523,14 @@ namespace Avelora.Client
 
             switch (type)
             {
+                case MessageType.Challenge:
+                    if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
+                    {
+                        HandleChallenge(challenge);
+                    }
+
+                    break;
+
                 case MessageType.Welcome:
                     if (MessageCodec.TryReadWelcome(buffer, offset, length, out WelcomeMessage welcome))
                     {
@@ -734,6 +811,8 @@ namespace Avelora.Client
 
             _connecting = false;
             _welcomeReceived = false;
+            _challengeReceived = false;
+            _challengeNonce = null;
             _accumulator = 0;
 
             if (transport != null)

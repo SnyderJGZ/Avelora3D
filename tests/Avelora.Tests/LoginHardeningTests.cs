@@ -335,7 +335,33 @@ namespace Avelora.Tests
 
             // El sexto no llegó al repositorio; los cinco primeros sí.
             harness.Pump(6);
+
+            // El descifrado y PBKDF2 corren en el hilo de login: se espera a que termine los cinco
+            // sin debilitar la aserción (el sexto no debe llegar nunca).
+            harness.PumpUntil(() => repository.Calls >= 5);
             Assert.Equal(5, repository.Calls);
+        }
+
+        [Fact]
+        public void Un_Saludo_Reenviado_En_Otra_Conexion_Se_Rechaza_Sin_Llegar_Al_Repositorio()
+        {
+            var repository = new CountingRepository();
+            using var harness = new Harness(repository, config => config.RejectDisconnectDelayMilliseconds = 0);
+
+            harness.Connect(1);
+            byte[] hello = harness.HandshakeBytes(1, "dev", "secreto1");
+
+            // La conexión 1 se va sin mandar el saludo; el bloque cifrado (con su nonce) se reenvía
+            // tal cual por la conexión 2, que tiene otro desafío.
+            harness.Transport.RaiseDisconnected(1);
+
+            harness.Connect(2);
+            harness.Transport.RaiseReceived(2, hello);
+            harness.Pump(2);
+
+            Assert.True(harness.HasReject(2, out RejectMessage reject));
+            Assert.Equal(RejectReason.InvalidCredentials, reject.Reason);
+            Assert.Equal(0, repository.Calls);
         }
 
         [Fact]
@@ -754,6 +780,8 @@ namespace Avelora.Tests
 
         private sealed class Harness : IDisposable
         {
+            private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+
             public Harness(IPlayerRepository repository, Action<ServerConfig>? configure = null)
             {
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
@@ -796,21 +824,51 @@ namespace Avelora.Tests
 
             public NetworkServer Server { get; }
 
-            public void Connect(int connectionId) => Transport.RaiseConnected(connectionId);
+            public void Connect(int connectionId)
+            {
+                Transport.RaiseConnected(connectionId);
+
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadChallenge(sent.Data, 0, sent.Data.Length, out ChallengeMessage challenge))
+                    {
+                        _challengeNonces[connectionId] = challenge.Nonce;
+                        Transport.Sent.RemoveAt(i);
+                        return;
+                    }
+                }
+
+                throw new InvalidOperationException(
+                    "La conexión " + connectionId + " no recibió el desafío del servidor.");
+            }
 
             public void Handshake(int connectionId, string account, string password = "secreto1")
             {
+                Transport.RaiseReceived(connectionId, HandshakeBytes(connectionId, account, password));
+            }
+
+            /// <summary>Codifica un saludo cifrado con el nonce del desafío de esa conexión.</summary>
+            public byte[] HandshakeBytes(int connectionId, string account, string password = "secreto1")
+            {
+                byte[] encrypted = HelloSecrets.Encrypt(
+                    Server.PublicKey,
+                    _challengeNonces[connectionId],
+                    password,
+                    Config.RegistrationInvitationCode);
+
                 var hello = new HelloMessage(
                     ProtocolConstants.Version,
                     (ushort)SimulationConstants.TickRate,
                     MapHash,
                     1000u + (uint)connectionId,
                     account,
-                    password,
-                    account,
-                    Config.RegistrationInvitationCode);
+                    encrypted,
+                    account);
 
-                Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
+                return MessageCodec.EncodeHello(hello);
             }
 
             /// <summary>Alterna los dos hilos hasta que la conexión reciba su desenlace.</summary>
@@ -834,6 +892,24 @@ namespace Avelora.Tests
                             "La conexión " + connectionId + " no recibió Welcome ni Reject a tiempo.");
                     }
 
+                    Thread.Sleep(1);
+                }
+            }
+
+            /// <summary>Alterna los dos hilos hasta que se cumpla una condición, con tope de tiempo.</summary>
+            public void PumpUntil(Func<bool> condition)
+            {
+                long deadline = Environment.TickCount64 + 5_000;
+
+                while (!condition())
+                {
+                    if (Environment.TickCount64 >= deadline)
+                    {
+                        throw new TimeoutException("La condición no se cumplió a tiempo.");
+                    }
+
+                    Server.BeforeTick(Zone);
+                    Server.PollOnce();
                     Thread.Sleep(1);
                 }
             }

@@ -4,11 +4,12 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapa F cerrada.** El servidor guarda **cuentas y personajes en SQLite** detrás de
-> `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000 iteraciones**,
-> registro con **código de invitación** y límites de intentos por cuenta. El `Hello` lleva las
-> credenciales y el personaje (**protocolo v2**); al entrar, el personaje aparece en la posición
-> que tenía guardada si el mapa coincide.
+> **Estado: Etapas F y G cerradas, Etapa H en curso.** El servidor guarda **cuentas y personajes en
+> SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
+> iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
+> (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
+> solo uso; al entrar, el personaje aparece en la posición que tenía guardada si el mapa coincide.
+> Ver [Etapa H](#qué-hace-la-etapa-h).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -353,6 +354,10 @@ cliente                                   servidor
 - Al llenarse la zona, el siguiente recibe `Reject(ServerFull)`; por eso el transporte admite más
   conexiones que jugadores.
 
+> Desde el **protocolo v4** (H-02), el servidor manda primero un `Challenge` y el `Hello` lleva las
+> credenciales cifradas. El diagrama de arriba es el de la Etapa C; el flujo actual está en
+> [Etapa H](#qué-hace-la-etapa-h).
+
 ### Los dos hilos
 
 ```
@@ -394,7 +399,7 @@ hilo de red (avelora-net)                        hilo de simulación (avelora-si
 | --- | --- |
 | Conexiones simultáneas | 16 (10 jugadores + margen para rechazar con motivo) |
 | Tamaño máximo de mensaje | 1400 B |
-| Mensajes por conexión y segundo | 90; por encima se descarta, a 3× el tope se desconecta |
+| Mensajes por conexión y segundo | 90; por encima se descarta, a 3× el tope se desconecta; 5 s por encima en el mismo minuto también desconecta (H-02) |
 | Cola de entrada | 4096; se descarta si se llena |
 | Cola de salida | 512; se tiran snapshots si se llena |
 | Saludo sin completar | 5 s |
@@ -676,14 +681,17 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
   **600 000 iteraciones** por defecto. Las iteraciones se guardan por cuenta (tope 1 000 000): si
   una cuenta antigua entró con menos de las configuradas, **se recalcula el hash al entrar** sin
   pedirle nada al jugador. La comparación es en tiempo constante.
-- La contraseña viaja **sin cifrar** por UDP en esta etapa; el cifrado del transporte es de la H.
+- En la Etapa F la contraseña viajaba **sin cifrar**; desde H-02 va cifrada (ver Etapa H).
 
 ### Registro con código de invitación
 
 - Si la cuenta no existe, se crea solo cuando el `invitationCode` del saludo coincide **exacto** con
   `registrationInvitationCode`. Si ese ajuste está **vacío, el registro está cerrado**.
-- En cualquier otro caso se responde `Reject(RegistrationClosed)`; una contraseña incorrecta de una
-  cuenta existente es `Reject(InvalidCredentials)`.
+- En cualquier otro caso se responde `Reject(InvalidCredentials)`, lo mismo que una contraseña
+  incorrecta: así no se puede averiguar qué cuentas existen (H-01). `RegistrationClosed` sigue en
+  el enum, pero el servidor ya no lo envía, y este fallo no gasta el cupo de intentos de ese nombre.
+- Cada cuenta tiene como máximo **3 personajes** (`MaxCharactersPerAccount`); el 4.º se rechaza con
+  `Reject(CharacterLimit)`.
 - Nombres válidos: cuenta de 3 a 32 caracteres y personaje de 2 a 32, solo letras, dígitos, `_` y
   `-`; contraseña de 6 a 128. Si el personaje llega vacío se usa el nombre de la cuenta.
 
@@ -699,7 +707,9 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
   El hueco solo se libera cuando la red recoge el resultado, así que **desconectar no lo libera**.
 - **`maxFailedLoginsPerAccountPerMinute` (5)**: los `InvalidCredentials` se cuentan por cuenta y
   minuto. Agotado el tope, los siguientes saludos de esa cuenta se rechazan con `RateLimited` sin
-  comprobar la contraseña. Al cambiar de minuto se tira la ventana anterior.
+  comprobar la contraseña. Al cambiar de minuto se tira la ventana anterior. Desde H-01 el nombre se
+  compara **sin distinguir mayúsculas** y los saludos **en vuelo** también cuentan: seis saludos
+  seguidos de la misma cuenta no se cuelan antes de que vuelva el primer resultado.
 
 ### Una sola sesión por cuenta
 
@@ -720,7 +730,11 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 - **Cada `saveIntervalSeconds` (60 s)**: `BeforeTick` encola una foto de todos los conectados, sin
   tocar el tick.
 - **Al apagar**: tras parar la simulación, `SaveAll` vuelve a encolar y `Flush` espera hasta 5 s a
-  que la cola termine. Si quedara algo pendiente, se avisa por consola.
+  que la cola termine. Si quedara algo pendiente, se avisa por consola. Desde H-01 también se apaga
+  en orden al **cerrar la ventana** de la consola (`SIGHUP`) o con el apagado del sistema
+  (`SIGTERM`); en ese caso `Flush` espera 3 s, porque Windows solo concede unos 5 s en total.
+- **Si una escritura falla** (H-01), la foto vuelve a la cola y se reintenta al cabo de 1 s; si
+  mientras tanto llega una foto más nueva del mismo personaje, gana la nueva.
 - El guardado corre en el hilo **`avelora-save`** con una cola de un solo escritor. Si el mismo
   personaje se encola dos veces antes de escribirse, la **última foto reemplaza** a la anterior.
 - Antes de encolar se crea un `CharacterRecord` nuevo (`WithPosition`), una **copia inmutable**:
@@ -734,9 +748,9 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 - La escena `AveloraEtapaA` serializa las credenciales de desarrollo: `accountName: dev`,
   `password: avelora-dev`, `characterName` vacío e `invitationCode: avelora-dev`.
 - Los rechazos nuevos tienen texto propio: `LoggedInElsewhere` se muestra como «tu cuenta se ha
-  conectado desde otro sitio», `InvalidCredentials` como «cuenta o contraseña incorrectas» y
-  `RegistrationClosed` como «cuenta inexistente o invitación no válida». La reconexión sigue siendo
-  manual con **R**.
+  conectado desde otro sitio», `InvalidCredentials` como «cuenta, contraseña o invitación
+  incorrectas» (desde H-01) y `CharacterLimit` como «la cuenta ya tiene el máximo de personajes».
+  La reconexión sigue siendo manual con **R**.
 
 ### Configuración
 
@@ -744,7 +758,7 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 | --- | --- | --- |
 | `persistenceEnabled` | **true** | Activa cuentas, personajes y guardado en SQLite. |
 | `databasePath` | **`data/avelora.db`** | Archivo SQLite; si es relativo, se crea junto a `server.json`. |
-| `registrationInvitationCode` | **`avelora-dev`** | Código para crear cuentas. Vacío cierra el registro. |
+| `registrationInvitationCode` | **vacío** (H-01) | Código para crear cuentas. Vacío cierra el registro. `server.json` y `server-carga.json` lo fijan a `avelora-dev`. |
 | `saveIntervalSeconds` | **60** | Segundos entre guardados periódicos; debe ser positivo. |
 | `maxPendingLogins` | **16** | Logins en vuelo (cola + cálculo) antes de responder `RateLimited`. |
 | `maxFailedLoginsPerAccountPerMinute` | **5** | Fallos de contraseña por cuenta y minuto. |
@@ -781,6 +795,50 @@ Quedan fuera de la etapa y se retoman cuando existan esos sistemas:
 
 ---
 
+## Qué hace la Etapa H
+
+### Saludo cifrado (H-02, protocolo v4)
+
+```
+cliente                                   servidor
+   │  conexión UDP                           │  ¿aforo? ¿límite por IP? ¿clave?
+   │ ──────────────────────────────────────► │
+   │  Challenge(nonce 16 B, módulo, exp.)    │  nonce aleatorio, de un solo uso
+   │ ◄────────────────────────────────────── │
+   │  Hello(…, cuenta, personaje,            │
+   │        RSA-OAEP(nonce ‖ clave ‖ invit.))│  se descifra en avelora-login
+   │ ──────────────────────────────────────► │
+```
+
+- El servidor tiene una clave **RSA de 2048 bits** en `serverKeyPath` (`data/server-key.pem`, fuera
+  del repositorio). La genera el primer arranque; sin persistencia es efímera. Al arrancar imprime
+  su **huella** (SHA-256 de módulo ‖ exponente).
+- El cliente cifra `nonce ‖ contraseña ‖ invitación` con **RSA-OAEP-SHA1** (`HelloSecrets`, en
+  `Avelora.Shared`). Se eligió RSA con `RSAParameters` porque funciona igual en .NET 10 y en el Mono
+  de Unity.
+- El nonce se borra al llegar el saludo: un `Hello` copiado no sirve en otra conexión. Si no se
+  descifra o el nonce no coincide, se responde `InvalidCredentials`, se anota en el log y **no**
+  gasta el cupo de la cuenta.
+- **Huella fijada:** `serverKeyFingerprint` en `NetworkClient` y `--server-key <hex>` en los bots.
+  Si no coincide, el cliente corta la conexión. Si está vacía, acepta la clave y avisa con la
+  huella recibida (modo desarrollo).
+
+### Límites de red (H-02)
+
+- **`maxConnectionsPerIp` (4)**: conexiones simultáneas desde una misma IP. La configuración de carga
+  lo sube a 100 porque todos los bots salen de 127.0.0.1.
+- **`maxSecondsOverMessageLimit` (5)**: segundos, dentro del mismo minuto, que una conexión puede
+  pasar por encima de `maxMessagesPerSecondPerConnection` antes de desconectarse.
+
+### Arreglos de la auditoría (H-01)
+
+Límite de login sin distinguir mayúsculas y contando los saludos en vuelo; registro cerrado por
+defecto; respuesta única para no revelar qué cuentas existen; máximo de 3 personajes por cuenta;
+reintento de guardados fallidos; guardado al cerrar la ventana o al apagar; y la sincronización con
+Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md`.
+
+---
+
 ## Sincronizar con Unity
 
 El repositorio es la fuente de verdad. Tras tocar `shared/` o `client/`:
@@ -794,6 +852,10 @@ Copia `shared/Avelora.Shared/**` (incluido su `.asmdef`) a `Assets/Avelora/Scrip
 `Assets/Avelora/` (archivos `.cs`, `.asmdef`, `.unity`, `.png`, `.asset` y `.dll`, con su `.meta`).
 **Nunca borra `.meta`**, así no se rompen las referencias de la escena ni se regeneran los GUID.
 Después, en Unity: *Assets → Refresh*.
+
+Desde H-01, **no pisa** un archivo que sea más nuevo en Unity que en el repositorio (por ejemplo,
+una escena guardada en el editor): lo salta con un aviso y al final dice cuántos saltó. Con
+`-Forzar` lo sobrescribe todo, como antes.
 
 > La escena viaja en el repositorio **con su `.meta`**, y los scripts también: la escena referencia
 > cada `MonoBehaviour` por el GUID del `.meta`. Sin ellos, Unity generaría GUID nuevos al importar y
@@ -818,7 +880,7 @@ Escena `AveloraEtapaA`: una sala de 19×13 tiles con borde y una pared interior 
 | Prueba | Resultado |
 | --- | --- |
 | Rejilla construida desde el Tilemap | 19×13, origen (−9,−6), huella `24ec4c86…` |
-| Empujar a la derecha contra la pared interior | se detiene en **x = −0.50** |
+| Empujar a la derecha contra la pared interior | se detiene en **x = −0.50** (desde G-04, `Step` avanza hasta tocar la pared y se detiene en **x = −0.40**) |
 | Subir, bajar y recorrer los bordes | se detiene en todos; **la caja sigue siendo válida** y el siguiente paso está bloqueado |
 | Diagonal | recorre **0.200000** unidades, igual que en recto (normalizada) |
 | Bucle en tiempo real (`Update`, 20 Hz) | el jugador avanza con `Time.deltaTime` y frena en las paredes |
@@ -838,8 +900,8 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **D** | Predicción, reconciliación e interpolación en el cliente de Unity | ✅ cerrada |
 | **E** | Grilla espacial + área de interés con histéresis y snapshots filtrados | ✅ cerrada |
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
-| **G** | Bots y pruebas de carga | ⏳ |
-| **H** | Seguridad reforzada y (opcional) gateway | ⏳ |
+| **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
+| **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
 
 ---
 

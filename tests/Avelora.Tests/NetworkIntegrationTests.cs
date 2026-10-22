@@ -70,10 +70,17 @@ namespace Avelora.Tests
             WelcomeMessage welcome = default;
             RejectMessage reject = default;
             bool gotReject = false;
+            byte[]? challengeNonce = null;
             var snapshots = new List<SnapshotMessage>();
 
             client.Received += (connectionId, buffer, offset, length) =>
             {
+                if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
+                {
+                    challengeNonce = challenge.Nonce;
+                    return;
+                }
+
                 if (MessageCodec.TryReadWelcome(buffer, offset, length, out WelcomeMessage decodedWelcome))
                 {
                     welcome = decodedWelcome;
@@ -96,12 +103,6 @@ namespace Avelora.Tests
 
             client.Connect("127.0.0.1", server.Port);
 
-            byte[] helloBytes = MessageCodec.EncodeHello(new HelloMessage(
-                ProtocolConstants.Version,
-                (ushort)SimulationConstants.TickRate,
-                mapHash,
-                7u));
-
             var clock = Stopwatch.StartNew();
             bool helloSent = false;
             uint sequence = 0;
@@ -112,8 +113,24 @@ namespace Avelora.Tests
             {
                 client.Poll();
 
-                if (client.IsConnected && !helloSent)
+                if (client.IsConnected && challengeNonce != null && !helloSent)
                 {
+                    // Protocolo v4: el saludo se cifra con el nonce del desafío.
+                    byte[] encrypted = HelloSecrets.Encrypt(
+                        server.PublicKey,
+                        challengeNonce,
+                        "avelora-dev",
+                        "avelora-dev");
+
+                    byte[] helloBytes = MessageCodec.EncodeHello(new HelloMessage(
+                        ProtocolConstants.Version,
+                        (ushort)SimulationConstants.TickRate,
+                        mapHash,
+                        7u,
+                        "dev",
+                        encrypted,
+                        "dev"));
+
                     client.Send(helloBytes, helloBytes.Length, DeliveryMode.ReliableOrdered);
                     helloSent = true;
                 }
@@ -209,6 +226,53 @@ namespace Avelora.Tests
         }
 
         /// <summary>
+        /// El transporte real rechaza la segunda conexión de la misma IP cuando el límite es 1. Los
+        /// bots salen todos de 127.0.0.1, así que este tope se sube en <c>server-carga.json</c>.
+        /// </summary>
+        [Fact]
+        public void El_Transporte_Rechaza_Mas_Conexiones_De_La_Misma_Ip()
+        {
+            using var serverTransport = new LiteNetLibServerTransport(maxConnections: 4, maxConnectionsPerIp: 1);
+            serverTransport.Start(0);
+            Assert.True(serverTransport.Port > 0);
+
+            int connected = 0;
+            serverTransport.Connected += _ => Interlocked.Increment(ref connected);
+
+            using var first = new LiteNetLibClientTransport();
+            using var second = new LiteNetLibClientTransport();
+
+            first.Connect("127.0.0.1", serverTransport.Port);
+
+            var clock = Stopwatch.StartNew();
+
+            while (clock.Elapsed.TotalMilliseconds < 2000d && Volatile.Read(ref connected) < 1)
+            {
+                serverTransport.Poll();
+                first.Poll();
+                Thread.Sleep(2);
+            }
+
+            Assert.Equal(1, Volatile.Read(ref connected));
+
+            // La segunda conexión desde la misma IP debe rechazarse antes de AcceptIfKey.
+            second.Connect("127.0.0.1", serverTransport.Port);
+            clock.Restart();
+
+            while (clock.Elapsed.TotalMilliseconds < 1500d)
+            {
+                serverTransport.Poll();
+                first.Poll();
+                second.Poll();
+                Thread.Sleep(2);
+            }
+
+            Assert.Equal(1, Volatile.Read(ref connected));
+            Assert.True(first.IsConnected, "La primera conexión no debía caerse.");
+            Assert.False(second.IsConnected, "La segunda conexión no debía aceptarse.");
+        }
+
+        /// <summary>
         /// Con persistencia, la misma cuenta desde otra conexión echa a la primera. El
         /// <c>Reject</c> viaja fiable y el corte sale con retardo: el cliente debe recibir el
         /// motivo <b>antes</b> de su evento <c>Disconnected</c>, no perderlo.
@@ -276,9 +340,17 @@ namespace Avelora.Tests
                 bool firstGotReject = false;
                 bool firstGotWelcome = false;
                 bool secondGotWelcome = false;
+                byte[]? firstNonce = null;
+                byte[]? secondNonce = null;
 
                 first.Received += (connectionId, buffer, offset, length) =>
                 {
+                    if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
+                    {
+                        firstNonce = challenge.Nonce;
+                        return;
+                    }
+
                     if (MessageCodec.TryReadReject(buffer, offset, length, out RejectMessage reject))
                     {
                         firstReject = reject;
@@ -297,31 +369,17 @@ namespace Avelora.Tests
 
                 second.Received += (connectionId, buffer, offset, length) =>
                 {
+                    if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
+                    {
+                        secondNonce = challenge.Nonce;
+                        return;
+                    }
+
                     if (MessageCodec.TryReadWelcome(buffer, offset, length, out _))
                     {
                         secondGotWelcome = true;
                     }
                 };
-
-                byte[] firstHello = MessageCodec.EncodeHello(new HelloMessage(
-                    ProtocolConstants.Version,
-                    (ushort)SimulationConstants.TickRate,
-                    mapHash,
-                    11u,
-                    "cuenta",
-                    "secreto1",
-                    "heroe",
-                    "avelora-dev"));
-
-                byte[] secondHello = MessageCodec.EncodeHello(new HelloMessage(
-                    ProtocolConstants.Version,
-                    (ushort)SimulationConstants.TickRate,
-                    mapHash,
-                    12u,
-                    "cuenta",
-                    "secreto1",
-                    "heroe",
-                    "avelora-dev"));
 
                 first.Connect("127.0.0.1", server.Port);
 
@@ -337,8 +395,23 @@ namespace Avelora.Tests
                     first.Poll();
                     second.Poll();
 
-                    if (first.IsConnected && !sentFirstHello)
+                    if (first.IsConnected && firstNonce != null && !sentFirstHello)
                     {
+                        byte[] encrypted = HelloSecrets.Encrypt(
+                            server.PublicKey,
+                            firstNonce,
+                            "secreto1",
+                            "avelora-dev");
+
+                        byte[] firstHello = MessageCodec.EncodeHello(new HelloMessage(
+                            ProtocolConstants.Version,
+                            (ushort)SimulationConstants.TickRate,
+                            mapHash,
+                            11u,
+                            "cuenta",
+                            encrypted,
+                            "heroe"));
+
                         first.Send(firstHello, firstHello.Length, DeliveryMode.ReliableOrdered);
                         sentFirstHello = true;
                     }
@@ -349,8 +422,23 @@ namespace Avelora.Tests
                         secondConnected = true;
                     }
 
-                    if (secondConnected && second.IsConnected && !sentSecondHello)
+                    if (secondConnected && second.IsConnected && secondNonce != null && !sentSecondHello)
                     {
+                        byte[] encrypted = HelloSecrets.Encrypt(
+                            server.PublicKey,
+                            secondNonce,
+                            "secreto1",
+                            "avelora-dev");
+
+                        byte[] secondHello = MessageCodec.EncodeHello(new HelloMessage(
+                            ProtocolConstants.Version,
+                            (ushort)SimulationConstants.TickRate,
+                            mapHash,
+                            12u,
+                            "cuenta",
+                            encrypted,
+                            "heroe"));
+
                         second.Send(secondHello, secondHello.Length, DeliveryMode.ReliableOrdered);
                         sentSecondHello = true;
                     }

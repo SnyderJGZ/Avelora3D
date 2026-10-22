@@ -15,9 +15,11 @@ namespace Avelora.Shared.Protocol
         /// <summary>
         /// Versión del protocolo. Cambia con el formato, no con el contenido de los mensajes.
         /// La Etapa F sube a 2 porque el saludo incorpora las credenciales y el personaje; G-03 a 3
-        /// porque el <c>MoveInput</c> lleva la dirección de los inputs anteriores (redundancia).
+        /// porque el <c>MoveInput</c> lleva la dirección de los inputs anteriores (redundancia);
+        /// H-02 a 4 porque el servidor manda un <c>Challenge</c> y el <c>Hello</c> lleva las
+        /// credenciales cifradas en vez de en claro.
         /// </summary>
-        public const ushort Version = 3;
+        public const ushort Version = 4;
 
         /// <summary>
         /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias

@@ -33,7 +33,8 @@ namespace Avelora.Server.Diagnostics
             string mapHash,
             ServerConfig config,
             int port,
-            string? databasePath)
+            string? databasePath,
+            string serverKeyFingerprint)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -51,8 +52,11 @@ namespace Avelora.Server.Diagnostics
                 Invariant(SimulationConstants.FixedDt, "0.####") + " s = " +
                 Invariant(SimulationConstants.StepMs, "0.###") + " ms)");
             Console.WriteLine(
+                "  Clave         : RSA-2048, huella " + serverKeyFingerprint);
+            Console.WriteLine(
                 "  Red           : UDP 0.0.0.0:" + port + ", hasta " + config.MaxPlayers +
-                " jugadores (" + config.MaxConnections + " conexiones)");
+                " jugadores (" + config.MaxConnections + " conexiones, " +
+                config.MaxConnectionsPerIp + " por IP)");
             Console.WriteLine(
                 "  Aparición     : (" + Invariant(config.SpawnX, "0.##") + "; " + Invariant(config.SpawnY, "0.##") +
                 ")  medio=(" + Invariant(config.PlayerHalfWidth, "0.##") + "; " +
@@ -61,7 +65,8 @@ namespace Avelora.Server.Diagnostics
             Console.WriteLine(
                 "  Protocolo     : v" + ProtocolConstants.Version + ", snapshot cada " + config.SnapshotEveryTicks +
                 " tick(s), " + config.MaxMessagesPerSecondPerConnection + " msgs/s por conexión, saludo en " +
-                Invariant(config.HandshakeTimeoutSeconds, "0.#") + " s");
+                Invariant(config.HandshakeTimeoutSeconds, "0.#") + " s, " +
+                "inundación sostenida " + config.MaxSecondsOverMessageLimit + " s por minuto");
             Console.WriteLine(
                 "  Interés       : radio " + Invariant(config.InterestRadius, "0.##") +
                 " tiles, celda " + Invariant(config.InterestCellSize, "0.##") +

@@ -15,10 +15,14 @@ namespace Avelora.Shared.Protocol
     /// </remarks>
     public static class MessageCodec
     {
-        // Parte fija del saludo: tipo, versión, tick, token y huella. Las cuatro cadenas van
-        // después, cada una con su longitud uint16 (plan §8: cuenta, contraseña, personaje e
-        // invitación). El tamaño total es variable, pero siempre menor que el tope del mensaje.
-        private const int HelloFixedSize = 1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize;
+        // Parte fija del saludo: tipo, versión, tick, token, huella y bloque cifrado. Después van
+        // la cuenta y el personaje, cada una con su longitud uint16. El tamaño total es variable,
+        // pero siempre menor que el tope del mensaje.
+        private const int HelloFixedSize =
+            1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize + HelloSecrets.EncryptedSize;
+
+        // Tipo, nonce, longitud del exponente y exponente; el módulo ocupa lo que falte.
+        private const int ChallengeHeaderSize = 1 + HelloSecrets.NonceSize + 1;
 
         // Tipo, secuencia del más nuevo y número de inputs. Cada input añade dos bytes
         // (dirX, dirY), así que el mensaje mide 6 + 2n entre 8 y 14 bytes.
@@ -44,33 +48,33 @@ namespace Avelora.Shared.Protocol
         // ---------------------------------------------------------------- cliente → servidor
 
         /// <summary>
-        /// Codifica un saludo. La parte fija ocupa 41 bytes y cada cadena añade su longitud uint16
-        /// más los bytes UTF-8.
+        /// Codifica un saludo. La parte fija ocupa 297 bytes (cabecera más el bloque cifrado) y cada
+        /// cadena añade su longitud uint16 más los bytes UTF-8.
         /// </summary>
         public static byte[] EncodeHello(in HelloMessage message)
         {
             RequireMapHash(message.MapHash);
 
+            if (message.EncryptedSecrets is null ||
+                message.EncryptedSecrets.Length != HelloSecrets.EncryptedSize)
+            {
+                throw new ArgumentException(
+                    "El bloque cifrado del saludo debe tener " + HelloSecrets.EncryptedSize + " bytes.",
+                    nameof(message));
+            }
+
             string account = message.AccountName ?? string.Empty;
-            string password = message.Password ?? string.Empty;
             string character = message.CharacterName ?? string.Empty;
-            string invitation = message.InvitationCode ?? string.Empty;
 
             int accountBytes = Encoding.UTF8.GetByteCount(account);
-            int passwordBytes = Encoding.UTF8.GetByteCount(password);
             int characterBytes = Encoding.UTF8.GetByteCount(character);
-            int invitationBytes = Encoding.UTF8.GetByteCount(invitation);
 
             RequireStringLength(accountBytes, ProtocolConstants.MaxAccountNameBytes, nameof(message.AccountName));
-            RequireStringLength(passwordBytes, ProtocolConstants.MaxPasswordBytes, nameof(message.Password));
             RequireStringLength(characterBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message.CharacterName));
-            RequireStringLength(invitationBytes, ProtocolConstants.MaxInvitationCodeBytes, nameof(message.InvitationCode));
 
             int size = HelloFixedSize +
                 (2 + accountBytes) +
-                (2 + passwordBytes) +
-                (2 + characterBytes) +
-                (2 + invitationBytes);
+                (2 + characterBytes);
 
             if (size > ProtocolConstants.MaxMessageSize)
             {
@@ -86,16 +90,15 @@ namespace Avelora.Shared.Protocol
             writer.WriteUInt16(message.TickRate);
             writer.WriteUInt32(message.ClientToken);
             writer.WriteBytes(message.MapHash, 0, ProtocolConstants.MapHashSize);
+            writer.WriteBytes(message.EncryptedSecrets, 0, HelloSecrets.EncryptedSize);
             writer.WriteString(account, ProtocolConstants.MaxAccountNameBytes);
-            writer.WriteString(password, ProtocolConstants.MaxPasswordBytes);
             writer.WriteString(character, ProtocolConstants.MaxCharacterNameBytes);
-            writer.WriteString(invitation, ProtocolConstants.MaxInvitationCodeBytes);
             return buffer;
         }
 
         /// <summary>
         /// Lee un saludo. Devuelve <c>false</c> si el tipo, el tamaño o alguna cadena no encajan;
-        /// el servidor decide después si las credenciales son válidas.
+        /// el servidor decide después si las credenciales cifradas son válidas.
         /// </summary>
         public static bool TryReadHello(byte[] buffer, int offset, int length, out HelloMessage message)
         {
@@ -114,10 +117,10 @@ namespace Avelora.Shared.Protocol
                 uint token = reader.ReadUInt32();
                 var mapHash = new byte[ProtocolConstants.MapHashSize];
                 reader.ReadBytes(mapHash, mapHash.Length);
+                var encryptedSecrets = new byte[HelloSecrets.EncryptedSize];
+                reader.ReadBytes(encryptedSecrets, encryptedSecrets.Length);
                 string account = reader.ReadString(ProtocolConstants.MaxAccountNameBytes);
-                string password = reader.ReadString(ProtocolConstants.MaxPasswordBytes);
                 string character = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
-                string invitation = reader.ReadString(ProtocolConstants.MaxInvitationCodeBytes);
 
                 if (reader.Remaining != 0)
                 {
@@ -130,9 +133,8 @@ namespace Avelora.Shared.Protocol
                     mapHash,
                     token,
                     account,
-                    password,
-                    character,
-                    invitation);
+                    encryptedSecrets,
+                    character);
                 return true;
             }
             catch (ProtocolException)
@@ -140,6 +142,89 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
             catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Codifica el desafío: tipo (1) + nonce (16) + longitud del exponente (1) + exponente
+        /// (1..4) + módulo (256).
+        /// </summary>
+        public static byte[] EncodeChallenge(in ChallengeMessage message)
+        {
+            if (message.Nonce is null || message.Nonce.Length != HelloSecrets.NonceSize)
+            {
+                throw new ArgumentException("El nonce del desafío debe tener 16 bytes.", nameof(message));
+            }
+
+            if (message.Modulus is null || message.Modulus.Length != HelloSecrets.ModulusSize)
+            {
+                throw new ArgumentException("El módulo del desafío debe tener 256 bytes.", nameof(message));
+            }
+
+            if (message.Exponent is null || message.Exponent.Length < 1 || message.Exponent.Length > 4)
+            {
+                throw new ArgumentException("El exponente del desafío debe ocupar de 1 a 4 bytes.", nameof(message));
+            }
+
+            var buffer = new byte[ChallengeHeaderSize + message.Exponent.Length + HelloSecrets.ModulusSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Challenge);
+            writer.WriteBytes(message.Nonce, 0, HelloSecrets.NonceSize);
+            writer.WriteByte((byte)message.Exponent.Length);
+            writer.WriteBytes(message.Exponent, 0, message.Exponent.Length);
+            writer.WriteBytes(message.Modulus, 0, HelloSecrets.ModulusSize);
+            return buffer;
+        }
+
+        /// <summary>
+        /// Lee un desafío. Rechaza longitudes que no encajan, un exponente de 0 a 4 bytes o un
+        /// exponente todo a cero.
+        /// </summary>
+        public static bool TryReadChallenge(byte[] buffer, int offset, int length, out ChallengeMessage message)
+        {
+            message = default;
+
+            if (!HasHeader(buffer, offset, length, MessageType.Challenge) || length < ChallengeHeaderSize + 1 + HelloSecrets.ModulusSize)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                var nonce = new byte[HelloSecrets.NonceSize];
+                reader.ReadBytes(nonce, nonce.Length);
+                int exponentLength = reader.ReadByte();
+
+                if (exponentLength < 1 ||
+                    exponentLength > 4 ||
+                    length != ChallengeHeaderSize + exponentLength + HelloSecrets.ModulusSize)
+                {
+                    return false;
+                }
+
+                var exponent = new byte[exponentLength];
+                reader.ReadBytes(exponent, exponent.Length);
+
+                if (IsAllZero(exponent))
+                {
+                    return false;
+                }
+
+                var modulus = new byte[HelloSecrets.ModulusSize];
+                reader.ReadBytes(modulus, modulus.Length);
+
+                if (reader.Remaining != 0 || IsAllZero(modulus))
+                {
+                    return false;
+                }
+
+                message = new ChallengeMessage(nonce, modulus, exponent);
+                return true;
+            }
+            catch (ProtocolException)
             {
                 return false;
             }
@@ -537,6 +622,19 @@ namespace Avelora.Shared.Protocol
                     "La huella del mapa debe tener " + ProtocolConstants.MapHashSize + " bytes.",
                     nameof(mapHash));
             }
+        }
+
+        private static bool IsAllZero(byte[] bytes)
+        {
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                if (bytes[i] != 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void RequireStringLength(int byteCount, int maxBytes, string parameterName)

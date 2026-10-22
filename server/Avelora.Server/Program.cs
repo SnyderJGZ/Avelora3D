@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
@@ -11,6 +12,7 @@ using Avelora.Server.Diagnostics;
 using Avelora.Server.Entities;
 using Avelora.Server.Net;
 using Avelora.Server.Persistence;
+using Avelora.Server.Security;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
@@ -126,6 +128,29 @@ namespace Avelora.Server
             using var repositoryScope = repository;
             using var savesScope = saves;
 
+            // Clave del saludo (H-02). Con persistencia se guarda en data/server-key.pem y se
+            // reutiliza entre arranques; sin ella se genera una efímera. La huella impresa es la
+            // que el cliente puede fijar para no aceptar otra clave.
+            ServerKey serverKey;
+
+            try
+            {
+                serverKey = ServerKey.LoadOrCreate(
+                    config.PersistenceEnabled ? config.ResolveServerKeyPath(configPath) : string.Empty,
+                    config.PersistenceEnabled);
+            }
+            catch (Exception ex) when (
+                ex is IOException ||
+                ex is UnauthorizedAccessException ||
+                ex is InvalidOperationException ||
+                ex is CryptographicException)
+            {
+                ConsoleReporter.WriteError("No se pudo preparar la clave del servidor: " + ex.Message);
+                return 3;
+            }
+
+            using var serverKeyScope = serverKey;
+
             // Montaje de la zona. La zona nace vacía: los jugadores entran por la red, no por código.
             var zone = new Zone(
                 config.ZoneId,
@@ -151,11 +176,12 @@ namespace Avelora.Server
             using var network = new NetworkServer(
                 zone,
                 config,
-                new LiteNetLibServerTransport(config.MaxConnections),
+                new LiteNetLibServerTransport(config.MaxConnections, config.MaxConnectionsPerIp),
                 mapHash,
                 repository,
                 saves,
-                config.RegistrationInvitationCode);
+                config.RegistrationInvitationCode,
+                serverKey.Rsa);
 
             try
             {
@@ -167,7 +193,15 @@ namespace Avelora.Server
                 return 3;
             }
 
-            ConsoleReporter.WriteStartup(configPath, mapPath, map, mapHashHex, config, network.Port, databasePath);
+            ConsoleReporter.WriteStartup(
+                configPath,
+                mapPath,
+                map,
+                mapHashHex,
+                config,
+                network.Port,
+                databasePath,
+                network.KeyFingerprint);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>

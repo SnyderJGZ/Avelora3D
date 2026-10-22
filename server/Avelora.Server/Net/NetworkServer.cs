@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
@@ -40,6 +41,9 @@ namespace Avelora.Server.Net
         private readonly LoginWorker? _login;
         private readonly string _registrationCode;
         private readonly long _saveEveryTicks;
+        private readonly RSA _serverKey;
+        private readonly bool _ownsServerKey;
+        private readonly Func<long> _clock;
         private long _nextSaveTick;
 
         /// <summary>
@@ -63,6 +67,7 @@ namespace Avelora.Server.Net
 
         // Solo hilo de red.
         private readonly Dictionary<int, long> _handshakeDeadlines = new Dictionary<int, long>();
+        private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
         private readonly Dictionary<int, PendingDisconnect> _pendingDisconnects =
             new Dictionary<int, PendingDisconnect>();
         private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
@@ -77,8 +82,21 @@ namespace Avelora.Server.Net
         private readonly Dictionary<string, int> _loginsInFlightPerAccount =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
+
+        /// <summary>Segundos, dentro del minuto actual, en los que cada conexión superó el límite.</summary>
+        private readonly Dictionary<int, int> _secondsOverLimit = new Dictionary<int, int>();
+
+        /// <summary>Último segundo en el que se contó ese exceso, para sumar una sola vez por segundo.</summary>
+        private readonly Dictionary<int, long> _lastOverLimitSecond = new Dictionary<int, long>();
+
         private long _currentSecond;
         private long _currentMinute;
+
+        /// <summary>
+        /// Minuto de la ventana del límite de frecuencia. Va aparte de <see cref="_currentMinute"/>
+        /// (la de los logins fallidos) para que limpiar una no borre la otra.
+        /// </summary>
+        private long _currentRateMinute;
 
         // Solo hilo de simulación.
         private readonly Dictionary<int, Session> _sessions = new Dictionary<int, Session>();
@@ -111,11 +129,35 @@ namespace Avelora.Server.Net
             byte[] mapHash,
             IPlayerRepository? repository = null,
             CharacterSaveService? saves = null,
-            string? registrationCode = null)
+            string? registrationCode = null,
+            RSA? serverKey = null,
+            Func<long>? clock = null)
         {
             _zone = zone ?? throw new ArgumentNullException(nameof(zone));
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
+            _clock = clock ?? (() => Environment.TickCount64);
+
+            if (serverKey == null)
+            {
+                _serverKey = RSA.Create(2048);
+                _ownsServerKey = true;
+            }
+            else
+            {
+                _serverKey = serverKey;
+                _ownsServerKey = false;
+
+                if (_serverKey.KeySize != 2048)
+                {
+                    throw new ArgumentException(
+                        "La clave del servidor debe ser RSA de 2048 bits (el desafío manda 256 bytes de módulo).",
+                        nameof(serverKey));
+                }
+            }
+
+            PublicKey = _serverKey.ExportParameters(includePrivateParameters: false);
+            KeyFingerprint = HelloSecrets.Fingerprint(PublicKey);
 
             if (mapHash is null || mapHash.Length != ProtocolConstants.MapHashSize)
             {
@@ -145,10 +187,14 @@ namespace Avelora.Server.Net
 
             _nextSaveTick = _saveEveryTicks;
 
-            // El login (PBKDF2 + SQLite) corre en su propio hilo: el de red nunca espera a disco.
+            // El login (RSA + PBKDF2 + SQLite) corre en su propio hilo: el de red nunca espera a
+            // disco ni al descifrado.
             if (_repository != null)
             {
-                _login = new LoginWorker(_repository, _registrationCode);
+                _login = new LoginWorker(
+                    _repository,
+                    _registrationCode,
+                    _serverKey.ExportParameters(includePrivateParameters: true));
             }
 
             _transport.Connected += OnConnected;
@@ -158,6 +204,12 @@ namespace Avelora.Server.Net
 
         /// <summary>Puerto UDP efectivo.</summary>
         public int Port => _transport.Port;
+
+        /// <summary>Clave pública que viaja en el desafío (sin la parte privada).</summary>
+        public RSAParameters PublicKey { get; }
+
+        /// <summary>Huella SHA-256 de módulo ‖ exponente, en hexadecimal.</summary>
+        public string KeyFingerprint { get; }
 
         /// <summary>Abre el socket y arranca el hilo de red.</summary>
         public void Start()
@@ -191,6 +243,11 @@ namespace Avelora.Server.Net
             _netThread = null;
             _transport.Stop();
             _login?.Dispose();
+
+            if (_ownsServerKey)
+            {
+                _serverKey.Dispose();
+            }
         }
 
         public void Dispose() => Stop();
@@ -311,6 +368,23 @@ namespace Avelora.Server.Net
         {
             _handshakeDeadlines[connectionId] = Environment.TickCount64 +
                 (long)Math.Round(_config.HandshakeTimeoutSeconds * 1000d, MidpointRounding.AwayFromZero);
+
+            // El desafío va primero y por el canal fiable: el cliente no puede mandar el saludo
+            // cifrado sin conocer el nonce. Es de un solo uso y se borra al llegar el Hello.
+            var nonce = new byte[HelloSecrets.NonceSize];
+            using (RandomNumberGenerator random = RandomNumberGenerator.Create())
+            {
+                random.GetBytes(nonce);
+            }
+
+            _challengeNonces[connectionId] = nonce;
+
+            byte[] challenge = MessageCodec.EncodeChallenge(new ChallengeMessage(
+                nonce,
+                PublicKey.Modulus!,
+                PublicKey.Exponent!));
+
+            _transport.Send(connectionId, challenge, challenge.Length, DeliveryMode.ReliableOrdered);
         }
 
         private void OnDisconnected(int connectionId, DisconnectReason reason)
@@ -318,6 +392,9 @@ namespace Avelora.Server.Net
             _handshakeDeadlines.Remove(connectionId);
             _pendingDisconnects.Remove(connectionId);
             _messagesThisSecond.Remove(connectionId);
+            _challengeNonces.Remove(connectionId);
+            _secondsOverLimit.Remove(connectionId);
+            _lastOverLimitSecond.Remove(connectionId);
 
             // Si estaba autenticándose, su resultado ya no interesa. Nada que reservar: la
             // conexión se ha ido antes de que el login terminara.
@@ -413,6 +490,11 @@ namespace Avelora.Server.Net
 
         private void HandleHello(int connectionId, byte[] buffer, int offset, int length)
         {
+            // Llegó un saludo: el nonce de esta conexión deja de valer, se haya leído bien o no.
+            // Así un Hello reenviado no puede volver a usarlo.
+            _challengeNonces.TryGetValue(connectionId, out byte[]? nonce);
+            _challengeNonces.Remove(connectionId);
+
             if (!MessageCodec.TryReadHello(buffer, offset, length, out HelloMessage hello))
             {
                 RejectHandshake(connectionId, RejectReason.MalformedMessage);
@@ -437,11 +519,24 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            if (nonce == null)
+            {
+                // Sin desafío no se puede comprobar que el saludo sea de ahora mismo. Se registra
+                // el motivo con la conexión y no se cuenta como intento fallido de la cuenta.
+                Console.Error.WriteLine(
+                    "AVISO: saludo rechazado en la conexión " + connectionId +
+                    ": no había un desafío pendiente (¿reenviado o fuera de orden?).");
+                Interlocked.Increment(ref _loginsRejected);
+                RejectHandshake(connectionId, RejectReason.InvalidCredentials);
+                return;
+            }
+
             if (_repository == null)
             {
                 _handshakeDeadlines.Remove(connectionId);
 
                 // Modo sin persistencia (pruebas o configuración explícita): la identidad es local.
+                // No hay hilo de login donde descifrar, así que las credenciales no se validan.
                 _control.Enqueue(ControlEvent.Join(connectionId, hello, 0, string.Empty, null));
                 return;
             }
@@ -489,8 +584,8 @@ namespace Avelora.Server.Net
             _login!.Enqueue(new LoginRequest(
                 connectionId,
                 accountName,
-                hello.Password,
-                hello.InvitationCode,
+                hello.EncryptedSecrets,
+                nonce,
                 characterName,
                 _zone.Id,
                 _config.Spawn,
@@ -534,6 +629,17 @@ namespace Avelora.Server.Net
                 if (!result.Success)
                 {
                     Interlocked.Increment(ref _loginsRejected);
+
+                    if (result.CryptoFailure != null)
+                    {
+                        // Descifrado fallido o nonce de otra sesión: se registra con la conexión y
+                        // no suma al cupo de la cuenta.
+                        Console.Error.WriteLine(
+                            "AVISO: saludo rechazado en la conexión " + result.ConnectionId +
+                            ": " + result.CryptoFailure + ".");
+                        RejectHandshake(result.ConnectionId, result.Failure);
+                        continue;
+                    }
 
                     // Solo cuenta el fallo de una cuenta que existe: una invitación incorrecta de
                     // una cuenta inexistente no debe llenarle el cupo a ese nombre.
@@ -759,11 +865,23 @@ namespace Avelora.Server.Net
         /// <summary>
         /// Tope de mensajes por conexión y segundo: un cliente no puede inundar la cola. Hasta el
         /// tope se acepta; por encima se descarta; a partir de <see cref="RateLimitDisconnectFactor"/>
-        /// veces el tope se considera abuso y se cierra la conexión.
+        /// veces el tope se considera abuso y se cierra la conexión. Además, quien se queda justo
+        /// por encima durante <see cref="ServerConfig.MaxSecondsOverMessageLimit"/> segundos del
+        /// mismo minuto también se desconecta: inundar despacio no deja la sesión abierta para
+        /// siempre.
         /// </summary>
         private RateLimitVerdict CheckRate(int connectionId)
         {
-            long second = Environment.TickCount64 / 1000;
+            long now = _clock();
+            long second = now / 1000;
+            long minute = now / 60_000;
+
+            if (minute != _currentRateMinute)
+            {
+                _currentRateMinute = minute;
+                _secondsOverLimit.Clear();
+                _lastOverLimitSecond.Clear();
+            }
 
             if (second != _currentSecond)
             {
@@ -779,11 +897,41 @@ namespace Avelora.Server.Net
 
             if (count > limit * RateLimitDisconnectFactor)
             {
-                _messagesThisSecond.Remove(connectionId);
+                RemoveRateLimitState(connectionId);
                 return RateLimitVerdict.Disconnect;
             }
 
-            return count > limit ? RateLimitVerdict.Drop : RateLimitVerdict.Allow;
+            if (count > limit)
+            {
+                // Una vez por segundo: el primer mensaje que pasa del tope marca ese segundo. Los
+                // demás del mismo segundo no vuelven a sumar.
+                if (!_lastOverLimitSecond.TryGetValue(connectionId, out long markedSecond) ||
+                    markedSecond != second)
+                {
+                    _lastOverLimitSecond[connectionId] = second;
+
+                    _secondsOverLimit.TryGetValue(connectionId, out int seconds);
+                    seconds++;
+                    _secondsOverLimit[connectionId] = seconds;
+
+                    if (seconds >= _config.MaxSecondsOverMessageLimit)
+                    {
+                        RemoveRateLimitState(connectionId);
+                        return RateLimitVerdict.Disconnect;
+                    }
+                }
+
+                return RateLimitVerdict.Drop;
+            }
+
+            return RateLimitVerdict.Allow;
+        }
+
+        private void RemoveRateLimitState(int connectionId)
+        {
+            _messagesThisSecond.Remove(connectionId);
+            _secondsOverLimit.Remove(connectionId);
+            _lastOverLimitSecond.Remove(connectionId);
         }
 
         private bool MapHashMatches(byte[] mapHash)

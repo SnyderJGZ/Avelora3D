@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Threading;
 using Avelora.Bots;
 using Avelora.Net;
@@ -108,14 +109,26 @@ namespace Avelora.Tests
             private const int EntityId = 42;
 
             private readonly Mode _mode;
+            private readonly byte[] _nonce;
+            private readonly RSAParameters _publicKey;
             private bool _connected;
             private bool _connectPending;
             private bool _helloAnswered;
+            private bool _challengeSent;
             private byte[]? _pending;
 
             public ScriptedTransport(Mode mode)
             {
                 _mode = mode;
+                _nonce = new byte[HelloSecrets.NonceSize];
+
+                for (int i = 0; i < _nonce.Length; i++)
+                {
+                    _nonce[i] = (byte)(i + 1);
+                }
+
+                using RSA rsa = RSA.Create(2048);
+                _publicKey = rsa.ExportParameters(includePrivateParameters: false);
             }
 
             public bool IsConnected => _connected;
@@ -138,6 +151,14 @@ namespace Avelora.Tests
                     _connectPending = false;
                     _connected = true;
                     Connected?.Invoke();
+
+                    // Protocolo v4: el servidor manda el desafío en cuanto conecta; el bot no
+                    // saluda hasta recibirlo.
+                    _pending = MessageCodec.EncodeChallenge(new ChallengeMessage(
+                        _nonce,
+                        _publicKey.Modulus!,
+                        _publicKey.Exponent!));
+                    _challengeSent = true;
                     return;
                 }
 
@@ -153,7 +174,8 @@ namespace Avelora.Tests
 
             public void Send(byte[] data, int length, DeliveryMode mode)
             {
-                if (_helloAnswered)
+                // Antes del desafío no hay saludo válido; el bot no debería mandar nada.
+                if (!_challengeSent || _helloAnswered)
                 {
                     return;
                 }

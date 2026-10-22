@@ -21,10 +21,12 @@
 *.svd
 *.unitypackage
 
-## Base de datos SQLite de desarrollo
+## Base de datos SQLite de desarrollo y clave del servidor (H-02)
+data/
 *.db
 *.db-shm
 *.db-wal
+*.pem
 
 ## Registros de ejecución
 *.log
