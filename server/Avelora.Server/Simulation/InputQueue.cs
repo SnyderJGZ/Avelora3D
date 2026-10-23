@@ -92,9 +92,16 @@ namespace Avelora.Server.Simulation
         }
 
         /// <summary>
-        /// Saca hasta <paramref name="maxToTake"/> intenciones, en orden de llegada, y las añade a
-        /// <paramref name="destination"/> (que se vacía antes). Lo llama solo el hilo de simulación.
+        /// Saca intenciones en orden de llegada hasta <paramref name="maxToTake"/> no redundantes, y
+        /// las añade a <paramref name="destination"/> (que se vacía antes). Devuelve cuántas sacó en
+        /// total. Lo llama solo el hilo de simulación.
         /// </summary>
+        /// <remarks>
+        /// Las copias redundantes (G-03) no cuentan para el tope: cada mensaje trae como mucho 3,
+        /// así que el trabajo sigue acotado a 4 × <paramref name="maxToTake"/>. Si contaran, con
+        /// 50 jugadores y redundancia 4 (200 por tick) el tope de 128 retrasaba la cola, los inputs
+        /// llegaban a ráfagas al búfer de cada jugador y se descartaban por búfer lleno (H-03).
+        /// </remarks>
         public int DrainInto(List<MoveIntent> destination, int maxToTake)
         {
             if (destination is null)
@@ -108,10 +115,13 @@ namespace Avelora.Server.Simulation
             while (taken < maxToTake && _queue.TryDequeue(out MoveIntent intent))
             {
                 destination.Add(intent);
-                taken++;
+                if (!intent.IsRedundant)
+                {
+                    taken++;
+                }
             }
 
-            return taken;
+            return destination.Count;
         }
     }
 }

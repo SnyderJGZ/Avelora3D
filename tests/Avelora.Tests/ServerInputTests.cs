@@ -85,6 +85,29 @@ namespace Avelora.Tests
             Assert.Single(destination);
             Assert.Equal(1, destination[0].EntityId);
         }
+
+        [Fact]
+        public void Las_Copias_Redundantes_No_Gastan_El_Tope()
+        {
+            var queue = new InputQueue(16);
+
+            // Dos mensajes con redundancia 4: tres copias viejas y el input nuevo, en ese orden.
+            for (uint message = 4; message <= 5; message++)
+            {
+                for (uint i = 3; i >= 1; i--)
+                {
+                    queue.TryEnqueue(new MoveIntent(1, message - i, 1, 0, isRedundant: true));
+                }
+
+                queue.TryEnqueue(new MoveIntent(1, message, 1, 0));
+            }
+
+            var destination = new List<MoveIntent>();
+            Assert.Equal(4, queue.DrainInto(destination, 1));
+            Assert.Equal(4u, destination[3].Sequence);
+            Assert.False(destination[3].IsRedundant);
+            Assert.Equal(4, queue.Pending);
+        }
     }
 
     public class PlayerInputBufferTests
