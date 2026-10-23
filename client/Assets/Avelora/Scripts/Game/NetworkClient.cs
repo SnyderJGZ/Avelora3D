@@ -73,6 +73,12 @@ namespace Avelora.Client
 
         [SerializeField] private Color npcColor = new Color(1f, 0.6f, 0.2f, 1f);
 
+        // Hojas del orco (I-01b): cuadros por dirección en el orden abajo, arriba, izquierda,
+        // derecha. Si están vacías, los PNJ se dibujan como un cuadrado teñido con npcColor.
+        [SerializeField] private Sprite[] npcIdleSprites = new Sprite[0];
+
+        [SerializeField] private Sprite[] npcWalkSprites = new Sprite[0];
+
         [Header("Diagnóstico")]
         [SerializeField] private bool showOverlay = true;
 
@@ -706,7 +712,7 @@ namespace Avelora.Client
 
                 if (!_remoteViews.TryGetValue(state.Id, out RemotePlayerView view) || view == null)
                 {
-                    view = CreateRemoteView(state.Id);
+                    view = CreateRemoteView(state.Id, state.Kind);
                     _remoteViews[state.Id] = view;
                 }
 
@@ -737,7 +743,7 @@ namespace Avelora.Client
             }
         }
 
-        private RemotePlayerView CreateRemoteView(int entityId)
+        private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind)
         {
             if (_remoteRoot == null)
             {
@@ -762,6 +768,11 @@ namespace Avelora.Client
                 sortingOrder,
                 remotePlayerColor,
                 npcColor);
+
+            if (kind == EntityKind.Npc)
+            {
+                view.SetNpcSheets(npcIdleSprites, npcWalkSprites);
+            }
 
             if (sprite == null)
             {

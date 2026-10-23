@@ -1,0 +1,865 @@
+fileFormatVersion: 2
+guid: e973f3ba33057ce47895f5b8a5d442b7
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 510075198971868828
+    second: orc1_walk_with_shadow_0
+  - first:
+      213: -1436427569395596878
+    second: orc1_walk_with_shadow_1
+  - first:
+      213: -7175624417452524085
+    second: orc1_walk_with_shadow_2
+  - first:
+      213: -8626760870185274460
+    second: orc1_walk_with_shadow_3
+  - first:
+      213: 4329284954835002180
+    second: orc1_walk_with_shadow_4
+  - first:
+      213: 2833525851924448530
+    second: orc1_walk_with_shadow_5
+  - first:
+      213: 5893208774247283089
+    second: orc1_walk_with_shadow_6
+  - first:
+      213: 3976617632510059332
+    second: orc1_walk_with_shadow_7
+  - first:
+      213: -375790848262004466
+    second: orc1_walk_with_shadow_8
+  - first:
+      213: 1559879770646221554
+    second: orc1_walk_with_shadow_9
+  - first:
+      213: -2710686271097407956
+    second: orc1_walk_with_shadow_10
+  - first:
+      213: -1887918285145588185
+    second: orc1_walk_with_shadow_11
+  - first:
+      213: -3869475564490866677
+    second: orc1_walk_with_shadow_12
+  - first:
+      213: -8022458068638207957
+    second: orc1_walk_with_shadow_13
+  - first:
+      213: -4655239206963870682
+    second: orc1_walk_with_shadow_14
+  - first:
+      213: 1064543813437649404
+    second: orc1_walk_with_shadow_15
+  - first:
+      213: 772398646097569349
+    second: orc1_walk_with_shadow_16
+  - first:
+      213: 3767109973133283742
+    second: orc1_walk_with_shadow_17
+  - first:
+      213: -7110185438012172700
+    second: orc1_walk_with_shadow_18
+  - first:
+      213: -5600232279268742683
+    second: orc1_walk_with_shadow_19
+  - first:
+      213: 8465956548221342970
+    second: orc1_walk_with_shadow_20
+  - first:
+      213: 2403029323291034123
+    second: orc1_walk_with_shadow_21
+  - first:
+      213: -5240598317611998974
+    second: orc1_walk_with_shadow_22
+  - first:
+      213: 366343076288379308
+    second: orc1_walk_with_shadow_23
+  - first:
+      213: -9085366790085811826
+    second: orc1_walk_down_0
+  - first:
+      213: -6973148713209240584
+    second: orc1_walk_down_1
+  - first:
+      213: -1931066776810539450
+    second: orc1_walk_down_2
+  - first:
+      213: 1605206318564166162
+    second: orc1_walk_down_3
+  - first:
+      213: -1499479062678003232
+    second: orc1_walk_down_4
+  - first:
+      213: -8757580904301245830
+    second: orc1_walk_down_5
+  - first:
+      213: -4767513895419785180
+    second: orc1_walk_up_0
+  - first:
+      213: -8098200807868882798
+    second: orc1_walk_up_1
+  - first:
+      213: -2272806756015925874
+    second: orc1_walk_up_2
+  - first:
+      213: -2626791898816216094
+    second: orc1_walk_up_3
+  - first:
+      213: 6117000540240911034
+    second: orc1_walk_up_4
+  - first:
+      213: -4439912836596681528
+    second: orc1_walk_up_5
+  - first:
+      213: -6609879342913434692
+    second: orc1_walk_left_0
+  - first:
+      213: -4146544844038970449
+    second: orc1_walk_left_1
+  - first:
+      213: -4331650983164359857
+    second: orc1_walk_left_2
+  - first:
+      213: 1914181486843603815
+    second: orc1_walk_left_3
+  - first:
+      213: -4806693956390458184
+    second: orc1_walk_left_4
+  - first:
+      213: -5914592068620852732
+    second: orc1_walk_left_5
+  - first:
+      213: 6039778712148497349
+    second: orc1_walk_right_0
+  - first:
+      213: 2133969676357986020
+    second: orc1_walk_right_1
+  - first:
+      213: 4132690875964967034
+    second: orc1_walk_right_2
+  - first:
+      213: -366536319188820541
+    second: orc1_walk_right_3
+  - first:
+      213: -417541670738289869
+    second: orc1_walk_right_4
+  - first:
+      213: 9083332144363544375
+    second: orc1_walk_right_5
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 32
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WindowsStoreApps
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: orc1_walk_down_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e81edce6a0b4ae180800000000000000
+      internalID: -9085366790085811826
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_down_1
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8f3e03fc0366a3f90800000000000000
+      internalID: -6973148713209240584
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_down_2
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 64636aa6ff87335e0800000000000000
+      internalID: -1931066776810539450
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_down_3
+      rect:
+        serializedVersion: 2
+        x: 192
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 21aca3954a6d64610800000000000000
+      internalID: 1605206318564166162
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_down_4
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0e121f0bcb7c03be0800000000000000
+      internalID: -1499479062678003232
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_down_5
+      rect:
+        serializedVersion: 2
+        x: 320
+        y: 192
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a7a41633192d67680800000000000000
+      internalID: -8757580904301245830
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 420d3c91f5366ddb0800000000000000
+      internalID: -4767513895419785180
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_1
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 290a13775496d9f80800000000000000
+      internalID: -8098200807868882798
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_2
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e8510981c4e5570e0800000000000000
+      internalID: -2272806756015925874
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_3
+      rect:
+        serializedVersion: 2
+        x: 192
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2e38f247fa2cb8bd0800000000000000
+      internalID: -2626791898816216094
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_4
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: aba9ee30593f3e450800000000000000
+      internalID: 6117000540240911034
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_up_5
+      rect:
+        serializedVersion: 2
+        x: 320
+        y: 128
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8c435fc7cc24262c0800000000000000
+      internalID: -4439912836596681528
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cbbc37d12cdf444a0800000000000000
+      internalID: -6609879342913434692
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_1
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fa364d50f638476c0800000000000000
+      internalID: -4146544844038970449
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_2
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f4b44818162e2e3c0800000000000000
+      internalID: -4331650983164359857
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_3
+      rect:
+        serializedVersion: 2
+        x: 192
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 76b21f6abe9809a10800000000000000
+      internalID: 1914181486843603815
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_4
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8bc645940513b4db0800000000000000
+      internalID: -4806693956390458184
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_left_5
+      rect:
+        serializedVersion: 2
+        x: 320
+        y: 64
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 402e286b9d52beda0800000000000000
+      internalID: -5914592068620852732
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5c3d3931dba91d350800000000000000
+      internalID: 6039778712148497349
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_1
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4e6e5c84d126d9d10800000000000000
+      internalID: 2133969676357986020
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_2
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a78c36ca4744a5930800000000000000
+      internalID: 4132690875964967034
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_3
+      rect:
+        serializedVersion: 2
+        x: 192
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3cd9871e82dc9eaf0800000000000000
+      internalID: -366536319188820541
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_4
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 33b98bc0018943af0800000000000000
+      internalID: -417541670738289869
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: orc1_walk_right_5
+      rect:
+        serializedVersion: 2
+        x: 320
+        y: 0
+        width: 64
+        height: 64
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 73f1da1b57a7e0e70800000000000000
+      internalID: 9083332144363544375
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      orc1_walk_down_0: -9085366790085811826
+      orc1_walk_down_1: -6973148713209240584
+      orc1_walk_down_2: -1931066776810539450
+      orc1_walk_down_3: 1605206318564166162
+      orc1_walk_down_4: -1499479062678003232
+      orc1_walk_down_5: -8757580904301245830
+      orc1_walk_left_0: -6609879342913434692
+      orc1_walk_left_1: -4146544844038970449
+      orc1_walk_left_2: -4331650983164359857
+      orc1_walk_left_3: 1914181486843603815
+      orc1_walk_left_4: -4806693956390458184
+      orc1_walk_left_5: -5914592068620852732
+      orc1_walk_right_0: 6039778712148497349
+      orc1_walk_right_1: 2133969676357986020
+      orc1_walk_right_2: 4132690875964967034
+      orc1_walk_right_3: -366536319188820541
+      orc1_walk_right_4: -417541670738289869
+      orc1_walk_right_5: 9083332144363544375
+      orc1_walk_up_0: -4767513895419785180
+      orc1_walk_up_1: -8098200807868882798
+      orc1_walk_up_2: -2272806756015925874
+      orc1_walk_up_3: -2626791898816216094
+      orc1_walk_up_4: 6117000540240911034
+      orc1_walk_up_5: -4439912836596681528
+      orc1_walk_with_shadow_0: 510075198971868828
+      orc1_walk_with_shadow_1: -1436427569395596878
+      orc1_walk_with_shadow_10: -2710686271097407956
+      orc1_walk_with_shadow_11: -1887918285145588185
+      orc1_walk_with_shadow_12: -3869475564490866677
+      orc1_walk_with_shadow_13: -8022458068638207957
+      orc1_walk_with_shadow_14: -4655239206963870682
+      orc1_walk_with_shadow_15: 1064543813437649404
+      orc1_walk_with_shadow_16: 772398646097569349
+      orc1_walk_with_shadow_17: 3767109973133283742
+      orc1_walk_with_shadow_18: -7110185438012172700
+      orc1_walk_with_shadow_19: -5600232279268742683
+      orc1_walk_with_shadow_2: -7175624417452524085
+      orc1_walk_with_shadow_20: 8465956548221342970
+      orc1_walk_with_shadow_21: 2403029323291034123
+      orc1_walk_with_shadow_22: -5240598317611998974
+      orc1_walk_with_shadow_23: 366343076288379308
+      orc1_walk_with_shadow_3: -8626760870185274460
+      orc1_walk_with_shadow_4: 4329284954835002180
+      orc1_walk_with_shadow_5: 2833525851924448530
+      orc1_walk_with_shadow_6: 5893208774247283089
+      orc1_walk_with_shadow_7: 3976617632510059332
+      orc1_walk_with_shadow_8: -375790848262004466
+      orc1_walk_with_shadow_9: 1559879770646221554
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -54,6 +54,20 @@ namespace Avelora.Client
             _renderer.sortingOrder = sortingOrder;
         }
 
+        /// <summary>
+        /// Da a un PNJ sus hojas de animación (4 filas: abajo, arriba, izquierda, derecha). Si una
+        /// hoja no se reparte en 4 filas iguales, se ignora y queda el cuadrado teñido.
+        /// </summary>
+        public void SetNpcSheets(Sprite[] idle, Sprite[] walk)
+        {
+            if (idle != null && walk != null && idle.Length >= 4 && walk.Length >= 4 &&
+                idle.Length % 4 == 0 && walk.Length % 4 == 0)
+            {
+                _idle = idle;
+                _walk = walk;
+            }
+        }
+
         /// <summary>Coloca la vista en la muestra de este frame.</summary>
         public void Apply(EntitySample sample)
         {
@@ -63,6 +77,13 @@ namespace Avelora.Client
             }
 
             transform.position = new Vector3(sample.Position.X, sample.Position.Y, 0f);
+
+            if (_walk != null)
+            {
+                Animate(sample.DirectionX, sample.DirectionY);
+                return;
+            }
+
             _renderer.color = sample.Kind == EntityKind.Player ? _playerColor : _npcColor;
 
             if (sample.DirectionX != 0)
@@ -70,5 +91,37 @@ namespace Avelora.Client
                 _renderer.flipX = sample.DirectionX < 0;
             }
         }
+
+        private void Animate(sbyte directionX, sbyte directionY)
+        {
+            bool moving = directionX != 0 || directionY != 0;
+            if (moving)
+            {
+                // En diagonal manda el eje horizontal: la hoja no tiene filas diagonales.
+                _facing = directionX < 0 ? FacingLeft
+                    : directionX > 0 ? FacingRight
+                    : directionY > 0 ? FacingUp
+                    : FacingDown;
+            }
+
+            Sprite[] sheet = moving ? _walk : _idle;
+            int frames = sheet.Length / 4;
+            int frame = (int)(Time.time * (moving ? WalkFps : IdleFps)) % frames;
+
+            _renderer.color = Color.white;
+            _renderer.flipX = false;
+            _renderer.sprite = sheet[(_facing * frames) + frame];
+        }
+
+        private const int FacingDown = 0;
+        private const int FacingUp = 1;
+        private const int FacingLeft = 2;
+        private const int FacingRight = 3;
+        private const float WalkFps = 10f;
+        private const float IdleFps = 6f;
+
+        private Sprite[] _idle;
+        private Sprite[] _walk;
+        private int _facing = FacingDown;
     }
 }

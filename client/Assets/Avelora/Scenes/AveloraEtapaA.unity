@@ -2468,6 +2468,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Avelora.Client.NetworkClient
   host: 127.0.0.1
   port: 7777
+  serverKeyFingerprint: 
   accountName: dev
   password: avelora-dev
   characterName: 
@@ -2477,6 +2478,48 @@ MonoBehaviour:
   interpolationDelay: 0.1
   remotePlayerColor: {r: 0.45, g: 0.8, b: 1, a: 1}
   npcColor: {r: 1, g: 0.6, b: 0.2, a: 1}
+  npcIdleSprites:
+  - {fileID: 2835948705994582229, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -5142664725509755249, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 5764468751161535330, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 6075077910182666686, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 7366419871705258569, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -2853168311225907847, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 7845905746016900962, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 3046893860630979555, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -2075748157303945977, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -4391678510017601550, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -2839051335276577045, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -4253711281850510813, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -6424384520063806688, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: -6550230910829530292, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 2663595931666799210, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  - {fileID: 6830892880839158559, guid: 7aa75674926c7304e82a7736ed8b058a, type: 3}
+  npcWalkSprites:
+  - {fileID: -9085366790085811826, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -6973148713209240584, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -1931066776810539450, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 1605206318564166162, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -1499479062678003232, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -8757580904301245830, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -4767513895419785180, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -8098200807868882798, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -2272806756015925874, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -2626791898816216094, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 6117000540240911034, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -4439912836596681528, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -6609879342913434692, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -4146544844038970449, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -4331650983164359857, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 1914181486843603815, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -4806693956390458184, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -5914592068620852732, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 6039778712148497349, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 2133969676357986020, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 4132690875964967034, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -366536319188820541, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: -417541670738289869, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
+  - {fileID: 9083332144363544375, guid: e973f3ba33057ce47895f5b8a5d442b7, type: 3}
   showOverlay: 1
   useDebugInput: 0
   debugDirX: 0
