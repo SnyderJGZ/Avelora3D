@@ -37,12 +37,6 @@ namespace Avelora.Server.Entities
         /// </summary>
         public uint LastProcessedSequence { get; set; }
 
-        /// <summary>Dirección del último input aplicado (informativa; el movimiento ya está hecho).</summary>
-        public sbyte DirectionX { get; set; }
-
-        /// <inheritdoc cref="DirectionX"/>
-        public sbyte DirectionY { get; set; }
-
         /// <summary>Inputs recibidos por la red que esperan a ser aplicados, uno por tick.</summary>
         public PlayerInputBuffer Input { get; }
 

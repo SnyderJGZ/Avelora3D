@@ -2,13 +2,14 @@
 using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
+using Avelora.Server.Npcs;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
 {
     /// <summary>
-    /// Una zona: el mundo simulado (guía del núcleo §6). Hoy es un mapa, sus entidades y el área
-    /// de interés; mañana añadirá enemigos y demás sin cambiar el tick.
+    /// Una zona: el mundo simulado (guía del núcleo §6). Hoy es un mapa, sus entidades (jugadores
+    /// y enemigos) y el área de interés.
     /// </summary>
     /// <remarks>
     /// El tick de la zona tiene tres partes y las tres importan:
@@ -26,6 +27,7 @@ namespace Avelora.Server.Simulation
     {
         private readonly MovementSystem _movement;
         private readonly InterestSystem _interest;
+        private readonly NpcSystem? _npcs;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
@@ -47,7 +49,9 @@ namespace Avelora.Server.Simulation
             MovementSystem movement,
             int maxIntentsPerTick,
             int maxIntentsPerPlayerPerTick,
-            InterestSettings? interest = null)
+            InterestSettings? interest = null,
+            NpcCatalog? npcs = null,
+            int npcSeed = 12345)
         {
             if (map is null)
             {
@@ -93,6 +97,19 @@ namespace Avelora.Server.Simulation
 
             _maxIntentsPerTick = maxIntentsPerTick;
             _maxIntentsPerPlayerPerTick = maxIntentsPerPlayerPerTick;
+
+            // Enemigos (I-01): se colocan al nacer la zona, antes de que haya red. Si no hay datos
+            // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
+            if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
+            {
+                _npcs = new NpcSystem(map, npcSeed);
+                _npcs.Spawn(npcs, Id, Entities, Ids);
+
+                for (int i = 0; i < Entities.Count; i++)
+                {
+                    _interest.Add(Entities[i]);
+                }
+            }
         }
 
         /// <summary>Identificador de la zona.</summary>
@@ -210,6 +227,10 @@ namespace Avelora.Server.Simulation
         {
             DrainInputs();
             _movement.Tick(Entities, Map);
+
+            // Los enemigos se mueven después de los jugadores y antes de reindexar: así el área de
+            // interés y los snapshots de este mismo tick ya ven su posición nueva.
+            _npcs?.Tick(Entities);
 
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
             // O(n) con n = entidades vivas y deja la grilla lista para los snapshots de AfterTick.

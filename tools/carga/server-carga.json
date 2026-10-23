@@ -11,6 +11,7 @@
   "firstCharacterId": 1,
   "persistenceEnabled": true,
   "databasePath": "avelora-carga.db",
+  "npcsPath": "npcs-carga.json",
   "registrationInvitationCode": "avelora-dev",
   "saveIntervalSeconds": 60,
   "maxPendingLogins": 16,

@@ -1,0 +1,12 @@
+{
+  "types": [
+    { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35 }
+  ],
+  "spawners": [
+    { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 10, "wanderRadius": 2.5 },
+    { "typeId": 2001, "x": -5.5, "y": 2.5, "count": 10, "wanderRadius": 2.5 },
+    { "typeId": 2001, "x": 5.5, "y": -4.5, "count": 10, "wanderRadius": 2.5 },
+    { "typeId": 2001, "x": -3.5, "y": 5.5, "count": 10, "wanderRadius": 2.5 },
+    { "typeId": 2001, "x": 7.5, "y": -1.5, "count": 10, "wanderRadius": 2.5 }
+  ]
+}

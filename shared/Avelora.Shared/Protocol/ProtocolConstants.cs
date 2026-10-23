@@ -69,8 +69,13 @@ namespace Avelora.Shared.Protocol
         /// </summary>
         public const float MaxQuantizationError = 0.5f / PositionScale;
 
-        /// <summary>Tope de entidades en un snapshot (11 + 96·11 = 1067 bytes, por debajo del MTU).</summary>
-        public const int MaxEntitiesPerSnapshot = 96;
+        /// <summary>
+        /// Tope de entidades en un snapshot. El paquete va por el canal secuenciado, que LiteNetLib
+        /// no fragmenta: su máximo es 1020 B. La cabecera ocupa 11 B y cada entidad 11 B, así que
+        /// 11 + 91·11 = 1012 B cabe y 11 + 92·11 = 1023 B no (lanzaría TooBigPacketException en el
+        /// hilo de red).
+        /// </summary>
+        public const int MaxEntitiesPerSnapshot = 91;
 
         /// <summary>Puerto UDP por defecto.</summary>
         public const int DefaultPort = 7777;

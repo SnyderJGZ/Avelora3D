@@ -4,12 +4,13 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F y G cerradas, Etapa H en curso.** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F y G cerradas, Etapa H en curso y Etapa I iniciada.** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
 > solo uso; al entrar, el personaje aparece en la posición que tenía guardada si el mapa coincide.
-> Ver [Etapa H](#qué-hace-la-etapa-h).
+> Desde I-01 el mundo tiene enemigos que el servidor mueve y todos ven.
+> Ver [Etapa H](#qué-hace-la-etapa-h) y [Enemigos (I-01)](#enemigos-i-01).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -18,7 +19,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **216/216 en verde** |
+| `dotnet test Avelora.slnx` | **290/290 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -64,6 +65,7 @@ Avelora/
 ├─ server/Avelora.Server/           # Servidor headless (net10.0)
 │   ├─ Program.cs                   #   Monta zona + red y arranca el bucle (Ctrl+C para parar)
 │   ├─ server.json                  #   Configuración externa (tick, red, límites, rutas)
+│   ├─ npcs.json                    #   Tipos y puntos de aparición de enemigos (I-01)
 │   ├─ Simulation/                  #   Bucle, zona, movimiento, colas de entrada, área de interés
 │   ├─ Net/                         #   Sesiones, handshake, entrada y snapshots filtrados
 │   ├─ Entities/                    #   Entity, PlayerEntity, Id, almacén y grilla espacial
@@ -390,8 +392,9 @@ hilo de red (avelora-net)                        hilo de simulación (avelora-si
 - Cada cliente recibe `lastProcessedInputSequence`, la base de la reconciliación de la Etapa D. Para
   comparar secuencias de 32 bits se usa `SequenceMath.IsNewer`, que resta y mira el signo: así la
   vuelta de `uint` (cada 6,8 años a 20 Hz) no bloquea los inputs para siempre.
-- Tope de mensaje: **1400 bytes**. Un snapshot con 96 entidades ocupa 1067 y cabe en un datagrama.
-  Un mensaje mayor se rechaza sin decodificar.
+- Tope de mensaje: **1400 bytes**. Un snapshot con 91 entidades ocupa 1012 y cabe en el paquete
+  máximo del canal secuenciado de LiteNetLib (1020 B, sin fragmentos). Un mensaje mayor se rechaza
+  sin decodificar.
 
 ### Límites y validación en la frontera
 
@@ -603,8 +606,9 @@ codifica solo esos estados.
   retira su vista.
 - `NetworkStats` añade `EntitiesSent` (suma de entidades incluidas) y `SnapshotBytes` (bytes de
   snapshot generados). El informe muestra `ents=` y `bytes=` y el resumen los totaliza.
-- El tope de **96 entidades por snapshot** sigue ahí: si una zona tuviera más, se recorta y se
-  cuenta. El destinatario va primero, así que el recorte nunca lo elimina a él.
+- El tope de **entidades por snapshot** sigue ahí: si una zona tuviera más, se recorta y se cuenta.
+  El destinatario va primero, así que el recorte nunca lo elimina a él. Hoy son **91** (I-01): es el
+  máximo que cabe en los 1020 B de un paquete secuenciado de LiteNetLib.
 - El cliente **no necesitó cambios**: `NetworkClient` retira una vista remota cuando su entidad deja
   de aparecer en el último snapshot y la vuelve a crear si regresa; `SnapshotTimeline` ya usa la
   muestra que existe cuando una entidad falta en una de las dos.
@@ -836,6 +840,54 @@ Límite de login sin distinguir mayúsculas y contando los saludos en vuelo; reg
 defecto; respuesta única para no revelar qué cuentas existen; máximo de 3 personajes por cuenta;
 reintento de guardados fallidos; guardado al cerrar la ventana o al apagar; y la sincronización con
 Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md`.
+
+---
+
+## Qué hace la Etapa I
+
+### Enemigos (I-01)
+
+Los enemigos son entidades del servidor (`EntityKind.Npc`, valor 1 del protocolo, que ya viajaba en
+el snapshot). El servidor los mueve con su IA y todos los clientes los ven; **todavía no hay
+combate**: no hay vida, daño, muerte ni reaparición.
+
+`server/Avelora.Server/npcs.json` se copia junto al ejecutable, como `server.json`:
+
+```json
+{
+  "types": [
+    { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35 }
+  ],
+  "spawners": [
+    { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 3, "wanderRadius": 3.0 },
+    { "typeId": 2001, "x": -5.5, "y": 2.5, "count": 2, "wanderRadius": 2.5 }
+  ]
+}
+```
+
+Al arrancar se valida contra el mapa real y **si algo falla el servidor no arranca**, con el motivo:
+`id` único y mayor que 0; `speed` en (0, 10]; `halfWidth` y `halfHeight` entre 0,05 y 2; cada
+`typeId` existe; `count` entre 1 y 50; `wanderRadius` mayor que 0; la caja del tipo cabe en el punto
+(`IsBoxWalkable`) y el total no pasa de 500 enemigos. El arranque imprime una línea que resume
+tipos, spawners y enemigos.
+
+**IA de deambular** (`Simulation/NpcSystem`): cada 16–50 ticks elige una de las 8 direcciones o
+quedarse quieto (1/3), y se mueve con el mismo `MovementSimulator` que los jugadores, así que solo
+choca con el mapa: no choca con jugadores ni con otros enemigos. Si toca una pared, vuelve a decidir
+al tick siguiente. Si se aleja más de `wanderRadius` de su punto de aparición (`Home`), la correa lo
+devuelve hacia él. Un único `System.Random` sembrado con `npcSeed` hace que dos zonas con la misma
+semilla y los mismos datos produzcan las mismas posiciones.
+
+Los enemigos **no se guardan**: `CharacterSaveService` solo recibe `CharacterRecord` y
+`NetworkServer.SaveAllPlayers` exige `PlayerEntity`; `PublishPlayers`, el cupo y los informes también
+filtran por `PlayerEntity`.
+
+### Configuración
+
+| Campo | Defecto | Significado |
+| --- | --- | --- |
+| `npcsPath` | **`npcs.json`** | Archivo de enemigos; si es relativo se resuelve junto a `server.json`, como `databasePath`. **Vacío = zona sin enemigos.** |
+| `npcSeed` | **12345** | Semilla de la IA. Misma semilla y mismos datos = mismas posiciones. |
 
 ---
 

@@ -580,6 +580,26 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Snapshot_Maximo_Cabe_En_Un_Paquete_Sin_Fragmentos_De_LiteNetLib()
+        {
+            var entities = new EntityState[ProtocolConstants.MaxEntitiesPerSnapshot];
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                entities[i] = new EntityState(i, 0, 0, 0, 0, EntityKind.Npc);
+            }
+
+            byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(1u, 0u, entities));
+
+            // El canal secuenciado no fragmenta: LiteNetLib rechaza con TooBigPacketException todo
+            // paquete de más de 1020 B. Si este número sube, la carga con muchos PNJ tumba el hilo
+            // de red, no el tick.
+            Assert.True(
+                bytes.Length <= 1020,
+                "Un snapshot de " + entities.Length + " entidades ocupa " + bytes.Length + " B.");
+        }
+
+        [Fact]
         public void Una_Huella_De_Tamano_Incorrecto_No_Se_Puede_Codificar()
         {
             Assert.Throws<ArgumentException>(

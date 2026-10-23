@@ -11,6 +11,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Diagnostics;
 using Avelora.Server.Entities;
 using Avelora.Server.Net;
+using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
 using Avelora.Server.Security;
 using Avelora.Server.Simulation;
@@ -97,6 +98,28 @@ namespace Avelora.Server
             byte[] mapHash = MapFile.ComputeContentHashBytes(map);
             string mapHashHex = MapFile.ToHexString(mapHash);
 
+            // Enemigos (I-01). Con npcsPath vacío la zona se queda sin PNJ. Con ruta, el archivo
+            // tiene que existir y ser válido contra este mapa: si no, no se arranca.
+            NpcCatalog? npcs = null;
+
+            if (!string.IsNullOrWhiteSpace(config.NpcsPath))
+            {
+                try
+                {
+                    string npcPath = config.ResolveNpcsPath(configPath);
+                    npcs = NpcCatalog.Load(npcPath);
+                    npcs.Validate(map);
+                }
+                catch (Exception ex) when (
+                    ex is IOException ||
+                    ex is System.Text.Json.JsonException ||
+                    ex is InvalidOperationException)
+                {
+                    ConsoleReporter.WriteError("No se pudieron cargar los enemigos: " + ex.Message);
+                    return 2;
+                }
+            }
+
             // Persistencia (Etapa F): una base SQLite y un hilo de guardado. La zona y el tick no
             // saben nada de SQLite; solo reciben personajes ya cargados y entregan fotos.
             IPlayerRepository? repository = null;
@@ -161,7 +184,9 @@ namespace Avelora.Server
                 new MovementSystem(config.PlayerSpeed, SimulationConstants.FixedDt),
                 config.MaxIntentsPerTick,
                 config.MaxIntentsPerPlayerPerTick,
-                new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis));
+                new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis),
+                npcs,
+                config.NpcSeed);
 
             try
             {
@@ -201,7 +226,8 @@ namespace Avelora.Server
                 config,
                 network.Port,
                 databasePath,
-                network.KeyFingerprint);
+                network.KeyFingerprint,
+                npcs);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>

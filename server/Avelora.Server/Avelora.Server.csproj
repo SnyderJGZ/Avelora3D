@@ -28,6 +28,9 @@
     <!-- Configuración junto al ejecutable: se puede editar sin recompilar. -->
     <None Update="server.json" CopyToOutputDirectory="PreserveNewest" />
 
+    <!-- Enemigos junto al ejecutable, como server.json (I-01). -->
+    <None Update="npcs.json" CopyToOutputDirectory="PreserveNewest" />
+
     <!-- El mapa vive en maps/ (contenido compartido cliente/servidor) y viaja junto al ejecutable. -->
     <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

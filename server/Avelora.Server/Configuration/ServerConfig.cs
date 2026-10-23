@@ -67,6 +67,18 @@ namespace Avelora.Server.Configuration
         public string ServerKeyPath { get; set; } = "data/server-key.pem";
 
         /// <summary>
+        /// Ruta del archivo de enemigos (<c>npcs.json</c>, I-01). Si es relativa se resuelve junto
+        /// a la configuración, como <see cref="DatabasePath"/>. Vacío = zona sin enemigos.
+        /// </summary>
+        public string NpcsPath { get; set; } = "npcs.json";
+
+        /// <summary>
+        /// Semilla del azar de la IA de los enemigos. Con la misma semilla y los mismos datos, dos
+        /// zonas producen exactamente las mismas posiciones.
+        /// </summary>
+        public int NpcSeed { get; set; } = 12345;
+
+        /// <summary>
         /// Código necesario para crear una cuenta nueva. Vacío cierra el registro.
         /// </summary>
         // El defecto cierra el registro: si el código de desarrollo no se escribe a propósito en
@@ -366,6 +378,26 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", DatabasePath));
+        }
+
+        /// <summary>
+        /// Resuelve el archivo de enemigos. Como la base de datos, si la ruta es relativa se
+        /// resuelve junto a la configuración. Una ruta vacía significa «sin enemigos».
+        /// </summary>
+        public string ResolveNpcsPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(NpcsPath))
+            {
+                return string.Empty;
+            }
+
+            if (Path.IsPathRooted(NpcsPath))
+            {
+                return NpcsPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", NpcsPath));
         }
 
         /// <summary>

@@ -417,6 +417,56 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Snapshot_Lleva_Los_Pnjs_Cercanos_Con_Su_Direccion()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.InterestRadius = 3f;
+                config.InterestCellSize = 2f;
+                config.InterestHysteresis = 0f;
+            });
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+
+            PlayerEntity near = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            PlayerEntity far = (PlayerEntity)harness.Zone.Entities.Get(2)!;
+            near.Position = new Vec2(0f, 5f);
+            far.Position = new Vec2(-6f, -4f);
+
+            var npc = new NpcEntity(
+                100,
+                2001,
+                2f,
+                new Vec2(1f, 5f),
+                2f,
+                nextDirectionChangeTick: 10_000)
+            {
+                Position = new Vec2(1f, 5f),
+                HalfSize = new Vec2(0.35f, 0.35f),
+                DirectionX = 1,
+                DirectionY = -1,
+            };
+
+            harness.Zone.AddEntity(npc);
+            SendSnapshots(harness);
+
+            SnapshotMessage nearSnapshot = SnapshotFor(harness, 1);
+            EntityState state = Assert.Single(nearSnapshot.Entities, e => e.Id == 100);
+            Assert.Equal(EntityKind.Npc, state.Kind);
+            Assert.Equal(1, state.DirectionX);
+            Assert.Equal(-1, state.DirectionY);
+
+            SnapshotMessage farSnapshot = SnapshotFor(harness, 2);
+            Assert.DoesNotContain(farSnapshot.Entities, e => e.Id == 100);
+        }
+
+        [Fact]
         public void El_Jugador_Local_Se_Incluye_Aunque_El_Radio_Sea_Minimo()
         {
             using var harness = new Harness(config =>

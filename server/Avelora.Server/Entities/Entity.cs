@@ -36,6 +36,16 @@ namespace Avelora.Server.Entities
         public Vec2 HalfSize { get; set; }
 
         /// <summary>
+        /// Dirección actual de la entidad: la del último input aplicado en un jugador y la que
+        /// lleva la IA en un PNJ. El snapshot la manda para que el cliente oriente el sprite; para
+        /// los jugadores es informativa, porque el movimiento ya está hecho.
+        /// </summary>
+        public sbyte DirectionX { get; set; }
+
+        /// <inheritdoc cref="DirectionX"/>
+        public sbyte DirectionY { get; set; }
+
+        /// <summary>
         /// Celda de la grilla espacial, para el área de interés. La mantiene
         /// <see cref="EntitySpatialGrid"/>; <see cref="NoCell"/> significa «sin indexar».
         /// </summary>

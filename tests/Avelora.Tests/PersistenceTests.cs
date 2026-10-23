@@ -7,6 +7,7 @@ using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Net;
+using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -223,6 +224,53 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Guardado_Con_Enemigos_Solo_Escribe_Personajes()
+        {
+            var npcs = new NpcCatalog
+            {
+                Types = new List<NpcType>
+                {
+                    new NpcType
+                    {
+                        Id = 2001,
+                        Name = "Orco",
+                        Speed = 2f,
+                        HalfWidth = 0.35f,
+                        HalfHeight = 0.35f,
+                    },
+                },
+                Spawners = new List<NpcSpawner>
+                {
+                    new NpcSpawner
+                    {
+                        TypeId = 2001,
+                        X = 3.5f,
+                        Y = 1.5f,
+                        Count = 3,
+                        WanderRadius = 2f,
+                    },
+                },
+            };
+
+            using var harness = new ServerHarness(DatabasePath, npcs);
+
+            Assert.Equal(3, harness.Zone.Entities.CountOf(EntityKind.Npc));
+
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            Assert.Equal(4, harness.Zone.Entities.Count);
+
+            harness.Server.SaveAll(harness.Zone);
+            Assert.True(harness.Saves.Flush(TimeSpan.FromSeconds(5)));
+
+            // Solo el personaje conectado se escribe: los PNJ no pasan por la cola de guardado.
+            Assert.Equal(1L, harness.Saves.Saved);
+            Assert.Equal(0, harness.Saves.Pending);
+        }
+
+        [Fact]
         public void Una_Contrasena_Incorrecta_Se_Rechaza_Sin_Crear_Entidad()
         {
             using var harness = new ServerHarness(DatabasePath);
@@ -409,7 +457,7 @@ namespace Avelora.Tests
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
 
-            public ServerHarness(string databasePath)
+            public ServerHarness(string databasePath, NpcCatalog? npcs = null)
             {
                 Config = new ServerConfig
                 {
@@ -435,7 +483,9 @@ namespace Avelora.Tests
                     new MovementSystem(Config.PlayerSpeed, SimulationConstants.FixedDt),
                     Config.MaxIntentsPerTick,
                     Config.MaxIntentsPerPlayerPerTick,
-                    new InterestSettings(Config.InterestRadius, Config.InterestCellSize, Config.InterestHysteresis));
+                    new InterestSettings(Config.InterestRadius, Config.InterestCellSize, Config.InterestHysteresis),
+                    npcs,
+                    12345);
 
                 MapHash = MapFile.ComputeContentHashBytes(map);
                 Transport = new FakeServerTransport();

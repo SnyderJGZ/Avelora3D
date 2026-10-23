@@ -290,6 +290,21 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Los_Enemigos_Se_Resuelven_Junto_A_La_Configuracion()
+        {
+            string configPath = Path_("server.json");
+
+            Assert.Equal(
+                Path.Combine(_folder, "npcs.json"),
+                new ServerConfig().ResolveNpcsPath(configPath));
+
+            // Vacío significa «zona sin enemigos»: no se resuelve ninguna ruta.
+            Assert.Equal(
+                string.Empty,
+                new ServerConfig { NpcsPath = "  " }.ResolveNpcsPath(configPath));
+        }
+
+        [Fact]
         public void Un_Archivo_Con_Valores_Invalidos_No_Deja_Arrancar()
         {
             string path = Path_("malo.json");

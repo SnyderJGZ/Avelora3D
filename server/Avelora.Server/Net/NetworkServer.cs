@@ -1150,14 +1150,13 @@ namespace Avelora.Server.Net
             for (int i = 0; i < available; i++)
             {
                 Entity entity = _visibleBuffer[i];
-                var player = entity as PlayerEntity;
 
                 states[i] = new EntityState(
                     entity.Id,
                     ProtocolConstants.QuantizePosition(entity.Position.X),
                     ProtocolConstants.QuantizePosition(entity.Position.Y),
-                    player?.DirectionX ?? 0,
-                    player?.DirectionY ?? 0,
+                    entity.DirectionX,
+                    entity.DirectionY,
                     entity.Kind);
             }
 

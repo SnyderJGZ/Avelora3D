@@ -34,7 +34,8 @@ namespace Avelora.Server.Diagnostics
             ServerConfig config,
             int port,
             string? databasePath,
-            string serverKeyFingerprint)
+            string serverKeyFingerprint,
+            Avelora.Server.Npcs.NpcCatalog? npcs = null)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -71,6 +72,11 @@ namespace Avelora.Server.Diagnostics
                 "  Interés       : radio " + Invariant(config.InterestRadius, "0.##") +
                 " tiles, celda " + Invariant(config.InterestCellSize, "0.##") +
                 ", histéresis " + Invariant(config.InterestHysteresis, "0.##") + " tiles");
+            Console.WriteLine(
+                "  Enemigos      : " + (npcs == null
+                    ? "ninguno"
+                    : (npcs.Types?.Count ?? 0) + " tipo(s), " + (npcs.Spawners?.Count ?? 0) +
+                      " spawner(s), " + npcs.TotalEnemies + " enemigo(s)"));
             Console.WriteLine(
                 "  Límites       : " + config.MaxIntentsPerTick + " inputs/tick, " +
                 config.MaxIntentsPerPlayerPerTick + "/jugador/tick, cola de jugador " +
