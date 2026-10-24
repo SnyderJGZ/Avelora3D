@@ -104,5 +104,24 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 CreatedUtc,
                 DateTime.UtcNow);
+
+        /// <summary>
+        /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
+        /// para que la vida viva llegue a SQLite y para normalizar a un jugador muerto.
+        /// </summary>
+        public CharacterRecord WithState(int zoneId, Vec2 position, byte[] mapHash, int health) =>
+            new CharacterRecord(
+                Id,
+                AccountId,
+                Name,
+                Level,
+                Experience,
+                health,
+                Mana,
+                zoneId,
+                position,
+                mapHash,
+                CreatedUtc,
+                DateTime.UtcNow);
     }
 }

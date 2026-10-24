@@ -118,6 +118,18 @@ namespace Avelora.Server.Configuration
         /// <summary>Segundos entre dos ataques válidos de un mismo jugador (I-02).</summary>
         public double PlayerAttackCooldownSeconds { get; set; } = 0.8d;
 
+        /// <summary>Vida máxima de un jugador (I-03).</summary>
+        public int PlayerMaxHealth { get; set; } = 100;
+
+        /// <summary>Segundos que un jugador permanece muerto antes de reaparecer (I-03).</summary>
+        public double PlayerRespawnSeconds { get; set; } = 5d;
+
+        /// <summary>Vida que recupera un jugador por segundo cuando toca regenerar (I-03).</summary>
+        public double PlayerRegenPerSecond { get; set; } = 2d;
+
+        /// <summary>Segundos desde el último daño antes de empezar a regenerar (I-03).</summary>
+        public double PlayerRegenDelaySeconds { get; set; } = 5d;
+
         /// <summary>
         /// Margen de distancia que se suma al alcance. Compensa que el cliente ve a los demás unos
         /// 100 ms en el pasado por la interpolación (I-02).
@@ -211,6 +223,17 @@ namespace Avelora.Server.Configuration
 
         /// <summary>Caja de colisión del jugador.</summary>
         public Vec2 PlayerHalfSize => new Vec2(PlayerHalfWidth, PlayerHalfHeight);
+
+        /// <summary>
+        /// Reglas de vida del jugador (I-03) ya convertidas a ticks y con el punto de reaparición.
+        /// La zona las recibe al construirse; la simulación no lee <see cref="ServerConfig"/>.
+        /// </summary>
+        public PlayerVitalsSettings PlayerVitals => new PlayerVitalsSettings(
+            PlayerMaxHealth,
+            Spawn,
+            PlayerRespawnSeconds,
+            PlayerRegenPerSecond,
+            PlayerRegenDelaySeconds);
 
         /// <summary>
         /// Busca el archivo de configuración: primero el que se pase por argumento, luego el
@@ -334,7 +357,43 @@ namespace Avelora.Server.Configuration
             ValidateNetwork();
             ValidateInterest();
             ValidateCombat();
+            ValidateVitals();
             ValidatePersistence();
+        }
+
+        /// <summary>
+        /// Valida la vida del jugador (I-03). Los rangos son los mismos que documenta el README:
+        /// un valor imposible debe impedir arrancar, no aparecer como una muerte instantánea.
+        /// </summary>
+        private void ValidateVitals()
+        {
+            if (PlayerMaxHealth < 1 || PlayerMaxHealth > 100000)
+            {
+                throw new InvalidOperationException("playerMaxHealth debe estar entre 1 y 100000.");
+            }
+
+            if (!(PlayerRespawnSeconds >= 0.5d) ||
+                PlayerRespawnSeconds > 600d ||
+                double.IsNaN(PlayerRespawnSeconds) ||
+                double.IsInfinity(PlayerRespawnSeconds))
+            {
+                throw new InvalidOperationException(
+                    "playerRespawnSeconds debe estar entre 0,5 y 600.");
+            }
+
+            if (PlayerRegenPerSecond < 0d ||
+                double.IsNaN(PlayerRegenPerSecond) ||
+                double.IsInfinity(PlayerRegenPerSecond))
+            {
+                throw new InvalidOperationException("playerRegenPerSecond no puede ser negativo.");
+            }
+
+            if (PlayerRegenDelaySeconds < 0d ||
+                double.IsNaN(PlayerRegenDelaySeconds) ||
+                double.IsInfinity(PlayerRegenDelaySeconds))
+            {
+                throw new InvalidOperationException("playerRegenDelaySeconds no puede ser negativo.");
+            }
         }
 
         /// <summary>

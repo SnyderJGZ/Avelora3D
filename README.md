@@ -854,7 +854,8 @@ Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md
 
 Los enemigos son entidades del servidor (`EntityKind.Npc`, valor 1 del protocolo, que ya viajaba en
 el snapshot). El servidor los mueve con su IA y todos los clientes los ven. Desde I-02 también tienen
-vida, reciben ataques, mueren y reaparecen; el daño al jugador y el botín quedan para I-03 e I-04.
+vida, reciben ataques, mueren y reaparecen; desde I-03 persiguen y golpean al jugador. El botín
+queda para I-04.
 
 `server/Avelora.Server/npcs.json` se copia junto al ejecutable, como `server.json`:
 
@@ -862,7 +863,8 @@ vida, reciben ataques, mueren y reaparecen; el daño al jugador y el botín qued
 {
   "types": [
     { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35,
-      "maxHealth": 30, "respawnSeconds": 10 }
+      "maxHealth": 30, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
+      "attackDamage": 8, "attackRange": 1.0, "attackCooldownSeconds": 1.5 }
   ],
   "spawners": [
     { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 3, "wanderRadius": 3.0 },
@@ -873,7 +875,9 @@ vida, reciben ataques, mueren y reaparecen; el daño al jugador y el botín qued
 
 Al arrancar se valida contra el mapa real y **si algo falla el servidor no arranca**, con el motivo:
 `id` único y mayor que 0; `speed` en (0, 10]; `halfWidth` y `halfHeight` entre 0,05 y 2; `maxHealth`
-entre 1 y 100000; `respawnSeconds` entre 0,5 y 3600; cada `typeId` existe; `count` entre 1 y 50;
+entre 1 y 100000; `respawnSeconds` entre 0,5 y 3600; `aggroRadius` entre 0 y 20 (0 = pasivo);
+`leashRadius` ≤ 40 y ≥ el `wanderRadius` de cada spawner del tipo; `attackDamage` entre 1 y 100000;
+`attackRange` en (0, 5]; `attackCooldownSeconds` ≥ 0,2; cada `typeId` existe; `count` entre 1 y 50;
 `wanderRadius` mayor que 0; la caja del tipo cabe en el punto (`IsBoxWalkable`) y el total no pasa de
 500 enemigos. El arranque imprime una línea que resume tipos, spawners y enemigos.
 
@@ -1013,6 +1017,82 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
 | **I** | Enemigos, combate y botín | ⏳ I-01 e I-02 hechas |
+
+### Enemigos y vida del jugador (I-03)
+
+El protocolo sigue en **v5**: no hay mensajes nuevos, solo valores nuevos en los mismos bytes. El
+`HealthPercent` del jugador ya es real, los orcos usan `Action = Attacking` y un jugador muerto llega
+con `Action = Dead`.
+
+**IA por estados** (`NpcAiState` en cada `NpcEntity`, resuelta en `NpcSystem`):
+
+| Estado | Qué hace | Sale a |
+| --- | --- | --- |
+| `Wander` | Deambula como en I-01 y cada tick busca el jugador vivo más cercano dentro de `aggroRadius`. | `Chase` si lo encuentra |
+| `Chase` | Camina en línea recta hacia el objetivo con `MovementSimulator` y desliza en las paredes. | `Attack` a ≤ `attackRange`; `Return` si el objetivo muere o se va, o si el PNJ pasa de `leashRadius` desde `Home` |
+| `Attack` | Quieto y mirando al objetivo; golpea cuando la recarga lo permite. | `Chase` si el objetivo se aleja; `Return` en los mismos casos que `Chase` |
+| `Return` | Vuelve a `Home` e ignora a los jugadores. | `Wander` al llegar (≤ 0,25), **con la vida llena** |
+
+- **Aggro al recibir daño:** un PNJ en `Wander` al que pegan persigue al atacante, aunque esté fuera
+  de `aggroRadius`. Con `aggroRadius = 0` el PNJ es pasivo: solo responde si le pegan.
+- **Objetivo determinista:** el jugador vivo más cercano y, si empatan, el de ID menor. Se busca en
+  `EntitySpatialGrid`.
+- **Golpe:** el primero sale el tick siguiente a entrar en `Attack`. Después va uno cada
+  `ceil(attackCooldownSeconds × 20)` ticks (30 en el orco). Cada golpe quita `attackDamage` con
+  mínimo 0 y deja al PNJ en `Attacking` durante 6 ticks.
+- **Dirección:** un eje con menos de 0,1 de diferencia no se mueve, para que no avance en zigzag.
+- **Atajo:** la línea recta se atasca detrás de una pared en U. La correa lo devuelve a casa, así
+  que nunca se queda atascado para siempre. Hará falta A* cuando haya interiores.
+
+**Vida del jugador:**
+- `PlayerEntity` tiene `Health` y `MaxHealth` (`playerMaxHealth`).
+- **Al entrar,** la vida sale de `CharacterRecord.Health`, limitada a `[1, máximo]`. Un valor ≤ 0
+  entra con la vida llena.
+- **Al guardar,** se guarda la vida. Un jugador muerto se guarda **vivo, lleno y en `spawn`**, para
+  que nadie entre ya muerto.
+- **Regeneración:** recupera `playerRegenPerSecond` cuando lleva `playerRegenDelaySeconds` sin
+  recibir daño. Usa un acumulador por ticks.
+
+**Muerte y reaparición** (`PlayerVitalsSystem`):
+- **Al llegar a 0,** el jugador pasa a `Action = Dead`. Desde ese momento:
+  - el servidor sigue consumiendo sus inputs y avanzando `LastProcessedSequence`, pero no lo mueve;
+  - su ataque se rechaza con `ataque_rech_muerto`;
+  - ningún PNJ lo elige como objetivo.
+- **A los `playerRespawnSeconds`,** reaparece en `spawn` con la vida llena.
+- **Orden de `Zone.Tick`:**
+  1. jugadores;
+  2. combate;
+  3. IA de los PNJ;
+  4. vida de los jugadores.
+
+**Métricas nuevas:** `npc_golpes`, `jugador_muertes`, `jugador_reapariciones` y
+`ataque_rech_muerto`.
+
+**Bots:**
+- Con su jugador muerto, mandan movimiento cero y no atacan.
+- Al reaparecer, reinician la predicción (`ClientPrediction.Reset`) para que el salto no cuente como
+  corrección.
+- Cuentan `muertes_propias` y `reapariciones`.
+
+| Campo de `server.json` | Defecto | Significado |
+| --- | --- | --- |
+| `playerMaxHealth` | **100** | Vida máxima del jugador; entre 1 y 100000. |
+| `playerRespawnSeconds` | **5** | Tiempo muerto antes de reaparecer; entre 0,5 y 600. |
+| `playerRegenPerSecond` | **2** | Vida recuperada por segundo; ≥ 0 (0 = sin regeneración). |
+| `playerRegenDelaySeconds` | **5** | Segundos sin daño antes de regenerar; ≥ 0. |
+
+### Verificación de I-03
+
+| Prueba | Resultado |
+| --- | --- |
+| `dotnet build` | **0 errores, 0 advertencias** |
+| `dotnet test` | **343/343 en verde** (38 nuevas) |
+| Carga `fight`, 50 bots, 120 s | tick p99 **0.077 ms**, peor **5.186 ms**; **806** ataques válidos, **0** rechazos por distancia o recarga; **259** golpes de PNJ; **262** muertes y **262** reapariciones de orcos; **10** muertes y **9** reapariciones de jugadores; **0.05** correcciones por bot y minuto |
+| Carga `random`, 50 bots, 60 s | tick p99 **0.075 ms**; los orcos persiguen a bots que no se defienden: **632** golpes, **42** muertes y **35** reapariciones (las demás caen al final de la prueba); **0.80** correcciones por bot y minuto, frente a 0.18 en I-02. Es una por muerte: los inputs en vuelo al morir. |
+
+La reaparición usa `ClientPrediction.Teleport`, que mueve la predicción **sin** reiniciar la
+secuencia de inputs. Con `Reset`, la secuencia volvía a 1 y el servidor descartaba como viejos todos
+los inputs posteriores. Por eso la primera carga dio 163 correcciones por bot y minuto.
 
 ---
 

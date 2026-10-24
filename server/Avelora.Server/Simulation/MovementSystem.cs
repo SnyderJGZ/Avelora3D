@@ -85,6 +85,15 @@ namespace Avelora.Server.Simulation
             player.DirectionY = intent.DirectionY;
             player.LastProcessedSequence = intent.Sequence;
 
+            // Un muerto sigue consumiendo inputs (la secuencia avanza y el cliente no se
+            // desincroniza), pero no se mueve (I-03).
+            if (player.IsDead)
+            {
+                player.DirectionX = 0;
+                player.DirectionY = 0;
+                return;
+            }
+
             player.Position = MovementSimulator.Step(
                 player.Position,
                 player.DirectionX,

@@ -197,6 +197,17 @@ namespace Avelora.Shared.Prediction
         }
 
         /// <summary>
+        /// Coloca al jugador en <paramref name="position"/> sin reiniciar la secuencia (reaparición,
+        /// I-03): el servidor sigue esperando la numeración de antes y rechazaría una que empiece en 1.
+        /// </summary>
+        public void Teleport(Vec2 position)
+        {
+            Position = position;
+            PreviousPosition = position;
+            _visualOffset = Vec2.Zero;
+        }
+
+        /// <summary>
         /// Genera el siguiente input, lo aplica en el acto y lo guarda hasta que el servidor lo
         /// confirme. Devuelve el número de secuencia que hay que mandar.
         /// </summary>

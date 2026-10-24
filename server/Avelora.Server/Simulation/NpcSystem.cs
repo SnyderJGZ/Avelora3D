@@ -8,22 +8,30 @@ using Avelora.Shared;
 namespace Avelora.Server.Simulation
 {
     /// <summary>
-    /// IA de los enemigos: deambular, muerte y reaparición (I-01 e I-02).
+    /// IA de los enemigos: deambular, perseguir, atacar, volver, muerte y reaparición (I-01, I-02
+    /// e I-03).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Deambular: dirección aleatoria cada pocos ticks, con vuelta a casa cuando se alejan
-    /// demasiado, y movimiento con el mismo <see cref="MovementSimulator"/> que usan los jugadores.
+    /// Cada PNJ vive en una máquina de estados (<see cref="NpcAiState"/>): deambula alrededor de su
+    /// casa, persigue al jugador vivo más cercano dentro de <see cref="NpcEntity.AggroRadius"/>,
+    /// golpea cuando lo alcanza y vuelve a casa si se aleja más de <see cref="NpcEntity.LeashRadius"/>.
+    /// Al volver recupera la vida llena.
     /// </para>
     /// <para>
     /// Un único <see cref="System.Random"/>, sembrado con <c>ServerConfig.NpcSeed</c>: con la misma
-    /// semilla y los mismos datos, dos zonas producen exactamente las mismas posiciones y las mismas
-    /// reapariciones. Por eso no se usa <see cref="Random.Shared"/> ni el reloj.
+    /// semilla y los mismos datos, dos zonas producen exactamente las mismas posiciones y los mismos
+    /// golpes. Por eso no se usa <see cref="Random.Shared"/> ni el reloj.
     /// </para>
     /// <para>
-    /// Solo se toca desde el hilo de simulación, dentro de <see cref="Zone.Tick"/>, justo después de
-    /// mover a los jugadores y del combate, y antes de reindexar el área de interés. No reserva
-    /// memoria por tick.
+    /// Solo se toca desde el hilo de simulación, dentro de <see cref="Zone.Tick"/>, después de mover
+    /// a los jugadores y del combate, y antes de reindexar el área de interés. No reserva memoria por
+    /// tick: la lista de candidatos y el estado de los spawners se reutilizan.
+    /// </para>
+    /// <para>
+    /// <c>shortcut:</c> la línea recta con deslizamiento se atasca detrás de una pared en U. El leash
+    /// lo devuelve a casa, así que nunca se queda atascado para siempre. A* cuando haya mapas con
+    /// interiores.
     /// </para>
     /// </remarks>
     public sealed class NpcSystem
@@ -39,7 +47,9 @@ namespace Avelora.Server.Simulation
         private static readonly sbyte[] DirectionY = { 1, 1, 0, -1, -1, -1, 0, 1 };
 
         private readonly MapCollisionGrid _map;
+        private readonly EntitySpatialGrid _grid;
         private readonly System.Random _random;
+        private readonly List<Entity> _candidates = new List<Entity>(32);
         private long _tick;
 
         private SpawnerState[] _spawners = Array.Empty<SpawnerState>();
@@ -48,10 +58,12 @@ namespace Avelora.Server.Simulation
 
         private long _deaths;
         private long _respawns;
+        private long _hits;
 
-        public NpcSystem(MapCollisionGrid map, int seed)
+        public NpcSystem(MapCollisionGrid map, int seed, EntitySpatialGrid grid)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
+            _grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _random = new System.Random(seed);
         }
 
@@ -63,6 +75,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Enemigos que han reaparecido desde el arranque.</summary>
         public long Respawns => _respawns;
+
+        /// <summary>Golpes que los enemigos han acertado a un jugador desde el arranque.</summary>
+        public long Hits => _hits;
 
         /// <summary>
         /// Coloca los enemigos de <paramref name="catalog"/> en el almacén, con Ids nuevos de
@@ -143,6 +158,17 @@ namespace Avelora.Server.Simulation
 
             removed.Clear();
 
+            // Los jugadores se han movido en este mismo tick y la grilla todavía los tiene en la
+            // celda del tick anterior. Reindexarlos aquí evita que un PNJ no vea a alguien que
+            // acaba de entrar en su radio de aggro.
+            for (int i = 0; i < entities.Count; i++)
+            {
+                if (entities[i] is PlayerEntity player)
+                {
+                    _grid.Update(player);
+                }
+            }
+
             // Las reapariciones se crean antes de recorrer: entran este mismo tick y la IA las
             // tratará como a cualquier otro enemigo.
             RespawnDue(entities);
@@ -169,7 +195,7 @@ namespace Avelora.Server.Simulation
                     continue;
                 }
 
-                Step(npc);
+                Step(npc, entities);
             }
 
             _tick++;
@@ -252,7 +278,12 @@ namespace Avelora.Server.Simulation
                 _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1),
                 state.Type.MaxHealth,
                 state.Type.RespawnTicks,
-                spawnerIndex)
+                spawnerIndex,
+                state.Type.AggroRadius,
+                state.Type.LeashRadius,
+                state.Type.AttackDamage,
+                state.Type.AttackRange,
+                state.Type.AttackCooldownTicks)
             {
                 MapId = _zoneId,
                 Position = state.Spawner.Position,
@@ -260,9 +291,47 @@ namespace Avelora.Server.Simulation
             };
         }
 
-        private void Step(NpcEntity npc)
+        private void Step(NpcEntity npc, EntityStore entities)
         {
-            if (IsOutsideLeash(npc))
+            switch (npc.AiState)
+            {
+                case NpcAiState.Wander:
+                    Wander(npc);
+                    break;
+
+                case NpcAiState.Chase:
+                    Chase(npc, entities);
+                    break;
+
+                case NpcAiState.Attack:
+                    Attack(npc, entities);
+                    break;
+
+                case NpcAiState.Return:
+                    Return(npc);
+                    break;
+
+                default:
+                    Wander(npc);
+                    break;
+            }
+        }
+
+        /// <summary>Deambula y busca un jugador vivo dentro del radio de aggro.</summary>
+        private void Wander(NpcEntity npc)
+        {
+            int target = FindTarget(npc);
+
+            if (target >= 0)
+            {
+                npc.AiState = NpcAiState.Chase;
+                npc.TargetEntityId = target;
+                npc.DirectionX = 0;
+                npc.DirectionY = 0;
+                return;
+            }
+
+            if (IsOutsideLeash(npc, npc.WanderRadius))
             {
                 // Correa: en cuanto se pasa del radio, vuelve hacia su casa y vuelve a decidir al
                 // tick siguiente. Comprobarlo cada tick (y no solo al cambiar de dirección) es lo
@@ -278,6 +347,184 @@ namespace Avelora.Server.Simulation
                     _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1);
             }
 
+            Move(npc);
+        }
+
+        /// <summary>Camina en línea recta hacia el objetivo hasta entrar en alcance.</summary>
+        private void Chase(NpcEntity npc, EntityStore entities)
+        {
+            if (!TryGetLivingTarget(npc, entities, out PlayerEntity? target))
+            {
+                EnterReturn(npc);
+                return;
+            }
+
+            if (IsOutsideLeash(npc, npc.LeashRadius))
+            {
+                EnterReturn(npc);
+                return;
+            }
+
+            float dx = target!.Position.X - npc.Position.X;
+            float dy = target.Position.Y - npc.Position.Y;
+
+            if ((dx * dx) + (dy * dy) <= npc.AttackRange * npc.AttackRange)
+            {
+                // El primer golpe sale en el tick siguiente, no en el mismo en que entra.
+                npc.AiState = NpcAiState.Attack;
+                npc.NextAttackTick = _tick + 1;
+                npc.DirectionX = Steer(dx);
+                npc.DirectionY = Steer(dy);
+                return;
+            }
+
+            npc.DirectionX = Steer(dx);
+            npc.DirectionY = Steer(dy);
+            Move(npc);
+        }
+
+        /// <summary>Quieto, mirando al objetivo y golpeando cuando toca la recarga.</summary>
+        private void Attack(NpcEntity npc, EntityStore entities)
+        {
+            if (!TryGetLivingTarget(npc, entities, out PlayerEntity? target))
+            {
+                EnterReturn(npc);
+                return;
+            }
+
+            if (IsOutsideLeash(npc, npc.LeashRadius))
+            {
+                EnterReturn(npc);
+                return;
+            }
+
+            float dx = target!.Position.X - npc.Position.X;
+            float dy = target.Position.Y - npc.Position.Y;
+
+            if ((dx * dx) + (dy * dy) > npc.AttackRange * npc.AttackRange)
+            {
+                npc.AiState = NpcAiState.Chase;
+                return;
+            }
+
+            npc.DirectionX = Steer(dx);
+            npc.DirectionY = Steer(dy);
+
+            if (_tick < npc.NextAttackTick)
+            {
+                return;
+            }
+
+            target.Health = Math.Max(0, target.Health - npc.AttackDamage);
+            target.LastDamageTick = _tick;
+            target.RegenAccumulator = 0d;
+
+            if (target.Health == 0)
+            {
+                // PlayerVitalsSystem lo contará y programará la reaparición en este mismo tick.
+                target.Action = EntityAction.Dead;
+
+                if (target.DeathTick < 0)
+                {
+                    target.DeathTick = _tick;
+                }
+            }
+
+            npc.Action = EntityAction.Attacking;
+            npc.ActionUntilTick = _tick + CombatSystem.AttackingTicks;
+            npc.NextAttackTick = _tick + npc.AttackCooldownTicks;
+            _hits++;
+        }
+
+        /// <summary>Vuelve a casa ignorando a los jugadores; al llegar recupera la vida llena.</summary>
+        private void Return(NpcEntity npc)
+        {
+            float dx = npc.Home.X - npc.Position.X;
+            float dy = npc.Home.Y - npc.Position.Y;
+
+            if ((dx * dx) + (dy * dy) <= 0.25f * 0.25f)
+            {
+                npc.AiState = NpcAiState.Wander;
+                npc.TargetEntityId = -1;
+                npc.Health = npc.MaxHealth;
+                npc.Action = EntityAction.None;
+                npc.DirectionX = 0;
+                npc.DirectionY = 0;
+                npc.NextDirectionChangeTick =
+                    _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1);
+                return;
+            }
+
+            npc.DirectionX = Steer(dx);
+            npc.DirectionY = Steer(dy);
+            Move(npc);
+        }
+
+        private void EnterReturn(NpcEntity npc)
+        {
+            npc.AiState = NpcAiState.Return;
+            npc.TargetEntityId = -1;
+            npc.NextAttackTick = 0;
+            npc.DirectionX = 0;
+            npc.DirectionY = 0;
+        }
+
+        /// <summary>Busca el jugador vivo más cercano; en empate, el de Id menor.</summary>
+        private int FindTarget(NpcEntity npc)
+        {
+            if (npc.AggroRadius <= 0f)
+            {
+                return -1;
+            }
+
+            _grid.Query(npc.Position.X, npc.Position.Y, npc.AggroRadius, _candidates);
+
+            int best = -1;
+            float bestDistanceSq = float.MaxValue;
+
+            for (int i = 0; i < _candidates.Count; i++)
+            {
+                if (!(_candidates[i] is PlayerEntity player) || player.IsDead || player.Health <= 0)
+                {
+                    continue;
+                }
+
+                float dx = player.Position.X - npc.Position.X;
+                float dy = player.Position.Y - npc.Position.Y;
+                float distanceSq = (dx * dx) + (dy * dy);
+
+                if (distanceSq < bestDistanceSq ||
+                    (distanceSq == bestDistanceSq && (best < 0 || player.Id < best)))
+                {
+                    best = player.Id;
+                    bestDistanceSq = distanceSq;
+                }
+            }
+
+            return best;
+        }
+
+        private static bool TryGetLivingTarget(
+            NpcEntity npc,
+            EntityStore entities,
+            out PlayerEntity? target)
+        {
+            target = null;
+
+            if (!entities.TryGet(npc.TargetEntityId, out Entity? entity) ||
+                !(entity is PlayerEntity player) ||
+                player.IsDead ||
+                player.Health <= 0)
+            {
+                return false;
+            }
+
+            target = player;
+            return true;
+        }
+
+        private void Move(NpcEntity npc)
+        {
             Vec2 before = npc.Position;
             npc.Position = MovementSimulator.Step(
                 npc.Position,
@@ -290,7 +537,8 @@ namespace Avelora.Server.Simulation
 
             // Quería moverse y la pared lo dejó clavado: se prueba otra dirección al tick siguiente
             // en vez de quedarse empujando la pared hasta el próximo cambio.
-            if ((npc.DirectionX != 0 || npc.DirectionY != 0) &&
+            if (npc.AiState == NpcAiState.Wander &&
+                (npc.DirectionX != 0 || npc.DirectionY != 0) &&
                 npc.Position.X == before.X &&
                 npc.Position.Y == before.Y)
             {
@@ -298,11 +546,11 @@ namespace Avelora.Server.Simulation
             }
         }
 
-        private bool IsOutsideLeash(NpcEntity npc)
+        private static bool IsOutsideLeash(NpcEntity npc, float radius)
         {
             float dx = npc.Position.X - npc.Home.X;
             float dy = npc.Position.Y - npc.Home.Y;
-            return (dx * dx) + (dy * dy) > npc.WanderRadius * npc.WanderRadius;
+            return (dx * dx) + (dy * dy) > radius * radius;
         }
 
         /// <summary>Quieto con probabilidad 1/3; si no, una de las 8 direcciones.</summary>
@@ -319,6 +567,12 @@ namespace Avelora.Server.Simulation
             npc.DirectionX = DirectionX[index];
             npc.DirectionY = DirectionY[index];
         }
+
+        // Margen al perseguir o volver: sin él, un eje casi alineado vale ±1 y el PNJ avanza en zigzag.
+        private static sbyte Steer(float delta) =>
+            delta > SteerDeadzone ? (sbyte)1 : delta < -SteerDeadzone ? (sbyte)-1 : (sbyte)0;
+
+        private const float SteerDeadzone = 0.1f;
 
         private static sbyte Sign(float value) =>
             value > 0f ? (sbyte)1 : value < 0f ? (sbyte)-1 : (sbyte)0;

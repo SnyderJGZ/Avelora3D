@@ -275,6 +275,69 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Un_Ajuste_De_Vida_Del_Jugador_Imposible_Impide_Arrancar()
+        {
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerMaxHealth = 0 }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerMaxHealth = 100001 }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRespawnSeconds = 0.4d }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRespawnSeconds = 601d }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRespawnSeconds = double.NaN }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRegenPerSecond = -0.1d }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRegenPerSecond = double.NaN }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRegenDelaySeconds = -0.1d }.Validate);
+
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { PlayerRegenDelaySeconds = double.PositiveInfinity }.Validate);
+
+            // Los extremos válidos y el 0 de la regeneración también valen.
+            new ServerConfig
+            {
+                PlayerMaxHealth = 1,
+                PlayerRespawnSeconds = 0.5d,
+                PlayerRegenPerSecond = 0d,
+                PlayerRegenDelaySeconds = 0d,
+            }.Validate();
+
+            new ServerConfig
+            {
+                PlayerMaxHealth = 100000,
+                PlayerRespawnSeconds = 600d,
+            }.Validate();
+        }
+
+        [Fact]
+        public void Los_Valores_De_Vida_Por_Defecto_Son_Los_Documentados()
+        {
+            var config = new ServerConfig();
+
+            Assert.Equal(100, config.PlayerMaxHealth);
+            Assert.Equal(5d, config.PlayerRespawnSeconds);
+            Assert.Equal(2d, config.PlayerRegenPerSecond);
+            Assert.Equal(5d, config.PlayerRegenDelaySeconds);
+
+            PlayerVitalsSettings vitals = config.PlayerVitals;
+            Assert.Equal(100, vitals.MaxHealth);
+            Assert.Equal(config.Spawn, vitals.Spawn);
+            Assert.Equal(100L, vitals.RespawnTicks);
+            Assert.Equal(100L, vitals.RegenDelayTicks);
+        }
+
+        [Fact]
         public void La_Base_De_Datos_Se_Resuelve_Junto_A_La_Configuracion()
         {
             string configPath = Path_("server.json");

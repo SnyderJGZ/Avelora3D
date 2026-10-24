@@ -168,6 +168,123 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void La_Vida_Se_Guarda_Y_Se_Carga()
+        {
+            byte[] hash = NewHash(4);
+
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+
+                AccountLoginResult login = repository.Login(
+                    "vida",
+                    "secreto1",
+                    "avelora-dev",
+                    "avelora-dev");
+
+                Assert.True(login.Success);
+
+                CharacterRecord? created = repository.GetOrCreateCharacter(
+                    login.AccountId,
+                    "Heroe",
+                    1,
+                    new Vec2(-1.5f, -2.5f),
+                    hash);
+
+                Assert.NotNull(created);
+                repository.SaveCharacter(created.WithState(1, new Vec2(3.5f, 4.5f), hash, 37));
+            }
+
+            using (var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                reopened.Initialize();
+
+                AccountLoginResult login = reopened.Login("vida", "secreto1", string.Empty, string.Empty);
+                Assert.True(login.Success);
+
+                CharacterRecord? loaded = reopened.GetOrCreateCharacter(
+                    login.AccountId,
+                    "Heroe",
+                    1,
+                    new Vec2(-1.5f, -2.5f),
+                    hash);
+
+                Assert.NotNull(loaded);
+                Assert.Equal(37, loaded.Health);
+                Assert.Equal(new Vec2(3.5f, 4.5f), loaded.Position);
+            }
+        }
+
+        [Fact]
+        public void Un_Muerto_Se_Guarda_Vivo_Con_La_Vida_Llena_En_El_Spawn()
+        {
+            using var harness = new ServerHarness(DatabasePath);
+
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            player.Position = new Vec2(3f, 3f);
+            player.Health = 0;
+            player.Action = EntityAction.Dead;
+
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.BeforeTick(harness.Zone);
+            Assert.True(harness.Saves.Flush(TimeSpan.FromSeconds(5)));
+
+            harness.Connect(2);
+            harness.Handshake(2, "dev", "avelora-dev", "dev");
+            harness.Pump(2);
+
+            WelcomeMessage welcome = harness.LastWelcome(2);
+            Assert.Equal(harness.Config.SpawnX, welcome.SpawnX);
+            Assert.Equal(harness.Config.SpawnY, welcome.SpawnY);
+
+            PlayerEntity reconnected = (PlayerEntity)harness.Zone.Entities.Get(welcome.EntityId)!;
+            Assert.Equal(harness.Config.PlayerMaxHealth, reconnected.Health);
+        }
+
+        [Fact]
+        public void Una_Vida_Guardada_Menor_O_Igual_A_Cero_Entra_Con_La_Vida_Llena()
+        {
+            byte[] hash = NewHash(5);
+
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+
+                AccountLoginResult login = repository.Login(
+                    "cero",
+                    "secreto1",
+                    "avelora-dev",
+                    "avelora-dev");
+
+                Assert.True(login.Success);
+
+                CharacterRecord? created = repository.GetOrCreateCharacter(
+                    login.AccountId,
+                    "Heroe",
+                    1,
+                    new Vec2(-1.5f, -2.5f),
+                    hash);
+
+                Assert.NotNull(created);
+                repository.SaveCharacter(created.WithState(1, new Vec2(-1.5f, -2.5f), hash, 0));
+            }
+
+            using var harness = new ServerHarness(DatabasePath);
+
+            harness.Connect(1);
+            harness.Handshake(1, "cero", "secreto1", "Heroe");
+            harness.Pump(1);
+
+            WelcomeMessage welcome = harness.LastWelcome(1);
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(welcome.EntityId)!;
+            Assert.Equal(harness.Config.PlayerMaxHealth, player.Health);
+        }
+
+        [Fact]
         public void La_Cola_Coalesce_Posiciones_Y_Guarda_La_Ultima()
         {
             var repository = new RecordingRepository();
@@ -239,6 +356,11 @@ namespace Avelora.Tests
                         HalfHeight = 0.35f,
                         MaxHealth = 30,
                         RespawnSeconds = 10f,
+                        AggroRadius = 0f,
+                        LeashRadius = 8f,
+                        AttackDamage = 1,
+                        AttackRange = 1f,
+                        AttackCooldownSeconds = 1.5f,
                     },
                 },
                 Spawners = new List<NpcSpawner>
@@ -487,7 +609,8 @@ namespace Avelora.Tests
                     Config.MaxIntentsPerPlayerPerTick,
                     new InterestSettings(Config.InterestRadius, Config.InterestCellSize, Config.InterestHysteresis),
                     npcs,
-                    12345);
+                    12345,
+                    playerVitals: Config.PlayerVitals);
 
                 MapHash = MapFile.ComputeContentHashBytes(map);
                 Transport = new FakeServerTransport();

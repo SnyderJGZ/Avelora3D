@@ -37,6 +37,32 @@ namespace Avelora.Server.Npcs
         public float RespawnSeconds { get; set; }
 
         /// <summary>
+        /// Radio en el que el PNJ detecta y persigue a un jugador vivo (0..20; 0 = pasivo, nunca
+        /// persigue por su cuenta).
+        /// </summary>
+        public float AggroRadius { get; set; }
+
+        /// <summary>
+        /// Distancia máxima a su casa mientras persigue (≥ el <c>wanderRadius</c> de cada spawner
+        /// que lo usa, y ≤ 40). Al pasarla, vuelve a casa.
+        /// </summary>
+        public float LeashRadius { get; set; }
+
+        /// <summary>Vida que quita cada golpe del PNJ (1..100000).</summary>
+        public int AttackDamage { get; set; }
+
+        /// <summary>Alcance del golpe, en tiles (&gt; 0 y ≤ 5).</summary>
+        public float AttackRange { get; set; }
+
+        /// <summary>Segundos entre dos golpes del PNJ (≥ 0,2).</summary>
+        public float AttackCooldownSeconds { get; set; }
+
+        /// <summary>Recarga del golpe en ticks, redondeando hacia arriba (I-03).</summary>
+        public long AttackCooldownTicks => Math.Max(
+            1L,
+            (long)Math.Ceiling(AttackCooldownSeconds * SimulationConstants.TickRate));
+
+        /// <summary>
         /// Segundos de reaparición convertidos a ticks de simulación, redondeando hacia arriba:
         /// nada de relojes, todo se mide en ticks de la zona (I-02).
         /// </summary>
@@ -102,6 +128,18 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Segundos de reaparición máximos admitidos.</summary>
         public const float MaxRespawnSeconds = 3600f;
+
+        /// <summary>Radio de aggro máximo admitido (I-03).</summary>
+        public const float MaxAggroRadius = 20f;
+
+        /// <summary>Correa máxima admitida (I-03).</summary>
+        public const float MaxLeashRadius = 40f;
+
+        /// <summary>Alcance máximo del golpe de un PNJ (I-03).</summary>
+        public const float MaxAttackRange = 5f;
+
+        /// <summary>Recarga mínima del golpe de un PNJ (I-03).</summary>
+        public const float MinAttackCooldownSeconds = 0.2f;
 
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -238,6 +276,14 @@ namespace Avelora.Server.Npcs
 
                 NpcType type = FindType(spawner.TypeId)!;
 
+                if (type.LeashRadius < spawner.WanderRadius)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: " + where + " tiene wanderRadius " + spawner.WanderRadius +
+                        ", mayor que el leashRadius " + type.LeashRadius + " del tipo " + type.Id +
+                        "; la correa debe cubrir el deambular.");
+                }
+
                 if (!map.IsBoxWalkable(spawner.Position, type.HalfSize))
                 {
                     throw new InvalidOperationException(
@@ -313,6 +359,46 @@ namespace Avelora.Server.Npcs
                     throw new InvalidOperationException(
                         "npcs.json: el tipo " + type.Id + " tiene respawnSeconds " + type.RespawnSeconds +
                         "; debe estar entre " + MinRespawnSeconds + " y " + MaxRespawnSeconds + ".");
+                }
+
+                if (type.AggroRadius < 0f || type.AggroRadius > MaxAggroRadius ||
+                    float.IsNaN(type.AggroRadius) || float.IsInfinity(type.AggroRadius))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene aggroRadius " + type.AggroRadius +
+                        "; debe estar entre 0 y " + MaxAggroRadius + " (0 = pasivo).");
+                }
+
+                if (type.LeashRadius < 0f || type.LeashRadius > MaxLeashRadius ||
+                    float.IsNaN(type.LeashRadius) || float.IsInfinity(type.LeashRadius))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene leashRadius " + type.LeashRadius +
+                        "; debe estar entre 0 y " + MaxLeashRadius + ".");
+                }
+
+                if (type.AttackDamage < 1 || type.AttackDamage > MaxHealthLimit)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene attackDamage " + type.AttackDamage +
+                        "; debe estar entre 1 y " + MaxHealthLimit + ".");
+                }
+
+                if (!(type.AttackRange > 0f) || type.AttackRange > MaxAttackRange ||
+                    float.IsNaN(type.AttackRange) || float.IsInfinity(type.AttackRange))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene attackRange " + type.AttackRange +
+                        "; debe ser mayor que 0 y como mucho " + MaxAttackRange + ".");
+                }
+
+                if (!(type.AttackCooldownSeconds >= MinAttackCooldownSeconds) ||
+                    float.IsNaN(type.AttackCooldownSeconds) ||
+                    float.IsInfinity(type.AttackCooldownSeconds))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene attackCooldownSeconds " +
+                        type.AttackCooldownSeconds + "; debe ser >= " + MinAttackCooldownSeconds + ".");
                 }
             }
         }

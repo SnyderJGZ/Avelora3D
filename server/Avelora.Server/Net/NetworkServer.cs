@@ -1008,7 +1008,8 @@ namespace Avelora.Server.Net
                 characterId,
                 spawn,
                 _config.PlayerHalfSize,
-                _config.InputBufferCapacity);
+                _config.InputBufferCapacity,
+                control.Character?.Health ?? 0);
 
             player.ConnectionId = connectionId;
 
@@ -1131,7 +1132,23 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            session.Character = session.Character.WithPosition(zone.Id, player.Position, _mapHash);
+            // Un jugador muerto se guarda vivo, con la vida llena y en el spawn: al volver a
+            // entrar no debe aparecer tendido (I-03).
+            int health;
+            Vec2 position;
+
+            if (player.IsDead)
+            {
+                health = _config.PlayerMaxHealth;
+                position = _config.Spawn;
+            }
+            else
+            {
+                health = player.Health;
+                position = player.Position;
+            }
+
+            session.Character = session.Character.WithState(zone.Id, position, _mapHash, health);
             _saves.Enqueue(session.Character);
         }
 
@@ -1168,9 +1185,13 @@ namespace Avelora.Server.Net
             {
                 Entity entity = _visibleBuffer[i];
 
-                // Un PNJ herido manda su vida en porcentaje; los jugadores todavía no tienen vida
-                // (I-03), así que mandan siempre 100.
-                byte healthPercent = entity is NpcEntity npc ? npc.HealthPercent : (byte)100;
+                // Un PNJ herido manda su vida en porcentaje; un jugador, la suya (I-03). La misma
+                // regla de redondeo para ambos: reutiliza EntityHealth.Percent.
+                byte healthPercent = entity is NpcEntity npc
+                    ? npc.HealthPercent
+                    : entity is PlayerEntity player
+                        ? player.HealthPercent
+                        : (byte)100;
 
                 states[i] = new EntityState(
                     entity.Id,

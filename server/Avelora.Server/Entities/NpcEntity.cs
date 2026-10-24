@@ -28,7 +28,12 @@ namespace Avelora.Server.Entities
             long nextDirectionChangeTick,
             int maxHealth,
             long respawnTicks,
-            int spawnerIndex)
+            int spawnerIndex,
+            float aggroRadius = 0f,
+            float leashRadius = 40f,
+            int attackDamage = 1,
+            float attackRange = 1f,
+            long attackCooldownTicks = 30)
             : base(id, EntityKind.Npc)
         {
             if (maxHealth < 1)
@@ -41,6 +46,34 @@ namespace Avelora.Server.Entities
                 throw new ArgumentOutOfRangeException(nameof(respawnTicks), respawnTicks, "La reaparición debe ser >= 1 tick.");
             }
 
+            if (aggroRadius < 0f || float.IsNaN(aggroRadius) || float.IsInfinity(aggroRadius))
+            {
+                throw new ArgumentOutOfRangeException(nameof(aggroRadius), aggroRadius, "El radio de aggro no puede ser negativo.");
+            }
+
+            if (leashRadius < 0f || float.IsNaN(leashRadius) || float.IsInfinity(leashRadius))
+            {
+                throw new ArgumentOutOfRangeException(nameof(leashRadius), leashRadius, "La correa no puede ser negativa.");
+            }
+
+            if (attackDamage < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(attackDamage), attackDamage, "El daño debe ser >= 1.");
+            }
+
+            if (!(attackRange > 0f) || float.IsNaN(attackRange) || float.IsInfinity(attackRange))
+            {
+                throw new ArgumentOutOfRangeException(nameof(attackRange), attackRange, "El alcance debe ser positivo.");
+            }
+
+            if (attackCooldownTicks < 1)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(attackCooldownTicks),
+                    attackCooldownTicks,
+                    "La recarga debe ser >= 1 tick.");
+            }
+
             TypeId = typeId;
             Speed = speed;
             Home = home;
@@ -49,6 +82,11 @@ namespace Avelora.Server.Entities
             MaxHealth = maxHealth;
             RespawnTicks = respawnTicks;
             SpawnerIndex = spawnerIndex;
+            AggroRadius = aggroRadius;
+            LeashRadius = leashRadius;
+            AttackDamage = attackDamage;
+            AttackRange = attackRange;
+            AttackCooldownTicks = attackCooldownTicks;
             Health = maxHealth;
         }
 
@@ -63,6 +101,30 @@ namespace Avelora.Server.Entities
 
         /// <summary>Distancia máxima a <see cref="Home"/> antes de volver.</summary>
         public float WanderRadius { get; }
+
+        /// <summary>Radio en el que un jugador vivo hace que el PNJ pase a perseguirlo (0 = pasivo).</summary>
+        public float AggroRadius { get; }
+
+        /// <summary>Distancia máxima a <see cref="Home"/> mientras persigue; al pasarla vuelve.</summary>
+        public float LeashRadius { get; }
+
+        /// <summary>Vida que quita cada golpe del PNJ.</summary>
+        public int AttackDamage { get; }
+
+        /// <summary>Alcance del golpe, en tiles, medido entre centros.</summary>
+        public float AttackRange { get; }
+
+        /// <summary>Ticks mínimos entre dos golpes del PNJ.</summary>
+        public long AttackCooldownTicks { get; }
+
+        /// <summary>Estado actual de la IA (I-03).</summary>
+        public NpcAiState AiState { get; set; } = NpcAiState.Wander;
+
+        /// <summary>Jugador al que persigue o golpea; <c>-1</c> si no tiene objetivo.</summary>
+        public int TargetEntityId { get; set; } = -1;
+
+        /// <summary>Tick en el que puede volver a golpear.</summary>
+        public long NextAttackTick { get; set; }
 
         /// <summary>
         /// Tick de simulación en el que la IA vuelve a elegir dirección. La dirección actual vive en
@@ -95,18 +157,6 @@ namespace Avelora.Server.Entities
         /// Vida restante en porcentaje, redondeando hacia arriba: un PNJ con vida &gt; 0 nunca manda
         /// 0 al cliente (I-02).
         /// </summary>
-        public byte HealthPercent
-        {
-            get
-            {
-                if (Health <= 0)
-                {
-                    return 0;
-                }
-
-                int percent = ((100 * Health) + MaxHealth - 1) / MaxHealth;
-                return (byte)(percent > 100 ? 100 : percent);
-            }
-        }
+        public byte HealthPercent => EntityHealth.Percent(Health, MaxHealth);
     }
 }

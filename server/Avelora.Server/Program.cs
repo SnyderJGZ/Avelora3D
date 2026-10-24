@@ -192,7 +192,8 @@ namespace Avelora.Server
                     config.PlayerAttackDamage,
                     config.PlayerAttackRange,
                     config.AttackRangeTolerance,
-                    config.PlayerAttackCooldownSeconds));
+                    config.PlayerAttackCooldownSeconds),
+                config.PlayerVitals);
 
             try
             {

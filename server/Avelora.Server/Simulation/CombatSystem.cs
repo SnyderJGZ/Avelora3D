@@ -45,6 +45,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques rechazados porque el jugador todavía no había recargado.</summary>
         public long RejectedCooldown { get; private set; }
 
+        /// <summary>Ataques rechazados porque el jugador estaba muerto (I-03).</summary>
+        public long RejectedDead { get; private set; }
+
         /// <summary>Aplica las intenciones del tick y limpia las acciones que ya han caducado.</summary>
         /// <param name="entities">Entidades vivas de la zona.</param>
         /// <param name="intents">Ataques que la red dejó en la cola, en orden de llegada.</param>
@@ -79,7 +82,15 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            // Regla 2: el objetivo existe, es un PNJ y está vivo.
+            // Regla 2: un jugador muerto no puede atacar (I-03). Se comprueba antes del objetivo
+            // para que el motivo sea siempre «muerto» mientras dure la muerte.
+            if (attacker.IsDead)
+            {
+                RejectedDead++;
+                return;
+            }
+
+            // Regla 3: el objetivo existe, es un PNJ y está vivo.
             if (!entities.TryGet(intent.TargetId, out Entity? targetEntity) ||
                 !(targetEntity is NpcEntity target) ||
                 target.Action == EntityAction.Dead)
@@ -88,7 +99,7 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            // Regla 3: la distancia entre centros cabe en alcance + tolerancia.
+            // Regla 4: la distancia entre centros cabe en alcance + tolerancia.
             float dx = target.Position.X - attacker.Position.X;
             float dy = target.Position.Y - attacker.Position.Y;
             float range = _settings.EffectiveRange;
@@ -99,7 +110,7 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            // Regla 4: recarga medida en ticks de la zona y solo desde el último ataque válido.
+            // Regla 5: recarga medida en ticks de la zona y solo desde el último ataque válido.
             long lastAttackTick = attacker.LastAttackTick;
 
             if (lastAttackTick >= 0 && tick - lastAttackTick < _settings.CooldownTicks)
@@ -115,6 +126,13 @@ namespace Avelora.Server.Simulation
                 // La baja definitiva (quitar del almacén y del interés, y programar la reaparición)
                 // la hace NpcSystem en este mismo tick: aquí solo consta que ha muerto.
                 target.Action = EntityAction.Dead;
+            }
+            else if (target.AiState == NpcAiState.Wander)
+            {
+                // Aggro al recibir daño (I-03): aunque esté fuera de su radio, persigue al que le
+                // pegó. Un PNJ en Return sigue volviendo a casa y no cambia de objetivo.
+                target.AiState = NpcAiState.Chase;
+                target.TargetEntityId = attacker.Id;
             }
 
             attacker.LastAttackTick = tick;

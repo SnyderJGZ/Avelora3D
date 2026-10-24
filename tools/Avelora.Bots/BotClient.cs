@@ -201,6 +201,13 @@ namespace Avelora.Bots
         private long _sentAttacks;
         private long _deathsSeen;
 
+        // Vida propia (I-03): el snapshot trae la acción del jugador local. Mientras está muerto
+        // manda movimiento cero y no ataca; al volver, reinicia la predicción en la posición nueva.
+        private EntityAction _ownAction = EntityAction.None;
+        private bool _ownDead;
+        private long _ownDeaths;
+        private long _ownRespawns;
+
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
         private int _retries;
@@ -365,6 +372,12 @@ namespace Avelora.Bots
 
         /// <summary>Muertes de enemigos vistas en los snapshots (modo <c>fight</c>, I-02).</summary>
         public long DeathsSeen => Interlocked.Read(ref _deathsSeen);
+
+        /// <summary>Muertes propias vistas en los snapshots (I-03).</summary>
+        public long OwnDeaths => Interlocked.Read(ref _ownDeaths);
+
+        /// <summary>Reapariciones propias vistas en los snapshots (I-03).</summary>
+        public long OwnRespawns => Interlocked.Read(ref _ownRespawns);
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
@@ -587,7 +600,14 @@ namespace Avelora.Bots
 
                     if (now >= _nextInputAt)
                     {
-                        if (_behavior == BotBehavior.Fight)
+                        if (_ownDead)
+                        {
+                            // Muerto: el servidor consume los inputs pero no mueve. Se mandan a
+                            // cero para que la predicción local tampoco se mueva (I-03).
+                            _directionX = 0;
+                            _directionY = 0;
+                        }
+                        else if (_behavior == BotBehavior.Fight)
                         {
                             UpdateFightDirection();
                         }
@@ -606,7 +626,7 @@ namespace Avelora.Bots
                         }
                     }
 
-                    if (_behavior == BotBehavior.Fight && now >= _nextAttackAt)
+                    if (_behavior == BotBehavior.Fight && !_ownDead && now >= _nextAttackAt)
                     {
                         SendAttackIfInRange(now);
                     }
@@ -827,6 +847,10 @@ namespace Avelora.Bots
             // La sesión es nueva: los inputs del intento anterior no sirven como redundancia.
             _recentCount = 0;
             _prediction = null;
+
+            // La vida es de la sesión: al reconectar se vuelve a mirar el primer snapshot.
+            _ownAction = EntityAction.None;
+            _ownDead = false;
         }
 
         private void DiscardTransport()
@@ -1349,6 +1373,28 @@ namespace Avelora.Bots
                         _x = x;
                         _y = y;
                         _hasPosition = true;
+
+                        // Vida propia (I-03): el snapshot manda Dead mientras dura la muerte. Al
+                        // volver a vivo, la posición es la del spawn y la predicción debe partir
+                        // de ahí, no contar el salto como una corrección enorme.
+                        EntityAction previousAction = _ownAction;
+                        _ownAction = snapshot.Entities[i].Action;
+
+                        if (_ownAction == EntityAction.Dead)
+                        {
+                            if (previousAction != EntityAction.Dead)
+                            {
+                                Interlocked.Increment(ref _ownDeaths);
+                            }
+
+                            _ownDead = true;
+                        }
+                        else if (_ownDead)
+                        {
+                            _ownDead = false;
+                            Interlocked.Increment(ref _ownRespawns);
+                            _prediction?.Teleport(new Vec2(x, y));
+                        }
 
                         // Traza de caídas (G-05): cada snapshot. El servidor guarda la posición de
                         // un tick, que es la de un snapshot; a 1 Hz casi nunca coincidía.

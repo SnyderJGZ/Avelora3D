@@ -85,6 +85,12 @@ namespace Avelora.Server.Diagnostics
                 (long)Math.Ceiling(config.PlayerAttackCooldownSeconds * SimulationConstants.TickRate) +
                 " ticks), cola de ataques " + config.MaxQueuedAttacks);
             Console.WriteLine(
+                "  Vida jugador  : max " + config.PlayerMaxHealth +
+                ", reaparición " + Invariant(config.PlayerRespawnSeconds, "0.#") + " s (" +
+                (long)Math.Ceiling(config.PlayerRespawnSeconds * SimulationConstants.TickRate) +
+                " ticks), regeneración " + Invariant(config.PlayerRegenPerSecond, "0.##") + "/s tras " +
+                Invariant(config.PlayerRegenDelaySeconds, "0.#") + " s sin daño");
+            Console.WriteLine(
                 "  Límites       : " + config.MaxIntentsPerTick + " inputs/tick, " +
                 config.MaxIntentsPerPlayerPerTick + "/jugador/tick, cola de jugador " +
                 config.InputBufferCapacity + ", cola de entrada " + config.MaxQueuedIntents +
@@ -135,9 +141,13 @@ namespace Avelora.Server.Diagnostics
                 " ataque_rech_objetivo=" + zone.RejectedAttackTarget +
                 " ataque_rech_distancia=" + zone.RejectedAttackDistance +
                 " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
+                " ataque_rech_muerto=" + zone.RejectedAttackDead +
                 " ataques_cola_llena=" + (zone.Attacks?.RejectedQueueFull ?? 0) +
+                " npc_golpes=" + zone.NpcHits +
                 " npc_muertes=" + zone.NpcDeaths +
-                " npc_reapariciones=" + zone.NpcRespawns);
+                " npc_reapariciones=" + zone.NpcRespawns +
+                " jugador_muertes=" + zone.PlayerDeaths +
+                " jugador_reapariciones=" + zone.PlayerRespawns);
 
             Console.WriteLine(
                 "            cuenta: login_ok=" + network.LoginsSucceeded +
@@ -240,8 +250,13 @@ namespace Avelora.Server.Diagnostics
                 zone.RejectedAttackTarget + " rechazados por objetivo, " +
                 zone.RejectedAttackDistance + " por distancia, " +
                 zone.RejectedAttackCooldown + " por recarga, " +
+                zone.RejectedAttackDead + " por jugador muerto, " +
                 (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
-                zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones");
+                zone.NpcHits + " golpes de PNJ, " +
+                zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ");
+            Console.WriteLine(
+                "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
+                zone.PlayerRespawns + " reapariciones");
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +

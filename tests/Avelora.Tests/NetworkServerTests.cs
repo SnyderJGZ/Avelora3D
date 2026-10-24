@@ -43,7 +43,8 @@ namespace Avelora.Tests
                     config.PlayerAttackDamage,
                     config.PlayerAttackRange,
                     config.AttackRangeTolerance,
-                    config.PlayerAttackCooldownSeconds));
+                    config.PlayerAttackCooldownSeconds),
+                playerVitals: config.PlayerVitals);
         }
 
         private sealed class Harness : IDisposable
@@ -539,6 +540,81 @@ namespace Avelora.Tests
             SendSnapshots(harness);
 
             EntityState dead = Assert.Single(SnapshotFor(harness, 1).Entities, e => e.Id == 100);
+            Assert.Equal((byte)0, dead.HealthPercent);
+            Assert.Equal(EntityAction.Dead, dead.Action);
+        }
+
+        [Fact]
+        public void El_Snapshot_Lleva_La_Vida_Y_La_Accion_Del_Jugador_Y_El_Ataque_Del_Orco()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.InterestRadius = 6f;
+                config.InterestCellSize = 2f;
+                config.InterestHysteresis = 0f;
+            });
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            player.Position = new Vec2(0f, 5f);
+
+            var npc = new NpcEntity(
+                100,
+                2001,
+                0f,
+                new Vec2(0.5f, 5f),
+                2f,
+                nextDirectionChangeTick: long.MaxValue,
+                maxHealth: 30,
+                respawnTicks: 200,
+                spawnerIndex: -1,
+                aggroRadius: 4f,
+                leashRadius: 8f,
+                attackDamage: 8,
+                attackRange: 1f,
+                attackCooldownTicks: 30)
+            {
+                Position = new Vec2(0.5f, 5f),
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+
+            harness.Zone.AddEntity(npc);
+
+            // La zona de este arnés no tiene catálogo de PNJ, así que la IA no corre: esta prueba
+            // solo comprueba el contenido del snapshot. La transición a ataque y el golpe se
+            // cubren en I03Tests. Los valores se fijan después del tick para que el combate no
+            // borre la acción Attacking.
+            harness.Zone.Tick();
+
+            player.Health = 92;
+            npc.Action = EntityAction.Attacking;
+
+            harness.Transport.Sent.Clear();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            SnapshotMessage snapshot = SnapshotFor(harness, 1);
+            EntityState hurt = Assert.Single(snapshot.Entities, e => e.Id == player.Id);
+            Assert.Equal((byte)92, hurt.HealthPercent);
+            Assert.Equal(EntityAction.None, hurt.Action);
+
+            EntityState attacker = Assert.Single(snapshot.Entities, e => e.Id == 100);
+            Assert.Equal(EntityAction.Attacking, attacker.Action);
+            Assert.Equal((byte)100, attacker.HealthPercent);
+
+            // Un jugador muerto manda 0 % y Dead.
+            player.Health = 0;
+            player.Action = EntityAction.Dead;
+            harness.Zone.Tick();
+
+            harness.Transport.Sent.Clear();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            EntityState dead = Assert.Single(SnapshotFor(harness, 1).Entities, e => e.Id == player.Id);
             Assert.Equal((byte)0, dead.HealthPercent);
             Assert.Equal(EntityAction.Dead, dead.Action);
         }

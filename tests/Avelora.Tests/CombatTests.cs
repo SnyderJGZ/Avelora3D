@@ -79,6 +79,11 @@ namespace Avelora.Tests
                         HalfHeight = 0.35f,
                         MaxHealth = maxHealth,
                         RespawnSeconds = respawnSeconds,
+                        AggroRadius = 0f,
+                        LeashRadius = 8f,
+                        AttackDamage = 1,
+                        AttackRange = 1f,
+                        AttackCooldownSeconds = 1.5f,
                     },
                 },
                 Spawners = new List<NpcSpawner>

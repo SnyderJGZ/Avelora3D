@@ -49,6 +49,22 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Teleport_Conserva_La_Secuencia_Y_No_Cuenta_Correccion()
+        {
+            ClientPrediction prediction = NuevaPrediccion();
+            prediction.AddInput(0, 0);
+            prediction.AddInput(0, 0);
+
+            var respawn = new Vec2(7.5f, 7.5f);
+            prediction.Teleport(respawn);
+
+            // El servidor confirmó el 1.º y ya puso al jugador en el punto de reaparición.
+            Assert.False(prediction.Reconcile(respawn, 1u));
+            Assert.Equal(3u, prediction.AddInput(0, 0));
+            CasiIgual(7.5f, prediction.Position.X);
+        }
+
+        [Fact]
         public void La_Diagonal_No_Es_Mas_Rapida()
         {
             ClientPrediction prediction = NuevaPrediccion();

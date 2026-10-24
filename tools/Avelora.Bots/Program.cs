@@ -226,6 +226,8 @@ namespace Avelora.Bots
             long playedMs = 0;
             long sentAttacks = 0;
             long deathsSeen = 0;
+            long ownDeaths = 0;
+            long ownRespawns = 0;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
@@ -258,6 +260,8 @@ namespace Avelora.Bots
                 snaps += bot.Snaps;
                 sentAttacks += bot.SentAttacks;
                 deathsSeen += bot.DeathsSeen;
+                ownDeaths += bot.OwnDeaths;
+                ownRespawns += bot.OwnRespawns;
 
                 if (bot.EntityId > 0)
                 {
@@ -295,6 +299,8 @@ namespace Avelora.Bots
                     " inputs=" + bot.Sequence +
                     " corr=" + bot.Corrections +
                     " saltos=" + bot.Snaps +
+                    " muertes_propias=" + bot.OwnDeaths +
+                    " reapariciones=" + bot.OwnRespawns +
                     " snapshots=" + bot.Snapshots);
 
                 if (options.Behavior == BotBehavior.Fight)
@@ -341,6 +347,10 @@ namespace Avelora.Bots
                 (minutes > 0d
                     ? " (" + Invariant(corrections / minutes) + "/bot/min, " + Invariant(snaps / minutes) + "/bot/min)"
                     : " (sin tiempo jugado)"));
+
+            Console.WriteLine(
+                "  Jugador    : " + ownDeaths + " muertes propias, " +
+                ownRespawns + " reapariciones");
 
             if (options.Behavior == BotBehavior.Fight)
             {

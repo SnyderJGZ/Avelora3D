@@ -56,6 +56,11 @@ namespace Avelora.Tests
                     HalfHeight = 0.35f,
                     MaxHealth = 30,
                     RespawnSeconds = 10f,
+                    AggroRadius = 0f,
+                    LeashRadius = 8f,
+                    AttackDamage = 1,
+                    AttackRange = 1f,
+                    AttackCooldownSeconds = 1.5f,
                 },
             },
             Spawners = new List<NpcSpawner>(spawners),
@@ -90,7 +95,7 @@ namespace Avelora.Tests
         {
             string path = WriteTempJson(@"{
   ""types"": [
-    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""respawnSeconds"": 10 }
+    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""respawnSeconds"": 10, ""aggroRadius"": 4.0, ""leashRadius"": 8.0, ""attackDamage"": 8, ""attackRange"": 1.0, ""attackCooldownSeconds"": 1.5 }
   ],
   ""spawners"": [
     { ""typeId"": 2001, ""x"": 3.5, ""y"": 1.5, ""count"": 3, ""wanderRadius"": 3.0 },

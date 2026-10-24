@@ -20,9 +20,11 @@ namespace Avelora.Server.Simulation
     /// preparar y encolar los snapshots no cambiará la forma de este método.</item>
     /// </list>
     ///
-    /// El orden dentro de la simulación es fijo (I-02): mover jugadores, resolver sus ataques y
-    /// después mover a los enemigos. Así un golpe se aplica sobre la posición que el jugador acaba
-    /// de alcanzar y una muerte detiene al enemigo en el mismo tick.
+    /// El orden dentro de la simulación es fijo (I-02 e I-03): mover jugadores, resolver sus
+    /// ataques, mover y atacar con los enemigos y, por último, muertes, reapariciones y
+    /// regeneración de los jugadores. Así un golpe se aplica sobre la posición que el jugador acaba
+    /// de alcanzar, una muerte detiene al enemigo en el mismo tick y la reaparición ocurre antes de
+    /// publicar el snapshot.
     ///
     /// Todo lo de dentro corre en el hilo de simulación, y solo en él (guía del núcleo §2.1): por
     /// eso no hay ningún <c>lock</c>.
@@ -33,6 +35,7 @@ namespace Avelora.Server.Simulation
         private readonly InterestSystem _interest;
         private readonly NpcSystem? _npcs;
         private readonly CombatSystem? _combat;
+        private readonly PlayerVitalsSystem? _vitals;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
@@ -60,7 +63,8 @@ namespace Avelora.Server.Simulation
             NpcCatalog? npcs = null,
             int npcSeed = 12345,
             AttackQueue? attacks = null,
-            CombatSettings? combat = null)
+            CombatSettings? combat = null,
+            PlayerVitalsSettings? playerVitals = null)
         {
             if (map is null)
             {
@@ -118,6 +122,11 @@ namespace Avelora.Server.Simulation
             InterestSettings settings = interest ?? InterestSettings.Default;
             _interest = new InterestSystem(new EntitySpatialGrid(settings.CellSize), settings);
 
+            if (playerVitals.HasValue)
+            {
+                _vitals = new PlayerVitalsSystem(playerVitals.Value);
+            }
+
             _maxIntentsPerTick = maxIntentsPerTick;
             _maxIntentsPerPlayerPerTick = maxIntentsPerPlayerPerTick;
 
@@ -125,7 +134,7 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, npcSeed);
+                _npcs = new NpcSystem(map, npcSeed, _interest.Grid);
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
                 for (int i = 0; i < Entities.Count; i++)
@@ -199,17 +208,38 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques rechazados porque el atacante aún no había recargado.</summary>
         public long RejectedAttackCooldown => _combat?.RejectedCooldown ?? 0;
 
+        /// <summary>Ataques rechazados porque el jugador estaba muerto (I-03).</summary>
+        public long RejectedAttackDead => _combat?.RejectedDead ?? 0;
+
         /// <summary>Enemigos muertos desde el arranque (I-02).</summary>
         public long NpcDeaths => _npcs?.Deaths ?? 0;
 
         /// <summary>Enemigos que han reaparecido desde el arranque (I-02).</summary>
         public long NpcRespawns => _npcs?.Respawns ?? 0;
 
+        /// <summary>Golpes de enemigos a jugadores desde el arranque (I-03).</summary>
+        public long NpcHits => _npcs?.Hits ?? 0;
+
+        /// <summary>Jugadores que han muerto desde el arranque (I-03).</summary>
+        public long PlayerDeaths => _vitals?.Deaths ?? 0;
+
+        /// <summary>Jugadores que han reaparecido desde el arranque (I-03).</summary>
+        public long PlayerRespawns => _vitals?.Respawns ?? 0;
+
         /// <summary>Añade un jugador a la zona y devuelve su entidad.</summary>
+        /// <param name="initialHealth">
+        /// Vida con la que entra. Un valor ≤ 0 (personaje nuevo o dato inválido) entra con la vida
+        /// llena; un valor positivo se limita al máximo de la zona (I-03).
+        /// </param>
         /// <exception cref="InvalidOperationException">
         /// La caja de la entidad no cabe en <paramref name="position"/>: nacería dentro de una pared.
         /// </exception>
-        public PlayerEntity SpawnPlayer(int characterId, Vec2 position, Vec2 halfSize, int inputBufferCapacity)
+        public PlayerEntity SpawnPlayer(
+            int characterId,
+            Vec2 position,
+            Vec2 halfSize,
+            int inputBufferCapacity,
+            int initialHealth = 0)
         {
             // Invariante de la zona: una entidad nunca aparece solapando una pared. Step rechaza
             // cualquier movimiento hacia una posición no caminable, así que nacer atrapado no
@@ -221,11 +251,21 @@ namespace Avelora.Server.Simulation
                     "No se puede crear una entidad en " + position + ": su caja se solapa con una pared.");
             }
 
+            int maxHealth = _vitals?.Settings.MaxHealth ?? PlayerEntity.DefaultMaxHealth;
+            int health = initialHealth > 0 ? Math.Min(initialHealth, maxHealth) : maxHealth;
+
+            if (health < 1)
+            {
+                health = maxHealth;
+            }
+
             var player = new PlayerEntity(Ids.Allocate(), characterId, inputBufferCapacity)
             {
                 MapId = Id,
                 Position = position,
                 HalfSize = halfSize,
+                MaxHealth = maxHealth,
+                Health = health,
             };
 
             Entities.Add(player);
@@ -296,6 +336,14 @@ namespace Avelora.Server.Simulation
                 {
                     RemoveEntity(_deadNpcs[i].Id);
                 }
+            }
+
+            // Muertes, reapariciones y regeneración (I-03): después de la IA, porque un golpe de
+            // este tick puede haber dejado al jugador a 0. El sistema lo ve en el mismo tick y
+            // programa la reaparición desde ese instante.
+            if (_vitals != null)
+            {
+                _vitals.Tick(Entities, _tickCount);
             }
 
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
