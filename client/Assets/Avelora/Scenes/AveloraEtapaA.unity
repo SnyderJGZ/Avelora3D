@@ -2578,6 +2578,39 @@ MonoBehaviour:
   - {fileID: 62483671349696928, guid: 579effb9af1752f43b00e01a0facaf32, type: 3}
   - {fileID: -8620763001437250518, guid: 579effb9af1752f43b00e01a0facaf32, type: 3}
   - {fileID: 7300487835856165543, guid: 579effb9af1752f43b00e01a0facaf32, type: 3}
+  npcAttackSprites:
+  - {fileID: 8928364032428420155, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 1235529205396806657, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 6035417575858681518, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 6900391591732019391, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 2664531035526638547, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -5259300105173302497, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -3105476463981085642, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 4046067626153325225, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 8572731159232349352, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 8438415412518015097, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -5540914815052669135, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 4197771823110906879, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 7818020211991106232, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -748853797580161094, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -4668779824535650470, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -4529729573067548404, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 7854592653347180981, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -6923512365484033770, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 8767373826169135932, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 5338662043985823148, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 1907765632624027526, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 3298077162062145637, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -5297579971185722970, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -2121426045528649781, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 8031945568399851340, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 7844808034838842440, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 6152973297277033313, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 866027986959581218, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -83686677046631539, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -4420504710804489404, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: 4129433895094292518, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
+  - {fileID: -6302984341176396688, guid: e1bdfafbc3733ea46bcc5826bc290981, type: 3}
   showOverlay: 1
   useDebugInput: 0
   debugDirX: 0

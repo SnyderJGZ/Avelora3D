@@ -82,11 +82,16 @@ namespace Avelora.Client
         [SerializeField] private Sprite[] npcHurtSprites = new Sprite[0];
 
         [SerializeField] private Sprite[] npcDeathSprites = new Sprite[0];
+        [SerializeField] private Sprite[] npcAttackSprites = new Sprite[0];
 
         // shortcut: copia de playerAttackRange y playerAttackCooldownSeconds de server.json. Si el
         // servidor los cambia, se envían ataques que rechaza; pasarán al Welcome con las armas (I-04).
         private const float AttackRange = 1.2f;
         private const float AttackCooldownSeconds = 0.8f;
+
+        // shortcut: copia de playerRespawnSeconds de server.json, solo para la cuenta atrás del aviso;
+        // si el servidor la cambia, el aviso se equivoca pero la reaparición la sigue decidiendo él.
+        private const float RespawnSeconds = 5f;
         private const float HintSeconds = 1.5f;
         private const float PickRadius = 0.5f;
 
@@ -131,6 +136,9 @@ namespace Avelora.Client
         private uint _lastProcessedSequence;
         private Vec2 _lastAuthoritative;
         private int _entityId;
+        private byte _ownHealthPercent = 100;
+        private bool _ownDead;
+        private float _ownDeathAt;
         private int _lastDirectionX;
         private int _inputHistoryCount;
         private long _inputsSent;
@@ -261,6 +269,8 @@ namespace Avelora.Client
             _lastServerTick = 0;
             _lastProcessedSequence = 0;
             _entityId = 0;
+            _ownHealthPercent = 100;
+            _ownDead = false;
             _accumulator = 0;
             _lastReject = null;
             _welcomeReceived = false;
@@ -325,7 +335,12 @@ namespace Avelora.Client
                 return;
             }
 
-            HandleCombatInput();
+            // Muerto (I-03b): ni ataques ni movimiento. Se siguen mandando inputs a cero para que la
+            // secuencia avance igual que en el servidor, que los consume sin moverlo.
+            if (!_ownDead)
+            {
+                HandleCombatInput();
+            }
 
             double frame = Time.deltaTime;
             if (frame > MaxFrameSeconds)
@@ -340,6 +355,12 @@ namespace Avelora.Client
             _accumulator += frame;
 
             ReadDirection(out sbyte directionX, out sbyte directionY);
+
+            if (_ownDead)
+            {
+                directionX = 0;
+                directionY = 0;
+            }
 
             while (_accumulator >= SimulationConstants.FixedDt)
             {
@@ -782,12 +803,28 @@ namespace Avelora.Client
 
                 _lastAuthoritative = authoritative;
                 _lastProcessedSequence = snapshot.LastProcessedInputSequence;
+                _ownHealthPercent = state.HealthPercent;
+
+                bool dead = state.Action == EntityAction.Dead;
+                if (dead && !_ownDead)
+                {
+                    _ownDeathAt = Time.unscaledTime;
+                    Select(0);
+                }
 
                 if (_prediction != null)
                 {
+                    // Al reaparecer el servidor ya lo puso en el spawn: Teleport y no Reset, que
+                    // reiniciaría la secuencia y el servidor descartaría los inputs siguientes.
+                    if (!dead && _ownDead)
+                    {
+                        _prediction.Teleport(authoritative);
+                    }
+
                     _prediction.Reconcile(authoritative, snapshot.LastProcessedInputSequence);
                 }
 
+                _ownDead = dead;
                 break;
             }
         }
@@ -898,7 +935,7 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Npc)
             {
-                view.SetNpcSheets(npcIdleSprites, npcWalkSprites, npcHurtSprites, npcDeathSprites);
+                view.SetNpcSheets(npcIdleSprites, npcWalkSprites, npcHurtSprites, npcDeathSprites, npcAttackSprites);
             }
 
             if (sprite == null)
@@ -1072,6 +1109,36 @@ namespace Avelora.Client
                 " · Remotos " + RemoteViewCount +
                 (_transport == null ? " · Pulsa R para reconectar" : string.Empty),
                 _overlayStyle);
+
+            if (_welcomeReceived)
+            {
+                DrawOwnHealth();
+            }
+        }
+
+        /// <summary>Barra de vida propia abajo al centro y aviso de muerte con cuenta atrás (I-03b).</summary>
+        private void DrawOwnHealth()
+        {
+            const float width = 240f;
+            const float height = 16f;
+            var back = new Rect((Screen.width - width) / 2f, Screen.height - 40f, width, height);
+
+            Color previous = GUI.color;
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+            GUI.DrawTexture(back, Texture2D.whiteTexture);
+            GUI.color = new Color(0.8f, 0.15f, 0.15f, 1f);
+            GUI.DrawTexture(new Rect(back.x, back.y, width * _ownHealthPercent / 100f, height), Texture2D.whiteTexture);
+            GUI.color = previous;
+            GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), "Vida " + _ownHealthPercent + " %", _overlayStyle);
+
+            if (_ownDead)
+            {
+                float left = Mathf.Max(0f, RespawnSeconds - (Time.unscaledTime - _ownDeathAt));
+                var box = new Rect((Screen.width - 320f) / 2f, Screen.height / 2f - 30f, 320f, 60f);
+                GUI.Box(box, GUIContent.none);
+                GUI.Label(new Rect(box.x + 16f, box.y + 10f, 300f, 44f),
+                    "Has muerto. Reapareces en " + Mathf.CeilToInt(left) + " s.", _overlayStyle);
+            }
         }
     }
 }

@@ -58,7 +58,7 @@ namespace Avelora.Client
         /// Da a un PNJ sus hojas de animación (4 filas: abajo, arriba, izquierda, derecha). Si una
         /// hoja no se reparte en 4 filas iguales, se ignora y queda el cuadrado teñido.
         /// </summary>
-        public void SetNpcSheets(Sprite[] idle, Sprite[] walk, Sprite[] hurt, Sprite[] death)
+        public void SetNpcSheets(Sprite[] idle, Sprite[] walk, Sprite[] hurt, Sprite[] death, Sprite[] attack)
         {
             if (IsSheet(idle) && IsSheet(walk))
             {
@@ -66,6 +66,7 @@ namespace Avelora.Client
                 _walk = walk;
                 _hurt = IsSheet(hurt) ? hurt : null;
                 _death = IsSheet(death) ? death : null;
+                _attack = IsSheet(attack) ? attack : null;
             }
         }
 
@@ -93,9 +94,21 @@ namespace Avelora.Client
                 return;
             }
 
-            transform.position = new Vector3(sample.Position.X, sample.Position.Y, 0f);
+            // Se camina si la posición cambia, no por la dirección: un orco que ataca sigue mirando
+            // a su objetivo (dirección distinta de cero) pero está quieto (I-03b).
+            var position = new Vector3(sample.Position.X, sample.Position.Y, 0f);
+            _moving = (position - transform.position).sqrMagnitude > MovingEpsilonSq;
+            transform.position = position;
             Kind = sample.Kind;
             IsDead = sample.Action == EntityAction.Dead;
+
+            bool attacking = sample.Action == EntityAction.Attacking;
+            if (attacking && !_wasAttacking)
+            {
+                _attackStartedAt = Time.time;
+            }
+
+            _wasAttacking = attacking;
 
             // La primera muestra fija la vida sin animar daño: un orco que entra herido al área de
             // interés no debe parpadear como si le acabasen de pegar.
@@ -134,8 +147,8 @@ namespace Avelora.Client
 
         private void Animate(sbyte directionX, sbyte directionY)
         {
-            bool moving = !IsDead && (directionX != 0 || directionY != 0);
-            if (moving)
+            bool moving = !IsDead && _moving;
+            if (!IsDead && (directionX != 0 || directionY != 0))
             {
                 // En diagonal manda el eje horizontal: la hoja no tiene filas diagonales.
                 _facing = directionX < 0 ? FacingLeft
@@ -153,6 +166,18 @@ namespace Avelora.Client
             {
                 _renderer.sprite = OneShotFrame(_death, Time.time - _deathStartedAt, DeathFps, out _);
                 return;
+            }
+
+            if (_attack != null && _attackStartedAt >= 0f)
+            {
+                Sprite frame = OneShotFrame(_attack, Time.time - _attackStartedAt, AttackFps, out bool finished);
+                if (!finished)
+                {
+                    _renderer.sprite = frame;
+                    return;
+                }
+
+                _attackStartedAt = -1f;
             }
 
             if (_hurt != null && _hurtStartedAt >= 0f)
@@ -249,6 +274,8 @@ namespace Avelora.Client
         private const float IdleFps = 6f;
         private const float HurtFps = 12f;
         private const float DeathFps = 10f;
+        private const float AttackFps = 16f;
+        private const float MovingEpsilonSq = 0.0001f * 0.0001f;
         private const float BarWidth = 0.8f;
         private const float BarHeight = 0.08f;
         private const float BarY = 0.55f;
@@ -257,6 +284,10 @@ namespace Avelora.Client
         private Sprite[] _walk;
         private Sprite[] _hurt;
         private Sprite[] _death;
+        private Sprite[] _attack;
+        private bool _moving;
+        private bool _wasAttacking;
+        private float _attackStartedAt = -1f;
         private int _facing = FacingDown;
         private bool _selected;
         private bool _hasHealth;
