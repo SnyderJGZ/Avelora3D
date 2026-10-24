@@ -20,6 +20,9 @@ namespace Avelora.Bots
         /// <summary>Manda siempre <c>(0, 0)</c>: todos se quedan donde aparecen (peor caso del área de interés).</summary>
         Crowd = 1,
 
+        /// <summary>Busca al enemigo vivo más cercano, va hacia él y lo ataca (I-02).</summary>
+        Fight = 7,
+
         /// <summary>Inunda con <c>MoveInput</c> válidos a 200/s (10 por intervalo de 50 ms).</summary>
         Flood = 2,
 
@@ -82,6 +85,15 @@ namespace Avelora.Bots
         /// <summary>Intentos de login fallido de un <c>badlogin</c> antes de darse por vencido.</summary>
         private const int MaxBadLoginAttempts = 10;
 
+        /// <summary>
+        /// Alcance con el que el bot decide que ya está cerca. Es el valor por defecto del servidor
+        /// (I-02); el servidor suma además su tolerancia de interpolación.
+        /// </summary>
+        private const float AttackRange = 1.2f;
+
+        /// <summary>Margen que se suma a la recarga al mandar ataques, para no llegar justos al tick.</summary>
+        private const int AttackSlackMs = 50;
+
         /// <summary>Para avisar una sola vez por proceso de que no se configuró la huella esperada.</summary>
         private static int _missingFingerprintWarned;
 
@@ -121,6 +133,7 @@ namespace Avelora.Bots
         private readonly bool _logCorrections;
         private readonly string? _tracePositionsPath;
         private readonly string? _reportWelcomePath;
+        private readonly int _attackCooldownMs;
 
         private IClientTransport? _transport;
 
@@ -181,6 +194,13 @@ namespace Avelora.Bots
         private readonly SortedDictionary<RejectReason, int> _rejectCounts =
             new SortedDictionary<RejectReason, int>();
 
+        // Vista de los enemigos del último snapshot (modo fight) y ataques enviados (I-02).
+        private readonly Dictionary<int, NpcView> _npcs = new Dictionary<int, NpcView>(64);
+        private readonly HashSet<int> _deadNpcs = new HashSet<int>();
+        private long _nextAttackAt;
+        private long _sentAttacks;
+        private long _deathsSeen;
+
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
         private int _retries;
@@ -202,6 +222,7 @@ namespace Avelora.Bots
             int retries = 5,
             int welcomeTimeoutMs = 15000,
             BotBehavior behavior = BotBehavior.Random,
+            int attackCooldownMs = 800,
             Func<IClientTransport>? transportFactory = null,
             MapCollisionGrid? map = null,
             int inputRedundancy = ProtocolConstants.MaxInputsPerMessage,
@@ -232,6 +253,14 @@ namespace Avelora.Bots
                     "La redundancia debe estar entre 1 y " + ProtocolConstants.MaxInputsPerMessage + ".");
             }
 
+            if (attackCooldownMs < 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(attackCooldownMs),
+                    attackCooldownMs,
+                    "La recarga de ataque no puede ser negativa.");
+            }
+
             Index = index;
             _map = map;
             _inputRedundancy = inputRedundancy;
@@ -243,6 +272,7 @@ namespace Avelora.Bots
             _maxRetries = retries;
             _welcomeTimeoutMs = welcomeTimeoutMs;
             _behavior = behavior;
+            _attackCooldownMs = attackCooldownMs;
             _logCorrections = logCorrections;
             _tracePositionsPath = tracePositionsPath;
             _reportWelcomePath = reportWelcomePath;
@@ -329,6 +359,12 @@ namespace Avelora.Bots
 
         /// <summary>Saludos enviados (modo <c>badlogin</c> y reintentos).</summary>
         public long SentHellos => Interlocked.Read(ref _sentHellos);
+
+        /// <summary>Ataques enviados (modo <c>fight</c>, I-02).</summary>
+        public long SentAttacks => Interlocked.Read(ref _sentAttacks);
+
+        /// <summary>Muertes de enemigos vistas en los snapshots (modo <c>fight</c>, I-02).</summary>
+        public long DeathsSeen => Interlocked.Read(ref _deathsSeen);
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
@@ -466,6 +502,8 @@ namespace Avelora.Bots
             _nextGarbageAt = _attemptStartedAt;
             _nextInvalidDirectionAt = _attemptStartedAt;
             _nextReplayAt = _attemptStartedAt;
+            _nextAttackAt = _attemptStartedAt;
+            _npcs.Clear();
             _lastSnapshotTick = 0;
             _hasPosition = false;
             PickDirection();
@@ -549,7 +587,11 @@ namespace Avelora.Bots
 
                     if (now >= _nextInputAt)
                     {
-                        if (now >= _nextDirectionChangeAt)
+                        if (_behavior == BotBehavior.Fight)
+                        {
+                            UpdateFightDirection();
+                        }
+                        else if (now >= _nextDirectionChangeAt)
                         {
                             PickDirection();
                         }
@@ -562,6 +604,11 @@ namespace Avelora.Bots
                             // Si el hilo se durmió de más, no acumular una ráfaga de inputs viejos.
                             _nextInputAt = now + InputIntervalMs;
                         }
+                    }
+
+                    if (_behavior == BotBehavior.Fight && now >= _nextAttackAt)
+                    {
+                        SendAttackIfInRange(now);
                     }
 
                     // Los abusos van en su propio temporizador: el bot sigue moviéndose normal
@@ -1228,8 +1275,9 @@ namespace Avelora.Bots
                 }
 
                 // Igual que el cliente de Unity: si el bot es un jugador normal, predice su
-                // posición y mide las correcciones que le costaría la red.
-                if (_behavior == BotBehavior.Random && _map != null)
+                // posición y mide las correcciones que le costaría la red. El modo fight también
+                // predice: se mueve como un jugador que persigue.
+                if ((_behavior == BotBehavior.Random || _behavior == BotBehavior.Fight) && _map != null)
                 {
                     _halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
 
@@ -1278,6 +1326,11 @@ namespace Avelora.Bots
                 }
 
                 _lastSnapshotTick = snapshot.ServerTick;
+
+                if (_behavior == BotBehavior.Fight)
+                {
+                    UpdateNpcView(snapshot);
+                }
 
                 for (int i = 0; i < snapshot.Entities.Length; i++)
                 {
@@ -1521,6 +1574,109 @@ namespace Avelora.Bots
             _nextDirectionChangeAt = Environment.TickCount64 + _random.Next(800, 2200);
         }
 
+        /// <summary>
+        /// Guarda los enemigos del snapshot y cuenta las muertes nuevas: un enemigo que aparece por
+        /// primera vez como <see cref="EntityAction.Dead"/> es una muerte vista (I-02).
+        /// </summary>
+        private void UpdateNpcView(in SnapshotMessage snapshot)
+        {
+            // La vista es la del último snapshot: se vacía para no perseguir enemigos que ya no
+            // están en el área de interés.
+            _npcs.Clear();
+
+            EntityState[] entities = snapshot.Entities;
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                EntityState state = entities[i];
+
+                if (state.Kind != EntityKind.Npc)
+                {
+                    continue;
+                }
+
+                _npcs[state.Id] = new NpcView(
+                    ProtocolConstants.DequantizePosition(state.X),
+                    ProtocolConstants.DequantizePosition(state.Y),
+                    state.Action);
+
+                if (state.Action == EntityAction.Dead && _deadNpcs.Add(state.Id))
+                {
+                    Interlocked.Increment(ref _deathsSeen);
+                }
+            }
+        }
+
+        /// <summary>Camina hacia el enemigo vivo más cercano; si ya está a alcance, se para.</summary>
+        private void UpdateFightDirection()
+        {
+            if (FindNearestAlive(out float dx, out float dy, out float distanceSq) < 0 ||
+                distanceSq <= AttackRange * AttackRange)
+            {
+                _directionX = 0;
+                _directionY = 0;
+                return;
+            }
+
+            _directionX = Sign(dx);
+            _directionY = Sign(dy);
+        }
+
+        /// <summary>Manda un ataque al enemigo vivo más cercano si está dentro de alcance.</summary>
+        private void SendAttackIfInRange(long now)
+        {
+            int target = FindNearestAlive(out _, out _, out float distanceSq);
+
+            if (target < 0 || distanceSq > AttackRange * AttackRange)
+            {
+                return;
+            }
+
+            byte[] attack = MessageCodec.EncodeAttack(new AttackMessage(target));
+            _transport!.Send(attack, attack.Length, DeliveryMode.ReliableOrdered);
+            Interlocked.Increment(ref _sentAttacks);
+
+            // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
+            // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.
+            _nextAttackAt = now + _attackCooldownMs + AttackSlackMs;
+        }
+
+        /// <summary>Enemigo vivo más cercano de la vista; devuelve su id y el vector hacia él.</summary>
+        private int FindNearestAlive(out float dx, out float dy, out float distanceSq)
+        {
+            int best = -1;
+            dx = 0f;
+            dy = 0f;
+            distanceSq = float.MaxValue;
+
+            foreach (KeyValuePair<int, NpcView> pair in _npcs)
+            {
+                NpcView npc = pair.Value;
+
+                if (npc.Action == EntityAction.Dead)
+                {
+                    continue;
+                }
+
+                float candidateX = npc.X - _x;
+                float candidateY = npc.Y - _y;
+                float candidateDistanceSq = (candidateX * candidateX) + (candidateY * candidateY);
+
+                if (candidateDistanceSq < distanceSq)
+                {
+                    distanceSq = candidateDistanceSq;
+                    dx = candidateX;
+                    dy = candidateY;
+                    best = pair.Key;
+                }
+            }
+
+            return best;
+        }
+
+        private static sbyte Sign(float value) =>
+            value > 0f ? (sbyte)1 : value < 0f ? (sbyte)-1 : (sbyte)0;
+
         /// <summary>Espera <paramref name="milliseconds"/> sin dormir de golpe, para poder cancelar.</summary>
         private static bool Sleep(int milliseconds, CancellationToken cancellationToken)
         {
@@ -1541,6 +1697,23 @@ namespace Avelora.Bots
 
                 cancellationToken.WaitHandle.WaitOne((int)Math.Min(remaining, 50));
             }
+        }
+
+        /// <summary>Lo que el bot sabe de un enemigo por el último snapshot: posición y acción.</summary>
+        private readonly struct NpcView
+        {
+            public NpcView(float x, float y, EntityAction action)
+            {
+                X = x;
+                Y = y;
+                Action = action;
+            }
+
+            public float X { get; }
+
+            public float Y { get; }
+
+            public EntityAction Action { get; }
         }
 
         private enum AttemptResult

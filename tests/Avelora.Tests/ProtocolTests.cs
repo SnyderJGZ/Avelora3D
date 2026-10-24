@@ -57,7 +57,7 @@ namespace Avelora.Tests
             // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más las dos
             // cadenas con su longitud uint16.
             Assert.Equal(297 + 2 + 6 + 2 + 9, bytes.Length);
-            Assert.Equal((ushort)4, original.ProtocolVersion);
+            Assert.Equal((ushort)5, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
             Assert.Equal(original.ClientToken, decoded.ClientToken);
@@ -384,8 +384,8 @@ namespace Avelora.Tests
         {
             var entities = new[]
             {
-                new EntityState(1, 64, -128, 1, 0, EntityKind.Player),
-                new EntityState(9, -32768, 32767, -1, -1, EntityKind.Npc),
+                new EntityState(1, 64, -128, 1, 0, EntityKind.Player, 100, EntityAction.None),
+                new EntityState(9, -32768, 32767, -1, -1, EntityKind.Npc, 50, EntityAction.Attacking),
             };
 
             var original = new SnapshotMessage(1234u, 5678u, entities);
@@ -393,7 +393,7 @@ namespace Avelora.Tests
             byte[] bytes = MessageCodec.EncodeSnapshot(original);
 
             Assert.True(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out SnapshotMessage decoded));
-            Assert.Equal(1 + 4 + 4 + 2 + (2 * 11), bytes.Length);
+            Assert.Equal(1 + 4 + 4 + 2 + (2 * 13), bytes.Length);
             Assert.Equal(original.ServerTick, decoded.ServerTick);
             Assert.Equal(original.LastProcessedInputSequence, decoded.LastProcessedInputSequence);
             Assert.Equal(2, decoded.Entities.Length);
@@ -402,10 +402,14 @@ namespace Avelora.Tests
             Assert.Equal(-128, decoded.Entities[0].Y);
             Assert.Equal((sbyte)1, decoded.Entities[0].DirectionX);
             Assert.Equal(EntityKind.Player, decoded.Entities[0].Kind);
+            Assert.Equal((byte)100, decoded.Entities[0].HealthPercent);
+            Assert.Equal(EntityAction.None, decoded.Entities[0].Action);
             Assert.Equal(9, decoded.Entities[1].Id);
             Assert.Equal(short.MinValue, decoded.Entities[1].X);
             Assert.Equal(short.MaxValue, decoded.Entities[1].Y);
             Assert.Equal(EntityKind.Npc, decoded.Entities[1].Kind);
+            Assert.Equal((byte)50, decoded.Entities[1].HealthPercent);
+            Assert.Equal(EntityAction.Attacking, decoded.Entities[1].Action);
         }
 
         [Fact]
@@ -481,7 +485,7 @@ namespace Avelora.Tests
         public void Un_Snapshot_Con_Tipo_De_Entidad_Desconocido_Se_Rechaza()
         {
             byte[] bytes = MessageCodec.EncodeSnapshot(
-                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player) }));
+                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None) }));
 
             // Cabecera (1) + tick y secuencia (8) + cuenta (2) + id (4) + x e y (4).
             bytes[21] = 99;
@@ -490,10 +494,56 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Un_Snapshot_Con_Accion_Desconocida_Se_Rechaza()
+        {
+            byte[] bytes = MessageCodec.EncodeSnapshot(
+                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None) }));
+
+            // Cabecera (11) + id (4) + x e y (4) + direcciones y tipo (3) + vida (1).
+            bytes[23] = 99;
+
+            Assert.False(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void Un_Snapshot_Con_Vida_Fuera_De_Rango_Se_Rechaza()
+        {
+            byte[] bytes = MessageCodec.EncodeSnapshot(
+                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None) }));
+
+            bytes[22] = 101;
+
+            Assert.False(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void El_Ataque_Va_Y_Vuelve_Igual()
+        {
+            byte[] bytes = MessageCodec.EncodeAttack(new AttackMessage(123456));
+
+            Assert.True(MessageCodec.TryReadAttack(bytes, 0, bytes.Length, out AttackMessage decoded));
+            Assert.Equal(5, bytes.Length);
+            Assert.Equal(123456, decoded.TargetId);
+        }
+
+        [Fact]
+        public void Un_Ataque_Truncado_O_Con_Bytes_De_Mas_Se_Rechaza()
+        {
+            byte[] bytes = MessageCodec.EncodeAttack(new AttackMessage(7));
+
+            Assert.False(MessageCodec.TryReadAttack(bytes, 0, bytes.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadAttack(bytes, 0, 0, out _));
+
+            var longer = new byte[bytes.Length + 1];
+            Array.Copy(bytes, longer, bytes.Length);
+            Assert.False(MessageCodec.TryReadAttack(longer, 0, longer.Length, out _));
+        }
+
+        [Fact]
         public void Un_Snapshot_Con_Direccion_Invalida_Se_Rechaza()
         {
             byte[] bytes = MessageCodec.EncodeSnapshot(
-                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player) }));
+                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None) }));
 
             bytes[19] = 5;
 
@@ -508,11 +558,21 @@ namespace Avelora.Tests
             foreach (EntityKind kind in Enum.GetValues(typeof(EntityKind)))
             {
                 byte[] snapshot = MessageCodec.EncodeSnapshot(
-                    new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, kind) }));
+                    new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, kind, 100, EntityAction.None) }));
 
                 Assert.True(
                     MessageCodec.TryReadSnapshot(snapshot, 0, snapshot.Length, out _),
                     "El códec rechaza el EntityKind definido " + kind + ".");
+            }
+
+            foreach (EntityAction action in Enum.GetValues(typeof(EntityAction)))
+            {
+                byte[] snapshot = MessageCodec.EncodeSnapshot(
+                    new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Npc, 100, action) }));
+
+                Assert.True(
+                    MessageCodec.TryReadSnapshot(snapshot, 0, snapshot.Length, out _),
+                    "El códec rechaza el EntityAction definido " + action + ".");
             }
 
             foreach (RejectReason reason in Enum.GetValues(typeof(RejectReason)))
@@ -529,7 +589,7 @@ namespace Avelora.Tests
         public void Un_Snapshot_Con_Cuenta_Incoherente_Se_Rechaza()
         {
             byte[] bytes = MessageCodec.EncodeSnapshot(
-                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player) }));
+                new SnapshotMessage(1u, 0u, new[] { new EntityState(1, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None) }));
 
             // La cuenta va tras el tipo (1) y los dos uint (8).
             bytes[9] = 2;
@@ -569,7 +629,7 @@ namespace Avelora.Tests
 
             for (int i = 0; i < entities.Length; i++)
             {
-                entities[i] = new EntityState(i, 0, 0, 0, 0, EntityKind.Npc);
+                entities[i] = new EntityState(i, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(1u, 0u, entities));
@@ -586,7 +646,7 @@ namespace Avelora.Tests
 
             for (int i = 0; i < entities.Length; i++)
             {
-                entities[i] = new EntityState(i, 0, 0, 0, 0, EntityKind.Npc);
+                entities[i] = new EntityState(i, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(1u, 0u, entities));

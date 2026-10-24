@@ -186,7 +186,13 @@ namespace Avelora.Server
                 config.MaxIntentsPerPlayerPerTick,
                 new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis),
                 npcs,
-                config.NpcSeed);
+                config.NpcSeed,
+                new AttackQueue(config.MaxQueuedAttacks),
+                new CombatSettings(
+                    config.PlayerAttackDamage,
+                    config.PlayerAttackRange,
+                    config.AttackRangeTolerance,
+                    config.PlayerAttackCooldownSeconds));
 
             try
             {

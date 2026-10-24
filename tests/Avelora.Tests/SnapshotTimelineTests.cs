@@ -32,7 +32,9 @@ namespace Avelora.Tests
                 ProtocolConstants.QuantizePosition(y),
                 0,
                 0,
-                kind);
+                kind,
+                100,
+                EntityAction.None);
         }
 
         [Fact]
@@ -130,7 +132,7 @@ namespace Avelora.Tests
         {
             var timeline = new SnapshotTimeline();
             timeline.Add(
-                Snapshot(1, new EntityState(7, 0, 0, -1, 1, EntityKind.Npc)),
+                Snapshot(1, new EntityState(7, 0, 0, -1, 1, EntityKind.Npc, 100, EntityAction.None)),
                 10.0);
 
             Assert.True(timeline.TrySample(7, 10.0, out EntitySample sample));

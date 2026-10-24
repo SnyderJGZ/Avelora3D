@@ -222,6 +222,21 @@ namespace Avelora.Shared.Protocol
         }
     }
 
+    /// <summary>
+    /// Intención de atacar a una entidad (I-02). Solo lleva el objetivo: el daño, el alcance y el
+    /// tiempo de recarga los decide el servidor.
+    /// </summary>
+    public readonly struct AttackMessage
+    {
+        public AttackMessage(int targetId)
+        {
+            TargetId = targetId;
+        }
+
+        /// <summary>Identificador de la entidad a la que se quiere atacar.</summary>
+        public int TargetId { get; }
+    }
+
     /// <summary>Respuesta afirmativa al saludo: identidad, punto de aparición y reglas del servidor.</summary>
     /// <remarks>
     /// Viajan la velocidad y el tamaño de la caja de colisión porque las impone el servidor: el
@@ -350,10 +365,21 @@ namespace Avelora.Shared.Protocol
     }
 
     /// <summary>Estado de una entidad dentro de un snapshot.</summary>
-    /// <remarks>Ocupa 11 bytes: Id (4), posición cuantizada (2+2) y dirección y tipo (1+1+1).</remarks>
+    /// <remarks>
+    /// Ocupa 13 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1) y vida y acción
+    /// (1+1, I-02).
+    /// </remarks>
     public readonly struct EntityState
     {
-        public EntityState(int id, short x, short y, sbyte directionX, sbyte directionY, EntityKind kind)
+        public EntityState(
+            int id,
+            short x,
+            short y,
+            sbyte directionX,
+            sbyte directionY,
+            EntityKind kind,
+            byte healthPercent,
+            EntityAction action)
         {
             Id = id;
             X = x;
@@ -361,6 +387,8 @@ namespace Avelora.Shared.Protocol
             DirectionX = directionX;
             DirectionY = directionY;
             Kind = kind;
+            HealthPercent = healthPercent;
+            Action = action;
         }
 
         public int Id { get; }
@@ -376,6 +404,15 @@ namespace Avelora.Shared.Protocol
         public sbyte DirectionY { get; }
 
         public EntityKind Kind { get; }
+
+        /// <summary>
+        /// Vida restante en porcentaje, de 0 a 100. Los jugadores mandan 100 hasta I-03; un PNJ
+        /// herido nunca manda 0 si le queda algo de vida (se redondea hacia arriba).
+        /// </summary>
+        public byte HealthPercent { get; }
+
+        /// <summary>Acción visible de la entidad (atacando o muerta).</summary>
+        public EntityAction Action { get; }
     }
 
     /// <summary>

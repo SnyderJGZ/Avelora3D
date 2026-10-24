@@ -9,7 +9,7 @@ namespace Avelora.Server.Simulation
 {
     /// <summary>
     /// Una zona: el mundo simulado (guía del núcleo §6). Hoy es un mapa, sus entidades (jugadores
-    /// y enemigos) y el área de interés.
+    /// y enemigos), el combate y el área de interés.
     /// </summary>
     /// <remarks>
     /// El tick de la zona tiene tres partes y las tres importan:
@@ -20,6 +20,10 @@ namespace Avelora.Server.Simulation
     /// preparar y encolar los snapshots no cambiará la forma de este método.</item>
     /// </list>
     ///
+    /// El orden dentro de la simulación es fijo (I-02): mover jugadores, resolver sus ataques y
+    /// después mover a los enemigos. Así un golpe se aplica sobre la posición que el jugador acaba
+    /// de alcanzar y una muerte detiene al enemigo en el mismo tick.
+    ///
     /// Todo lo de dentro corre en el hilo de simulación, y solo en él (guía del núcleo §2.1): por
     /// eso no hay ningún <c>lock</c>.
     /// </remarks>
@@ -28,10 +32,13 @@ namespace Avelora.Server.Simulation
         private readonly MovementSystem _movement;
         private readonly InterestSystem _interest;
         private readonly NpcSystem? _npcs;
+        private readonly CombatSystem? _combat;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
         private readonly List<MoveIntent> _inbox = new List<MoveIntent>(256);
+        private readonly List<AttackIntent> _attackInbox = new List<AttackIntent>(256);
+        private readonly List<NpcEntity> _deadNpcs = new List<NpcEntity>(16);
         private readonly Dictionary<int, int> _acceptedPerPlayer = new Dictionary<int, int>();
 
         private readonly int _maxIntentsPerTick;
@@ -51,7 +58,9 @@ namespace Avelora.Server.Simulation
             int maxIntentsPerPlayerPerTick,
             InterestSettings? interest = null,
             NpcCatalog? npcs = null,
-            int npcSeed = 12345)
+            int npcSeed = 12345,
+            AttackQueue? attacks = null,
+            CombatSettings? combat = null)
         {
             if (map is null)
             {
@@ -85,12 +94,26 @@ namespace Avelora.Server.Simulation
                     "Los topes de intenciones por tick deben ser >= 1.");
             }
 
+            // Ataques y reglas de combate van juntos: con uno sin el otro la cola se llenaría sin
+            // que nadie la vaciara. Program pasa ambos; las zonas sin combate no pasan ninguno.
+            if ((attacks == null) != (combat == null))
+            {
+                throw new ArgumentException(
+                    "La cola de ataques y las reglas de combate se configuran juntas o no se configuran.");
+            }
+
             Id = id;
             Map = map;
             Entities = entities;
             Ids = ids;
             Inputs = inputs;
+            Attacks = attacks;
             _movement = movement;
+
+            if (attacks != null && combat.HasValue)
+            {
+                _combat = new CombatSystem(combat.Value);
+            }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
             _interest = new InterestSystem(new EntitySpatialGrid(settings.CellSize), settings);
@@ -127,6 +150,12 @@ namespace Avelora.Server.Simulation
         /// <summary>Cola de entrada compartida con el hilo de red.</summary>
         public InputQueue Inputs { get; }
 
+        /// <summary>
+        /// Cola de ataques compartida con el hilo de red, o <c>null</c> si la zona no tiene combate
+        /// (por ejemplo, en pruebas de movimiento).
+        /// </summary>
+        public AttackQueue? Attacks { get; }
+
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
 
@@ -157,6 +186,24 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Inputs descartados porque no existe la entidad a la que apuntan.</summary>
         public long RejectedUnknownEntity { get; private set; }
+
+        /// <summary>Ataques válidos desde el arranque (I-02).</summary>
+        public long AttacksOk => _combat?.AttacksOk ?? 0;
+
+        /// <summary>Ataques rechazados porque el objetivo no existía, no era un PNJ o estaba muerto.</summary>
+        public long RejectedAttackTarget => _combat?.RejectedTarget ?? 0;
+
+        /// <summary>Ataques rechazados porque el objetivo estaba fuera de alcance.</summary>
+        public long RejectedAttackDistance => _combat?.RejectedDistance ?? 0;
+
+        /// <summary>Ataques rechazados porque el atacante aún no había recargado.</summary>
+        public long RejectedAttackCooldown => _combat?.RejectedCooldown ?? 0;
+
+        /// <summary>Enemigos muertos desde el arranque (I-02).</summary>
+        public long NpcDeaths => _npcs?.Deaths ?? 0;
+
+        /// <summary>Enemigos que han reaparecido desde el arranque (I-02).</summary>
+        public long NpcRespawns => _npcs?.Respawns ?? 0;
 
         /// <summary>Añade un jugador a la zona y devuelve su entidad.</summary>
         /// <exception cref="InvalidOperationException">
@@ -228,9 +275,28 @@ namespace Avelora.Server.Simulation
             DrainInputs();
             _movement.Tick(Entities, Map);
 
+            // Combate (I-02): después de mover a los jugadores (el ataque usa su posición nueva y
+            // la del enemigo antes de que se mueva) y antes de la IA (un enemigo muerto no da un
+            // paso más en este tick).
+            if (_combat != null)
+            {
+                Attacks!.DrainInto(_attackInbox);
+                _combat.Tick(Entities, _attackInbox, _tickCount);
+            }
+
             // Los enemigos se mueven después de los jugadores y antes de reindexar: así el área de
             // interés y los snapshots de este mismo tick ya ven su posición nueva.
-            _npcs?.Tick(Entities);
+            if (_npcs != null)
+            {
+                _npcs.Tick(Entities, _deadNpcs);
+
+                // Los cadáveres que ya cumplieron su animación salen aquí, con el almacén y la
+                // grilla todavía en el hilo de simulación y antes de reindexar.
+                for (int i = 0; i < _deadNpcs.Count; i++)
+                {
+                    RemoveEntity(_deadNpcs[i].Id);
+                }
+            }
 
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
             // O(n) con n = entidades vivas y deja la grilla lista para los snapshots de AfterTick.

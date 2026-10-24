@@ -4,13 +4,14 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F y G cerradas, Etapa H en curso y Etapa I iniciada.** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F y G cerradas, Etapa H en curso y Etapa I en curso.** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
 > solo uso; al entrar, el personaje aparece en la posición que tenía guardada si el mapa coincide.
-> Desde I-01 el mundo tiene enemigos que el servidor mueve y todos ven.
-> Ver [Etapa H](#qué-hace-la-etapa-h) y [Enemigos (I-01)](#enemigos-i-01).
+> Desde I-01 el mundo tiene enemigos que el servidor mueve y todos ven; desde I-02 (**protocolo v5**)
+> esos enemigos tienen vida, reciben los ataques de los jugadores, mueren y reaparecen.
+> Ver [Etapa H](#qué-hace-la-etapa-h) y [Etapa I](#qué-hace-la-etapa-i).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -19,7 +20,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **290/290 en verde** |
+| `dotnet test Avelora.slnx` | **304/304 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -65,7 +66,7 @@ Avelora/
 ├─ server/Avelora.Server/           # Servidor headless (net10.0)
 │   ├─ Program.cs                   #   Monta zona + red y arranca el bucle (Ctrl+C para parar)
 │   ├─ server.json                  #   Configuración externa (tick, red, límites, rutas)
-│   ├─ npcs.json                    #   Tipos y puntos de aparición de enemigos (I-01)
+│   ├─ npcs.json                    #   Tipos (vida y reaparición) y puntos de aparición (I-01/I-02)
 │   ├─ Simulation/                  #   Bucle, zona, movimiento, colas de entrada, área de interés
 │   ├─ Net/                         #   Sesiones, handshake, entrada y snapshots filtrados
 │   ├─ Entities/                    #   Entity, PlayerEntity, Id, almacén y grilla espacial
@@ -321,15 +322,19 @@ pueden discrepar** del formato.
 | --- | --- | --- | --- | --- |
 | `Hello` | 1 | C → S | 41 B + cadenas | versión (u16), tick (u16), token (u32), huella del mapa (32 B), cuenta, contraseña, personaje e invitación (cada una: longitud u16 + UTF-8) |
 | `MoveInput` | 2 | C → S | 7 B | secuencia (u32), dirX (i8), dirY (i8) |
+| `Attack` | 3 | C → S | 5 B | objetivo (i32) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
 | `Reject` | 11 | S → C | 2 B | motivo (u8) |
-| `Snapshot` | 12 | S → C | 11 B + 11 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), tipo (u8) |
+| `Snapshot` | 12 | S → C | 11 B + 13 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), tipo (u8), vida (u8, 0–100), acción (u8) |
 
 Canales:
 
-- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`.
+- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject` y `Attack`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
+
+> El **protocolo v5** (I-02) añade `Attack` y dos bytes por entidad en el snapshot (`HealthPercent` y
+> `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
 
 ### Handshake
 
@@ -392,9 +397,9 @@ hilo de red (avelora-net)                        hilo de simulación (avelora-si
 - Cada cliente recibe `lastProcessedInputSequence`, la base de la reconciliación de la Etapa D. Para
   comparar secuencias de 32 bits se usa `SequenceMath.IsNewer`, que resta y mira el signo: así la
   vuelta de `uint` (cada 6,8 años a 20 Hz) no bloquea los inputs para siempre.
-- Tope de mensaje: **1400 bytes**. Un snapshot con 91 entidades ocupa 1012 y cabe en el paquete
-  máximo del canal secuenciado de LiteNetLib (1020 B, sin fragmentos). Un mensaje mayor se rechaza
-  sin decodificar.
+- Tope de mensaje: **1400 bytes**. Un snapshot con 77 entidades (el máximo) ocupa 1012 y cabe en el
+  paquete máximo del canal secuenciado de LiteNetLib (1020 B, sin fragmentos); con 78 serían 1025 y
+  se rechazaría. Un mensaje mayor se rechaza sin decodificar.
 
 ### Límites y validación en la frontera
 
@@ -409,7 +414,7 @@ hilo de red (avelora-net)                        hilo de simulación (avelora-si
 | Dirección de movimiento | solo −1, 0 o 1 (se valida en el códec, en la red y en la cola) |
 | Secuencia de input | repetida o vieja: se descarta (comparación con vuelta de `uint`) |
 | Punto de aparición | se comprueba al arrancar (`Program`) y al crear la entidad (`Zone`); si está en una pared, no se juega |
-| Enumeraciones del cable | `EntityKind` y `RejectReason` desconocidos se rechazan |
+| Enumeraciones del cable | `EntityKind`, `EntityAction` y `RejectReason` desconocidos se rechazan |
 
 Un paquete con tipo desconocido, truncado, de dirección inválida, con una enumeración inventada o por
 encima del tope **no llega a la simulación**: el códec devuelve `false` y se cuenta como rechazado.
@@ -607,7 +612,7 @@ codifica solo esos estados.
 - `NetworkStats` añade `EntitiesSent` (suma de entidades incluidas) y `SnapshotBytes` (bytes de
   snapshot generados). El informe muestra `ents=` y `bytes=` y el resumen los totaliza.
 - El tope de **entidades por snapshot** sigue ahí: si una zona tuviera más, se recorta y se cuenta.
-  El destinatario va primero, así que el recorte nunca lo elimina a él. Hoy son **91** (I-01): es el
+  El destinatario va primero, así que el recorte nunca lo elimina a él. Hoy son **77** (I-02): es el
   máximo que cabe en los 1020 B de un paquete secuenciado de LiteNetLib.
 - El cliente **no necesitó cambios**: `NetworkClient` retira una vista remota cuando su entidad deja
   de aparecer en el último snapshot y la vuelve a crear si regresa; `SnapshotTimeline` ya usa la
@@ -848,15 +853,16 @@ Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md
 ### Enemigos (I-01)
 
 Los enemigos son entidades del servidor (`EntityKind.Npc`, valor 1 del protocolo, que ya viajaba en
-el snapshot). El servidor los mueve con su IA y todos los clientes los ven; **todavía no hay
-combate**: no hay vida, daño, muerte ni reaparición.
+el snapshot). El servidor los mueve con su IA y todos los clientes los ven. Desde I-02 también tienen
+vida, reciben ataques, mueren y reaparecen; el daño al jugador y el botín quedan para I-03 e I-04.
 
 `server/Avelora.Server/npcs.json` se copia junto al ejecutable, como `server.json`:
 
 ```json
 {
   "types": [
-    { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35 }
+    { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35,
+      "maxHealth": 30, "respawnSeconds": 10 }
   ],
   "spawners": [
     { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 3, "wanderRadius": 3.0 },
@@ -866,10 +872,10 @@ combate**: no hay vida, daño, muerte ni reaparición.
 ```
 
 Al arrancar se valida contra el mapa real y **si algo falla el servidor no arranca**, con el motivo:
-`id` único y mayor que 0; `speed` en (0, 10]; `halfWidth` y `halfHeight` entre 0,05 y 2; cada
-`typeId` existe; `count` entre 1 y 50; `wanderRadius` mayor que 0; la caja del tipo cabe en el punto
-(`IsBoxWalkable`) y el total no pasa de 500 enemigos. El arranque imprime una línea que resume
-tipos, spawners y enemigos.
+`id` único y mayor que 0; `speed` en (0, 10]; `halfWidth` y `halfHeight` entre 0,05 y 2; `maxHealth`
+entre 1 y 100000; `respawnSeconds` entre 0,5 y 3600; cada `typeId` existe; `count` entre 1 y 50;
+`wanderRadius` mayor que 0; la caja del tipo cabe en el punto (`IsBoxWalkable`) y el total no pasa de
+500 enemigos. El arranque imprime una línea que resume tipos, spawners y enemigos.
 
 **IA de deambular** (`Simulation/NpcSystem`): cada 16–50 ticks elige una de las 8 direcciones o
 quedarse quieto (1/3), y se mueve con el mismo `MovementSimulator` que los jugadores, así que solo
@@ -882,12 +888,64 @@ Los enemigos **no se guardan**: `CharacterSaveService` solo recibe `CharacterRec
 `NetworkServer.SaveAllPlayers` exige `PlayerEntity`; `PublishPlayers`, el cupo y los informes también
 filtran por `PlayerEntity`.
 
+### Combate (I-02)
+
+El cliente solo **pide** atacar: manda `Attack(targetId)` por el canal fiable y ordenado. El servidor
+lo encola en una `AttackQueue` con tope `maxQueuedAttacks` (si se llena, se descarta y se cuenta), la
+vacía en `Zone.Tick` **después** de mover a los jugadores y **antes** de `NpcSystem`, y decide con
+estas reglas:
+
+1. el atacante es un `PlayerEntity` de la zona;
+2. el objetivo existe, es un `NpcEntity` y está vivo (`Action != Dead`);
+3. la distancia entre centros es ≤ `playerAttackRange + attackRangeTolerance` (1,2 + 0,5 = **1,7
+   tiles** por defecto; la tolerancia compensa la interpolación del cliente);
+4. han pasado al menos `ceil(playerAttackCooldownSeconds × TickRate)` = **16 ticks** (0,8 s) desde el
+   último ataque **válido** de ese jugador. Se mide en ticks de la zona, nunca con el reloj del
+   cliente.
+
+Un ataque válido quita `playerAttackDamage` (**10**) de vida, con mínimo 0, deja al atacante en
+`Action = Attacking` durante **6 ticks** (0,3 s) y suma `ataques_ok`. Si no es válido no hace nada y
+suma al contador del motivo: `ataque_rech_objetivo`, `ataque_rech_distancia` o
+`ataque_rech_cooldown`.
+
+**Muerte y reaparición.** Al llegar a 0, el orco pasa a `Action = Dead`: deja de moverse y deja de
+poder ser objetivo. A los **30 ticks** (1,5 s, lo que dura la animación) sale de la zona y del área de
+interés. Su spawner programa la reaparición para `max(respawnSeconds, 1,5 s)` después de la muerte:
+crea un orco **nuevo** con ID nuevo, en su `Home`, con la vida llena y la IA reiniciada. El spawner
+nunca tiene más vivos + muertos + pendientes que su `count`. Todo va por ticks y con el mismo `Random`
+sembrado, así que la misma semilla y los mismos ataques dan el mismo estado.
+
+En el snapshot, `HealthPercent = ceil(100 × Health / MaxHealth)`; los jugadores mandan **100** hasta
+I-03. `EntityAction` viaja como byte (`None`, `Attacking`, `Dead`) y un valor desconocido se rechaza
+al decodificar.
+
+El informe periódico y el resumen muestran `ataques_ok`, los tres rechazos, `ataques_cola_llena`,
+`npc_muertes` y `npc_reapariciones`.
+
+> El cliente de Unity de este repositorio todavía habla **v4**; el servidor v5 lo rechaza en el
+> saludo. La vista de la vida, las acciones y las animaciones llega en **I-02b**. Los bots ya usan v5.
+
 ### Configuración
 
 | Campo | Defecto | Significado |
 | --- | --- | --- |
 | `npcsPath` | **`npcs.json`** | Archivo de enemigos; si es relativo se resuelve junto a `server.json`, como `databasePath`. **Vacío = zona sin enemigos.** |
 | `npcSeed` | **12345** | Semilla de la IA. Misma semilla y mismos datos = mismas posiciones. |
+| `playerAttackDamage` | **10** | Vida que quita cada ataque válido; ≥ 1. |
+| `playerAttackRange` | **1.2** | Alcance entre centros, en tiles; > 0 y ≤ 5. |
+| `playerAttackCooldownSeconds` | **0.8** | Segundos entre ataques válidos del mismo jugador; ≥ 0,1. Se redondea a ticks hacia arriba. |
+| `attackRangeTolerance` | **0.5** | Margen sumado al alcance para compensar la interpolación; entre 0 y 2. |
+| `maxQueuedAttacks` | **1024** | Tope de ataques encolados por la red; si se llena, se descartan y se cuentan; ≥ 1. |
+
+### Verificación de I-02
+
+| Prueba | Resultado |
+| --- | --- |
+| `dotnet build` | **0 errores, 0 advertencias** |
+| `dotnet test` | **304/304 en verde** (14 nuevas: 4 de protocolo, 1 de snapshot y 9 de combate, muerte, reaparición y determinismo) |
+| Carga `fight`, 50 bots, 120 s (servidor 160 s) | tick p99 **0.050 ms**, peor **5.147 ms**, **0** ticks > 50 ms; **1 155** ataques válidos, **2 358** rechazos por objetivo, **0** por distancia, **0** por recarga, **0** por cola llena; **385** muertes y **385** reapariciones |
+| Carga `random`, 50 bots, 60 s (servidor 100 s) | **0.180** correcciones por bot y minuto (igual que en I-01) |
+| Bytes enviados | **111.3 MB** en `fight` y **57.1 MB** en `random` (13,16 B/entidad frente a 11,14 B de I-01; el snapshot creció 2 B) |
 
 ---
 
@@ -954,6 +1012,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
+| **I** | Enemigos, combate y botín | ⏳ I-01 e I-02 hechas |
 
 ---
 

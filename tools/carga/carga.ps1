@@ -15,7 +15,7 @@
 param(
     [int]$Bots = 50,
     [int]$Seconds = 120,
-    [ValidateSet('random', 'crowd')]
+    [ValidateSet('random', 'crowd', 'fight')]
     [string]$Behavior = 'random',
     [int]$RampMs = 200,
     [int]$LatencyMs = 0,

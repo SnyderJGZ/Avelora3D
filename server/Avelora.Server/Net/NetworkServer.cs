@@ -470,6 +470,23 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            if (MessageCodec.TryReadAttack(buffer, offset, length, out AttackMessage attack))
+            {
+                // El objetivo lo valida la simulación: aquí solo se cruza la frontera. Si la zona
+                // no tiene combate configurado, el mensaje no tiene a dónde ir y se cuenta como
+                // rechazado.
+                if (_zone.Attacks != null)
+                {
+                    _zone.Attacks.TryEnqueue(new AttackIntent(entityId, attack.TargetId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
             if (!MessageCodec.TryReadMoveInput(buffer, offset, length, out MoveInputMessage input))
             {
                 Interlocked.Increment(ref _messagesRejected);
@@ -1151,13 +1168,19 @@ namespace Avelora.Server.Net
             {
                 Entity entity = _visibleBuffer[i];
 
+                // Un PNJ herido manda su vida en porcentaje; los jugadores todavía no tienen vida
+                // (I-03), así que mandan siempre 100.
+                byte healthPercent = entity is NpcEntity npc ? npc.HealthPercent : (byte)100;
+
                 states[i] = new EntityState(
                     entity.Id,
                     ProtocolConstants.QuantizePosition(entity.Position.X),
                     ProtocolConstants.QuantizePosition(entity.Position.Y),
                     entity.DirectionX,
                     entity.DirectionY,
-                    entity.Kind);
+                    entity.Kind,
+                    healthPercent,
+                    entity.Action);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

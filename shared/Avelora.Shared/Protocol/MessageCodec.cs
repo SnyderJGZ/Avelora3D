@@ -27,9 +27,10 @@ namespace Avelora.Shared.Protocol
         // Tipo, secuencia del más nuevo y número de inputs. Cada input añade dos bytes
         // (dirX, dirY), así que el mensaje mide 6 + 2n entre 8 y 14 bytes.
         private const int MoveInputHeaderSize = 1 + 4 + 1;
+        private const int AttackSize = 1 + 4;
         private const int RejectSize = 1 + 1;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
-        private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1;
+        private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1;
 
         private const int WelcomeSize =
             1 + // tipo
@@ -367,8 +368,39 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        // ---------------------------------------------------------------- servidor → cliente
+        /// <summary>Codifica una intención de ataque: tipo (1) + objetivo (4) = 5 bytes.</summary>
+        public static byte[] EncodeAttack(in AttackMessage message)
+        {
+            var buffer = new byte[AttackSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Attack);
+            writer.WriteInt32(message.TargetId);
+            return buffer;
+        }
 
+        /// <summary>Lee una intención de ataque. La longitud debe ser exactamente 5 bytes.</summary>
+        public static bool TryReadAttack(byte[] buffer, int offset, int length, out AttackMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.Attack, AttackSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                message = new AttackMessage(reader.ReadInt32());
+                return reader.Remaining == 0;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        // ---------------------------------------------------------------- servidor → cliente
         /// <summary>Codifica la aceptación del saludo: 69 bytes.</summary>
         public static byte[] EncodeWelcome(in WelcomeMessage message)
         {
@@ -480,7 +512,7 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica un snapshot: cabecera de 11 bytes más 11 por entidad. El número de entidades
+        /// Codifica un snapshot: cabecera de 11 bytes más 13 por entidad. El número de entidades
         /// debe caber en <see cref="ProtocolConstants.MaxEntitiesPerSnapshot"/>.
         /// </summary>
         public static byte[] EncodeSnapshot(in SnapshotMessage message)
@@ -492,6 +524,19 @@ namespace Avelora.Shared.Protocol
                 throw new ArgumentOutOfRangeException(
                     nameof(message),
                     "Un snapshot no puede llevar más de " + ProtocolConstants.MaxEntitiesPerSnapshot + " entidades.");
+            }
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                // La vida y la acción son parte del formato: un valor fuera de rango rompería al
+                // cliente, así que se para en el servidor (donde el fallo es un error de código).
+                if (entities[i].HealthPercent > 100 ||
+                    entities[i].Action > EntityAction.Dead)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(message),
+                        "La entidad " + entities[i].Id + " lleva vida o acción fuera de rango.");
+                }
             }
 
             var buffer = new byte[SnapshotHeaderSize + (entities.Length * EntityStateSize)];
@@ -510,6 +555,8 @@ namespace Avelora.Shared.Protocol
                 writer.WriteSByte(state.DirectionX);
                 writer.WriteSByte(state.DirectionY);
                 writer.WriteByte((byte)state.Kind);
+                writer.WriteByte(state.HealthPercent);
+                writer.WriteByte((byte)state.Action);
             }
 
             return buffer;
@@ -564,18 +611,29 @@ namespace Avelora.Shared.Protocol
                     sbyte directionX = reader.ReadSByte();
                     sbyte directionY = reader.ReadSByte();
                     byte rawKind = reader.ReadByte();
+                    byte healthPercent = reader.ReadByte();
+                    byte rawAction = reader.ReadByte();
 
-                    // Ni el tipo ni la dirección pueden ser valores inventados: si lo son, el
-                    // snapshot entero está mal y no se aplica. El límite es el último valor
-                    // definido; la prueba de enumeraciones completas avisa si se añade otro.
+                    // Ni el tipo, la dirección, la vida ni la acción pueden ser valores inventados:
+                    // si lo son, el snapshot entero está mal y no se aplica. El límite es el último
+                    // valor definido; la prueba de enumeraciones completas avisa si se añade otro.
                     if (rawKind > (byte)EntityKind.Npc ||
-                        !MovementSimulator.IsValidDirection(directionX, directionY))
+                        !MovementSimulator.IsValidDirection(directionX, directionY) ||
+                        healthPercent > 100 ||
+                        rawAction > (byte)EntityAction.Dead)
                     {
                         return false;
                     }
 
                     entities[i] = new EntityState(
-                        id, x, y, directionX, directionY, (EntityKind)rawKind);
+                        id,
+                        x,
+                        y,
+                        directionX,
+                        directionY,
+                        (EntityKind)rawKind,
+                        healthPercent,
+                        (EntityAction)rawAction);
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);

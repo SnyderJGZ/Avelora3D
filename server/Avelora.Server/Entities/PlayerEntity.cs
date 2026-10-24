@@ -41,6 +41,12 @@ namespace Avelora.Server.Entities
         public PlayerInputBuffer Input { get; }
 
         /// <summary>
+        /// Tick del último ataque <b>válido</b> (I-02); <c>-1</c> si aún no ha atacado. La recarga
+        /// se mide contra este valor, siempre en ticks de la zona.
+        /// </summary>
+        public long LastAttackTick { get; set; } = -1;
+
+        /// <summary>
         /// Entidades que este jugador recibió en el último snapshot. La usa el área de interés
         /// para conservar un margen antes de retirar una entidad del borde (histéresis).
         /// </summary>

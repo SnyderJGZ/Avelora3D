@@ -14,6 +14,9 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: intención de movimiento de un tick.</summary>
         MoveInput = 2,
 
+        /// <summary>Cliente → servidor: intención de atacar a una entidad (I-02).</summary>
+        Attack = 3,
+
         /// <summary>Servidor → cliente: aceptación del saludo con la identidad y el punto de aparición.</summary>
         Welcome = 10,
 

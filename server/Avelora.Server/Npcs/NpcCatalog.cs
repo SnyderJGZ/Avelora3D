@@ -29,6 +29,19 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Caja de colisión del tipo.</summary>
         public Vec2 HalfSize => new Vec2(HalfWidth, HalfHeight);
+
+        /// <summary>Vida máxima del tipo (1..100000).</summary>
+        public int MaxHealth { get; set; }
+
+        /// <summary>Segundos que tarda el spawner en reponer un enemigo muerto (0,5..3600).</summary>
+        public float RespawnSeconds { get; set; }
+
+        /// <summary>
+        /// Segundos de reaparición convertidos a ticks de simulación, redondeando hacia arriba:
+        /// nada de relojes, todo se mide en ticks de la zona (I-02).
+        /// </summary>
+        public long RespawnTicks =>
+            (long)Math.Ceiling(RespawnSeconds * SimulationConstants.TickRate);
     }
 
     /// <summary>
@@ -80,6 +93,15 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Semiancho/semialto máximo de la caja de un tipo.</summary>
         public const float MaxHalfSize = 2f;
+
+        /// <summary>Vida máxima admitida para un tipo.</summary>
+        public const int MaxHealthLimit = 100000;
+
+        /// <summary>Segundos de reaparición mínimos admitidos.</summary>
+        public const float MinRespawnSeconds = 0.5f;
+
+        /// <summary>Segundos de reaparición máximos admitidos.</summary>
+        public const float MaxRespawnSeconds = 3600f;
 
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -274,6 +296,23 @@ namespace Avelora.Server.Npcs
                         "npcs.json: el tipo " + type.Id + " tiene halfWidth/halfHeight (" +
                         type.HalfWidth + "; " + type.HalfHeight + "); deben estar entre " +
                         MinHalfSize + " y " + MaxHalfSize + ".");
+                }
+
+                if (type.MaxHealth < 1 || type.MaxHealth > MaxHealthLimit)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene maxHealth " + type.MaxHealth +
+                        "; debe estar entre 1 y " + MaxHealthLimit + ".");
+                }
+
+                if (!(type.RespawnSeconds >= MinRespawnSeconds) ||
+                    type.RespawnSeconds > MaxRespawnSeconds ||
+                    float.IsNaN(type.RespawnSeconds) ||
+                    float.IsInfinity(type.RespawnSeconds))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene respawnSeconds " + type.RespawnSeconds +
+                        "; debe estar entre " + MinRespawnSeconds + " y " + MaxRespawnSeconds + ".");
                 }
             }
         }

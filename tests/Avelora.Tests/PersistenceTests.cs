@@ -237,6 +237,8 @@ namespace Avelora.Tests
                         Speed = 2f,
                         HalfWidth = 0.35f,
                         HalfHeight = 0.35f,
+                        MaxHealth = 30,
+                        RespawnSeconds = 10f,
                     },
                 },
                 Spawners = new List<NpcSpawner>

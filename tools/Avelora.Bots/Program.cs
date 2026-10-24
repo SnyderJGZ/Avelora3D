@@ -169,6 +169,7 @@ namespace Avelora.Bots
                         retries: options.Retries,
                         welcomeTimeoutMs: options.WelcomeTimeoutMs,
                         behavior: options.Behavior,
+                        attackCooldownMs: options.AttackCooldownMs,
                         map: map,
                         inputRedundancy: options.InputRedundancy,
                         logCorrections: options.LogCorrections,
@@ -223,6 +224,8 @@ namespace Avelora.Bots
             long corrections = 0;
             long snaps = 0;
             long playedMs = 0;
+            long sentAttacks = 0;
+            long deathsSeen = 0;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
@@ -253,6 +256,8 @@ namespace Avelora.Bots
 
                 corrections += bot.Corrections;
                 snaps += bot.Snaps;
+                sentAttacks += bot.SentAttacks;
+                deathsSeen += bot.DeathsSeen;
 
                 if (bot.EntityId > 0)
                 {
@@ -292,6 +297,13 @@ namespace Avelora.Bots
                     " saltos=" + bot.Snaps +
                     " snapshots=" + bot.Snapshots);
 
+                if (options.Behavior == BotBehavior.Fight)
+                {
+                    Console.WriteLine(
+                        "      combate: ataques=" + bot.SentAttacks +
+                        " muertes_vistas=" + bot.DeathsSeen);
+                }
+
                 if (abusive)
                 {
                     Console.WriteLine(
@@ -329,6 +341,13 @@ namespace Avelora.Bots
                 (minutes > 0d
                     ? " (" + Invariant(corrections / minutes) + "/bot/min, " + Invariant(snaps / minutes) + "/bot/min)"
                     : " (sin tiempo jugado)"));
+
+            if (options.Behavior == BotBehavior.Fight)
+            {
+                Console.WriteLine(
+                    "  Combate    : " + sentAttacks + " ataques enviados, " +
+                    deathsSeen + " muertes vistas");
+            }
 
             if (abusive)
             {
@@ -722,11 +741,22 @@ namespace Avelora.Bots
                         if (!TryParseBehavior(value, out BotBehavior behavior))
                         {
                             error = "Comportamiento desconocido: " + value +
-                                " (random|crowd|flood|garbage|speed|replay|badlogin)";
+                                " (random|crowd|fight|flood|garbage|speed|replay|badlogin)";
                             return false;
                         }
 
                         options.Behavior = behavior;
+                        break;
+
+                    case "--attack-cooldown-ms":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int attackCooldownMs) ||
+                            attackCooldownMs < 0)
+                        {
+                            error = "Recarga de ataque inválida: " + value + " (>= 0 ms)";
+                            return false;
+                        }
+
+                        options.AttackCooldownMs = attackCooldownMs;
                         break;
 
                     case "--seed":
@@ -853,6 +883,12 @@ namespace Avelora.Bots
                 return true;
             }
 
+            if (string.Equals(value, "fight", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Fight;
+                return true;
+            }
+
             if (string.Equals(value, "flood", StringComparison.OrdinalIgnoreCase))
             {
                 behavior = BotBehavior.Flood;
@@ -904,6 +940,9 @@ namespace Avelora.Bots
             public int WelcomeTimeoutMs { get; set; } = 15000;
 
             public BotBehavior Behavior { get; set; } = BotBehavior.Random;
+
+            /// <summary>Recarga entre ataques del modo <c>fight</c>; el servidor usa 800 ms por defecto.</summary>
+            public int AttackCooldownMs { get; set; } = 800;
 
             public int Seed { get; set; } = 20261019;
 

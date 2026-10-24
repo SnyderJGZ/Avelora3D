@@ -109,6 +109,24 @@ namespace Avelora.Server.Configuration
         /// <summary>Semialto de la caja de colisión del jugador.</summary>
         public float PlayerHalfHeight { get; set; } = 0.4f;
 
+        /// <summary>Daño que hace cada ataque de un jugador (I-02).</summary>
+        public int PlayerAttackDamage { get; set; } = 10;
+
+        /// <summary>Alcance del ataque, en tiles, medido entre centros (I-02).</summary>
+        public float PlayerAttackRange { get; set; } = 1.2f;
+
+        /// <summary>Segundos entre dos ataques válidos de un mismo jugador (I-02).</summary>
+        public double PlayerAttackCooldownSeconds { get; set; } = 0.8d;
+
+        /// <summary>
+        /// Margen de distancia que se suma al alcance. Compensa que el cliente ve a los demás unos
+        /// 100 ms en el pasado por la interpolación (I-02).
+        /// </summary>
+        public float AttackRangeTolerance { get; set; } = 0.5f;
+
+        /// <summary>Tope de ataques encolados por la red: si se llena, se descartan (I-02).</summary>
+        public int MaxQueuedAttacks { get; set; } = 1024;
+
         /// <summary>Tope de intenciones que el tick saca de la cola de entrada por vuelta (protege la duración del tick).</summary>
         public int MaxIntentsPerTick { get; set; } = 128;
 
@@ -315,7 +333,50 @@ namespace Avelora.Server.Configuration
 
             ValidateNetwork();
             ValidateInterest();
+            ValidateCombat();
             ValidatePersistence();
+        }
+
+        /// <summary>
+        /// Valida el combate (I-02). Un alcance o un daño imposibles impedirían jugar con reglas
+        /// claras, así que se para al arrancar y no en mitad del tick.
+        /// </summary>
+        private void ValidateCombat()
+        {
+            if (PlayerAttackDamage < 1)
+            {
+                throw new InvalidOperationException("playerAttackDamage debe ser >= 1.");
+            }
+
+            if (!(PlayerAttackRange > 0f) ||
+                PlayerAttackRange > 5f ||
+                float.IsNaN(PlayerAttackRange) ||
+                float.IsInfinity(PlayerAttackRange))
+            {
+                throw new InvalidOperationException(
+                    "playerAttackRange debe ser mayor que 0 y como mucho 5.");
+            }
+
+            if (!(PlayerAttackCooldownSeconds >= 0.1d) ||
+                double.IsNaN(PlayerAttackCooldownSeconds) ||
+                double.IsInfinity(PlayerAttackCooldownSeconds))
+            {
+                throw new InvalidOperationException("playerAttackCooldownSeconds debe ser >= 0,1.");
+            }
+
+            if (AttackRangeTolerance < 0f ||
+                AttackRangeTolerance > 2f ||
+                float.IsNaN(AttackRangeTolerance) ||
+                float.IsInfinity(AttackRangeTolerance))
+            {
+                throw new InvalidOperationException(
+                    "attackRangeTolerance debe estar entre 0 y 2.");
+            }
+
+            if (MaxQueuedAttacks < 1)
+            {
+                throw new InvalidOperationException("maxQueuedAttacks debe ser >= 1.");
+            }
         }
 
         /// <summary>

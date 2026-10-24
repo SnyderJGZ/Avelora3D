@@ -46,6 +46,18 @@ namespace Avelora.Server.Entities
         public sbyte DirectionY { get; set; }
 
         /// <summary>
+        /// Acción visible que viaja en el snapshot (I-02): ninguno, atacando o muerto. El cliente
+        /// solo la dibuja; quién puede atacar o morir lo decide el servidor.
+        /// </summary>
+        public EntityAction Action { get; set; }
+
+        /// <summary>
+        /// Tick hasta el que se mantiene <see cref="EntityAction.Attacking"/>. Solo lo usa la
+        /// simulación para apagar la acción cuando ya ha pasado el golpe.
+        /// </summary>
+        public long ActionUntilTick { get; set; }
+
+        /// <summary>
         /// Celda de la grilla espacial, para el área de interés. La mantiene
         /// <see cref="EntitySpatialGrid"/>; <see cref="NoCell"/> significa «sin indexar».
         /// </summary>

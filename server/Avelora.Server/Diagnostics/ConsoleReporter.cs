@@ -78,6 +78,13 @@ namespace Avelora.Server.Diagnostics
                     : (npcs.Types?.Count ?? 0) + " tipo(s), " + (npcs.Spawners?.Count ?? 0) +
                       " spawner(s), " + npcs.TotalEnemies + " enemigo(s)"));
             Console.WriteLine(
+                "  Combate       : daño " + config.PlayerAttackDamage +
+                ", alcance " + Invariant(config.PlayerAttackRange, "0.##") +
+                " (+" + Invariant(config.AttackRangeTolerance, "0.##") + ") tiles" +
+                ", recarga " + Invariant(config.PlayerAttackCooldownSeconds, "0.#") + " s (" +
+                (long)Math.Ceiling(config.PlayerAttackCooldownSeconds * SimulationConstants.TickRate) +
+                " ticks), cola de ataques " + config.MaxQueuedAttacks);
+            Console.WriteLine(
                 "  Límites       : " + config.MaxIntentsPerTick + " inputs/tick, " +
                 config.MaxIntentsPerPlayerPerTick + "/jugador/tick, cola de jugador " +
                 config.InputBufferCapacity + ", cola de entrada " + config.MaxQueuedIntents +
@@ -122,6 +129,15 @@ namespace Avelora.Server.Diagnostics
                 " tope_jugador=" + zone.RejectedPerPlayerLimit +
                 " ajena=" + zone.RejectedUnknownEntity +
                 " direccion=" + zone.Inputs.RejectedInvalidDirection);
+
+            Console.WriteLine(
+                "            combate: ataques_ok=" + zone.AttacksOk +
+                " ataque_rech_objetivo=" + zone.RejectedAttackTarget +
+                " ataque_rech_distancia=" + zone.RejectedAttackDistance +
+                " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
+                " ataques_cola_llena=" + (zone.Attacks?.RejectedQueueFull ?? 0) +
+                " npc_muertes=" + zone.NpcDeaths +
+                " npc_reapariciones=" + zone.NpcRespawns);
 
             Console.WriteLine(
                 "            cuenta: login_ok=" + network.LoginsSucceeded +
@@ -219,6 +235,13 @@ namespace Avelora.Server.Diagnostics
                 zone.RedundantDuplicates + " redundantes, " + zone.RejectedOutOfOrder +
                 " fuera de orden, " + zone.RejectedPerPlayerLimit + " por tope de jugador, " +
                 zone.RejectedBufferFull + " por búfer lleno");
+            Console.WriteLine(
+                "  Combate         : " + zone.AttacksOk + " ataques válidos, " +
+                zone.RejectedAttackTarget + " rechazados por objetivo, " +
+                zone.RejectedAttackDistance + " por distancia, " +
+                zone.RejectedAttackCooldown + " por recarga, " +
+                (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
+                zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones");
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +

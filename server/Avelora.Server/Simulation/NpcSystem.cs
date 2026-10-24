@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Npcs;
 using Avelora.Shared;
@@ -7,19 +8,22 @@ using Avelora.Shared;
 namespace Avelora.Server.Simulation
 {
     /// <summary>
-    /// IA de deambular de los enemigos (I-01): dirección aleatoria cada pocos ticks, con vuelta a
-    /// casa cuando se alejan demasiado, y movimiento con el mismo <see cref="MovementSimulator"/>
-    /// que usan los jugadores.
+    /// IA de los enemigos: deambular, muerte y reaparición (I-01 e I-02).
     /// </summary>
     /// <remarks>
     /// <para>
+    /// Deambular: dirección aleatoria cada pocos ticks, con vuelta a casa cuando se alejan
+    /// demasiado, y movimiento con el mismo <see cref="MovementSimulator"/> que usan los jugadores.
+    /// </para>
+    /// <para>
     /// Un único <see cref="System.Random"/>, sembrado con <c>ServerConfig.NpcSeed</c>: con la misma
-    /// semilla y los mismos datos, dos zonas producen exactamente las mismas posiciones. Por eso no
-    /// se usa <see cref="Random.Shared"/> ni el reloj.
+    /// semilla y los mismos datos, dos zonas producen exactamente las mismas posiciones y las mismas
+    /// reapariciones. Por eso no se usa <see cref="Random.Shared"/> ni el reloj.
     /// </para>
     /// <para>
     /// Solo se toca desde el hilo de simulación, dentro de <see cref="Zone.Tick"/>, justo después de
-    /// mover a los jugadores y antes de reindexar el área de interés. No reserva memoria por tick.
+    /// mover a los jugadores y del combate, y antes de reindexar el área de interés. No reserva
+    /// memoria por tick.
     /// </para>
     /// </remarks>
     public sealed class NpcSystem
@@ -38,14 +42,27 @@ namespace Avelora.Server.Simulation
         private readonly System.Random _random;
         private long _tick;
 
+        private SpawnerState[] _spawners = Array.Empty<SpawnerState>();
+        private EntityIdAllocator? _ids;
+        private int _zoneId;
+
+        private long _deaths;
+        private long _respawns;
+
         public NpcSystem(MapCollisionGrid map, int seed)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _random = new System.Random(seed);
         }
 
-        /// <summary>Ticks de IA ejecutados. Es el reloj con el que se programan los cambios.</summary>
+        /// <summary>Ticks de IA ejecutados. Es el reloj con el que se programan cambios y reapariciones.</summary>
         public long TickCount => _tick;
+
+        /// <summary>Enemigos que han muerto desde el arranque.</summary>
+        public long Deaths => _deaths;
+
+        /// <summary>Enemigos que han reaparecido desde el arranque.</summary>
+        public long Respawns => _respawns;
 
         /// <summary>
         /// Coloca los enemigos de <paramref name="catalog"/> en el almacén, con Ids nuevos de
@@ -72,6 +89,10 @@ namespace Avelora.Server.Simulation
                 throw new ArgumentNullException(nameof(ids));
             }
 
+            _ids = ids;
+            _zoneId = zoneId;
+            _spawners = new SpawnerState[catalog.Spawners.Count];
+
             for (int s = 0; s < catalog.Spawners.Count; s++)
             {
                 NpcSpawner spawner = catalog.Spawners[s];
@@ -90,43 +111,153 @@ namespace Avelora.Server.Simulation
                         ", dentro de una pared: la caja del tipo " + type.Id + " no cabe.");
                 }
 
+                var state = new SpawnerState(spawner, type) { Alive = spawner.Count };
+                _spawners[s] = state;
+
                 for (int i = 0; i < spawner.Count; i++)
                 {
-                    var npc = new NpcEntity(
-                        ids.Allocate(),
-                        type.Id,
-                        type.Speed,
-                        spawner.Position,
-                        spawner.WanderRadius,
-                        _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1))
-                    {
-                        MapId = zoneId,
-                        Position = spawner.Position,
-                        HalfSize = type.HalfSize,
-                    };
-
-                    entities.Add(npc);
+                    entities.Add(CreateNpc(state, s));
                 }
             }
         }
 
-        /// <summary>Avanza un paso de IA y movimiento a cada enemigo del almacén.</summary>
-        public void Tick(EntityStore entities)
+        /// <summary>
+        /// Avanza un paso de IA y movimiento a cada enemigo vivo, repone los que tocan y anota en
+        /// <paramref name="removed"/> los cadáveres que ya han cumplido su tiempo.
+        /// </summary>
+        /// <remarks>
+        /// Este método no toca el almacén para quitar: la zona es quien retira del almacén y del
+        /// área de interés, en el mismo tick y antes de reindexar (así el snapshot ya no los ve).
+        /// </remarks>
+        public void Tick(EntityStore entities, List<NpcEntity> removed)
         {
             if (entities is null)
             {
                 throw new ArgumentNullException(nameof(entities));
             }
 
+            if (removed is null)
+            {
+                throw new ArgumentNullException(nameof(removed));
+            }
+
+            removed.Clear();
+
+            // Las reapariciones se crean antes de recorrer: entran este mismo tick y la IA las
+            // tratará como a cualquier otro enemigo.
+            RespawnDue(entities);
+
             for (int i = 0; i < entities.Count; i++)
             {
-                if (entities[i] is NpcEntity npc)
+                if (!(entities[i] is NpcEntity npc))
                 {
-                    Step(npc);
+                    continue;
                 }
+
+                if (npc.Action == EntityAction.Dead)
+                {
+                    if (!npc.DeathScheduled)
+                    {
+                        RegisterDeath(npc);
+                    }
+
+                    if (_tick - npc.DeathTick >= NpcEntity.DeathAnimationTicks)
+                    {
+                        removed.Add(npc);
+                    }
+
+                    continue;
+                }
+
+                Step(npc);
             }
 
             _tick++;
+        }
+
+        /// <summary>Anota la muerte una sola vez y programa la reaparición de su spawner.</summary>
+        private void RegisterDeath(NpcEntity npc)
+        {
+            npc.DeathScheduled = true;
+            npc.DeathTick = _tick;
+            _deaths++;
+
+            if (npc.SpawnerIndex < 0 || npc.SpawnerIndex >= _spawners.Length)
+            {
+                return;
+            }
+
+            SpawnerState state = _spawners[npc.SpawnerIndex];
+
+            // Mientras el cadáver siga en la zona ya cuenta como «pendiente»: vivos + pendientes
+            // nunca supera el count del spawner. Si la reaparición pedida fuera más corta que la
+            // animación de muerte, se espera a que el cadáver desaparezca.
+            state.Alive--;
+            state.Pending++;
+            state.RespawnAt.Add(_tick + Math.Max(npc.RespawnTicks, NpcEntity.DeathAnimationTicks));
+        }
+
+        /// <summary>Crea los enemigos cuyo plazo de reaparición ha vencido, en orden de muerte.</summary>
+        private void RespawnDue(EntityStore entities)
+        {
+            for (int s = 0; s < _spawners.Length; s++)
+            {
+                SpawnerState state = _spawners[s];
+                List<long> pending = state.RespawnAt;
+
+                if (pending.Count == 0)
+                {
+                    continue;
+                }
+
+                int write = 0;
+
+                for (int i = 0; i < pending.Count; i++)
+                {
+                    if (pending[i] <= _tick)
+                    {
+                        entities.Add(CreateNpc(state, s));
+                        state.Pending--;
+                        state.Alive++;
+                        _respawns++;
+                    }
+                    else
+                    {
+                        pending[write++] = pending[i];
+                    }
+                }
+
+                if (write < pending.Count)
+                {
+                    pending.RemoveRange(write, pending.Count - write);
+                }
+            }
+        }
+
+        /// <summary>Crea un enemigo nuevo del spawner, en su punto y con la vida llena.</summary>
+        private NpcEntity CreateNpc(SpawnerState state, int spawnerIndex)
+        {
+            if (_ids == null)
+            {
+                throw new InvalidOperationException(
+                    "No se puede crear un enemigo sin haber llamado antes a Spawn.");
+            }
+
+            return new NpcEntity(
+                _ids.Allocate(),
+                state.Type.Id,
+                state.Type.Speed,
+                state.Spawner.Position,
+                state.Spawner.WanderRadius,
+                _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1),
+                state.Type.MaxHealth,
+                state.Type.RespawnTicks,
+                spawnerIndex)
+            {
+                MapId = _zoneId,
+                Position = state.Spawner.Position,
+                HalfSize = state.Type.HalfSize,
+            };
         }
 
         private void Step(NpcEntity npc)
@@ -191,5 +322,28 @@ namespace Avelora.Server.Simulation
 
         private static sbyte Sign(float value) =>
             value > 0f ? (sbyte)1 : value < 0f ? (sbyte)-1 : (sbyte)0;
+
+        /// <summary>Lo que el spawner sabe de sus enemigos: cuántos viven y cuántos esperan turno.</summary>
+        private sealed class SpawnerState
+        {
+            public SpawnerState(NpcSpawner spawner, NpcType type)
+            {
+                Spawner = spawner;
+                Type = type;
+            }
+
+            public NpcSpawner Spawner { get; }
+
+            public NpcType Type { get; }
+
+            /// <summary>Enemigos vivos en la zona.</summary>
+            public int Alive { get; set; }
+
+            /// <summary>Reapariciones apuntadas, incluidos los cadáveres que aún se ven.</summary>
+            public int Pending { get; set; }
+
+            /// <summary>Ticks en los que toca reponer, en orden de muerte.</summary>
+            public List<long> RespawnAt { get; } = new List<long>();
+        }
     }
 }

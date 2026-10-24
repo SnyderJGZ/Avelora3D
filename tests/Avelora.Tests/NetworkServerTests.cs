@@ -35,7 +35,15 @@ namespace Avelora.Tests
                 new MovementSystem(config.PlayerSpeed, SimulationConstants.FixedDt),
                 config.MaxIntentsPerTick,
                 config.MaxIntentsPerPlayerPerTick,
-                new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis));
+                new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis),
+                npcs: null,
+                npcSeed: 12345,
+                attacks: new AttackQueue(config.MaxQueuedAttacks),
+                combat: new CombatSettings(
+                    config.PlayerAttackDamage,
+                    config.PlayerAttackRange,
+                    config.AttackRangeTolerance,
+                    config.PlayerAttackCooldownSeconds));
         }
 
         private sealed class Harness : IDisposable
@@ -445,7 +453,10 @@ namespace Avelora.Tests
                 2f,
                 new Vec2(1f, 5f),
                 2f,
-                nextDirectionChangeTick: 10_000)
+                nextDirectionChangeTick: 10_000,
+                maxHealth: 30,
+                respawnTicks: 200,
+                spawnerIndex: -1)
             {
                 Position = new Vec2(1f, 5f),
                 HalfSize = new Vec2(0.35f, 0.35f),
@@ -464,6 +475,72 @@ namespace Avelora.Tests
 
             SnapshotMessage farSnapshot = SnapshotFor(harness, 2);
             Assert.DoesNotContain(farSnapshot.Entities, e => e.Id == 100);
+        }
+
+        [Fact]
+        public void El_Snapshot_Lleva_La_Vida_Y_La_Accion()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.InterestRadius = 6f;
+                config.InterestCellSize = 2f;
+                config.InterestHysteresis = 0f;
+            });
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            player.Position = new Vec2(0f, 5f);
+
+            var npc = new NpcEntity(
+                100,
+                2001,
+                0f,
+                new Vec2(1f, 5f),
+                2f,
+                nextDirectionChangeTick: long.MaxValue,
+                maxHealth: 30,
+                respawnTicks: 200,
+                spawnerIndex: -1)
+            {
+                Position = new Vec2(1f, 5f),
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+
+            // Un orco herido: 21/30 = 70 % exacto.
+            npc.Health = 21;
+            harness.Zone.AddEntity(npc);
+
+            SendSnapshots(harness);
+
+            EntityState wounded = Assert.Single(SnapshotFor(harness, 1).Entities, e => e.Id == 100);
+            Assert.Equal(EntityKind.Npc, wounded.Kind);
+            Assert.Equal((byte)70, wounded.HealthPercent);
+            Assert.Equal(EntityAction.None, wounded.Action);
+
+            // El ataque cruza la red y el servidor lo resuelve en el tick siguiente: 11/30 = 37 %.
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(new AttackMessage(100)));
+            SendSnapshots(harness);
+
+            SnapshotMessage afterAttack = SnapshotFor(harness, 1);
+            EntityState hit = Assert.Single(afterAttack.Entities, e => e.Id == 100);
+            Assert.Equal((byte)37, hit.HealthPercent);
+            Assert.Equal(EntityAction.None, hit.Action);
+
+            EntityState attacker = Assert.Single(afterAttack.Entities, e => e.Id == player.Id);
+            Assert.Equal((byte)100, attacker.HealthPercent);
+            Assert.Equal(EntityAction.Attacking, attacker.Action);
+
+            // Un orco muerto manda 0 % y la acción Dead.
+            npc.Health = 0;
+            npc.Action = EntityAction.Dead;
+            SendSnapshots(harness);
+
+            EntityState dead = Assert.Single(SnapshotFor(harness, 1).Entities, e => e.Id == 100);
+            Assert.Equal((byte)0, dead.HealthPercent);
+            Assert.Equal(EntityAction.Dead, dead.Action);
         }
 
         [Fact]

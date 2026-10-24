@@ -54,6 +54,8 @@ namespace Avelora.Tests
                     Speed = 2f,
                     HalfWidth = 0.35f,
                     HalfHeight = 0.35f,
+                    MaxHealth = 30,
+                    RespawnSeconds = 10f,
                 },
             },
             Spawners = new List<NpcSpawner>(spawners),
@@ -88,7 +90,7 @@ namespace Avelora.Tests
         {
             string path = WriteTempJson(@"{
   ""types"": [
-    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35 }
+    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""respawnSeconds"": 10 }
   ],
   ""spawners"": [
     { ""typeId"": 2001, ""x"": 3.5, ""y"": 1.5, ""count"": 3, ""wanderRadius"": 3.0 },
@@ -105,6 +107,9 @@ namespace Avelora.Tests
                 Assert.Equal(5, catalog.TotalEnemies);
                 Assert.Equal("Orco", catalog.Types[0].Name);
                 Assert.Equal(2001, catalog.FindType(2001)!.Id);
+                Assert.Equal(30, catalog.FindType(2001)!.MaxHealth);
+                Assert.Equal(10f, catalog.FindType(2001)!.RespawnSeconds);
+                Assert.Equal(200L, catalog.FindType(2001)!.RespawnTicks);
 
                 catalog.Validate(MapFile.Load(MapPath));
             }
