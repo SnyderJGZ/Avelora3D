@@ -8,12 +8,20 @@ namespace Avelora.Shared.Prediction
     /// <summary>Muestra de una entidad ya descuantizada, lista para dibujar.</summary>
     public readonly struct EntitySample
     {
-        public EntitySample(Vec2 position, sbyte directionX, sbyte directionY, EntityKind kind)
+        public EntitySample(
+            Vec2 position,
+            sbyte directionX,
+            sbyte directionY,
+            EntityKind kind,
+            byte healthPercent = 100,
+            EntityAction action = EntityAction.None)
         {
             Position = position;
             DirectionX = directionX;
             DirectionY = directionY;
             Kind = kind;
+            HealthPercent = healthPercent;
+            Action = action;
         }
 
         public Vec2 Position { get; }
@@ -23,6 +31,12 @@ namespace Avelora.Shared.Prediction
         public sbyte DirectionY { get; }
 
         public EntityKind Kind { get; }
+
+        /// <summary>Vida en porcentaje (0–100) del snapshot más nuevo de los dos interpolados.</summary>
+        public byte HealthPercent { get; }
+
+        /// <summary>Acción del snapshot más nuevo: no se interpola, se toma tal cual.</summary>
+        public EntityAction Action { get; }
     }
 
     /// <summary>
@@ -150,7 +164,9 @@ namespace Avelora.Shared.Prediction
                             Lerp(from.Position, to.Position, (float)fraction),
                             to.DirectionX,
                             to.DirectionY,
-                            to.Kind);
+                            to.Kind,
+                            to.HealthPercent,
+                            to.Action);
                         return true;
                     }
                 }
@@ -210,7 +226,9 @@ namespace Avelora.Shared.Prediction
                 Lerp(beforeSample.Position, afterSample.Position, (float)t),
                 afterSample.DirectionX,
                 afterSample.DirectionY,
-                afterSample.Kind);
+                afterSample.Kind,
+                afterSample.HealthPercent,
+                afterSample.Action);
             return true;
         }
 
@@ -237,7 +255,9 @@ namespace Avelora.Shared.Prediction
                                 ProtocolConstants.DequantizePosition(state.Y)),
                             state.DirectionX,
                             state.DirectionY,
-                            state.Kind);
+                            state.Kind,
+                            state.HealthPercent,
+                            state.Action);
                         return true;
                     }
                 }

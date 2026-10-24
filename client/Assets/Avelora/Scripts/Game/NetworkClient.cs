@@ -79,6 +79,23 @@ namespace Avelora.Client
 
         [SerializeField] private Sprite[] npcWalkSprites = new Sprite[0];
 
+        [SerializeField] private Sprite[] npcHurtSprites = new Sprite[0];
+
+        [SerializeField] private Sprite[] npcDeathSprites = new Sprite[0];
+
+        // shortcut: copia de playerAttackRange y playerAttackCooldownSeconds de server.json. Si el
+        // servidor los cambia, se envían ataques que rechaza; pasarán al Welcome con las armas (I-04).
+        private const float AttackRange = 1.2f;
+        private const float AttackCooldownSeconds = 0.8f;
+        private const float HintSeconds = 1.5f;
+        private const float PickRadius = 0.5f;
+
+        private int _selectedNpcId;
+        private float _nextAttackAt;
+        private string _combatHint = string.Empty;
+        private float _combatHintUntil;
+        private int _attacksSent;
+
         [Header("Diagnóstico")]
         [SerializeField] private bool showOverlay = true;
 
@@ -308,6 +325,8 @@ namespace Avelora.Client
                 return;
             }
 
+            HandleCombatInput();
+
             double frame = Time.deltaTime;
             if (frame > MaxFrameSeconds)
             {
@@ -399,6 +418,114 @@ namespace Avelora.Client
 
             _transport.Send(bytes, bytes.Length, DeliveryMode.Sequenced);
             _inputsSent++;
+        }
+
+        /// <summary>
+        /// Clic izquierdo selecciona el PNJ vivo bajo el ratón (o quita la selección); Espacio
+        /// pide atacarlo (I-02b). El servidor valida todo: aquí solo se evita mandar lo que seguro
+        /// rechazaría.
+        /// </summary>
+        private void HandleCombatInput()
+        {
+            Mouse mouse = Mouse.current;
+            Camera cam = Camera.main;
+
+            if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame)
+            {
+                Vector2 screen = mouse.position.ReadValue();
+                Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
+                Select(PickNpcAt(world));
+            }
+
+            RemotePlayerView target = SelectedTarget();
+            if (target == null && _selectedNpcId != 0)
+            {
+                Select(0);
+            }
+
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null || !keyboard.spaceKey.isPressed || Time.unscaledTime < _nextAttackAt)
+            {
+                return;
+            }
+
+            if (target == null)
+            {
+                ShowHint("sin objetivo: haz clic en un enemigo");
+                return;
+            }
+
+            Vector2 delta = (Vector2)(target.transform.position - transform.position);
+            if (delta.sqrMagnitude > AttackRange * AttackRange)
+            {
+                ShowHint("fuera de alcance");
+                return;
+            }
+
+            byte[] bytes = MessageCodec.EncodeAttack(new AttackMessage(target.EntityId));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            _attacksSent++;
+            _nextAttackAt = Time.unscaledTime + AttackCooldownSeconds;
+        }
+
+        private int PickNpcAt(Vector3 world)
+        {
+            int best = 0;
+            float bestDistance = PickRadius * PickRadius;
+
+            foreach (KeyValuePair<int, RemotePlayerView> pair in _remoteViews)
+            {
+                RemotePlayerView view = pair.Value;
+                if (view == null || view.Kind != EntityKind.Npc || view.IsDead)
+                {
+                    continue;
+                }
+
+                Vector2 delta = (Vector2)(view.transform.position - world);
+                float distance = delta.sqrMagnitude;
+                if (distance <= bestDistance)
+                {
+                    best = pair.Key;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
+        private RemotePlayerView SelectedTarget()
+        {
+            if (_selectedNpcId == 0 ||
+                !_remoteViews.TryGetValue(_selectedNpcId, out RemotePlayerView view) ||
+                view == null || view.IsDead)
+            {
+                return null;
+            }
+
+            return view;
+        }
+
+        private void Select(int entityId)
+        {
+            if (_selectedNpcId != 0 &&
+                _remoteViews.TryGetValue(_selectedNpcId, out RemotePlayerView previous) &&
+                previous != null)
+            {
+                previous.SetSelected(false);
+            }
+
+            _selectedNpcId = entityId;
+
+            if (entityId != 0 && _remoteViews.TryGetValue(entityId, out RemotePlayerView next) && next != null)
+            {
+                next.SetSelected(true);
+            }
+        }
+
+        private void ShowHint(string hint)
+        {
+            _combatHint = hint;
+            _combatHintUntil = Time.unscaledTime + HintSeconds;
         }
 
         /// <summary>Vacía el historial al empezar una conexión: no se mezclan secuencias de otra sesión.</summary>
@@ -771,7 +898,7 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Npc)
             {
-                view.SetNpcSheets(npcIdleSprites, npcWalkSprites);
+                view.SetNpcSheets(npcIdleSprites, npcWalkSprites, npcHurtSprites, npcDeathSprites);
             }
 
             if (sprite == null)
@@ -924,9 +1051,14 @@ namespace Avelora.Client
                 _overlayStyle.normal.textColor = Color.white;
             }
 
-            GUI.Box(new Rect(10f, 10f, 540f, 112f), GUIContent.none);
+            string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId.ToString() : "ninguno") +
+                " · Ataques " + _attacksSent +
+                (Time.unscaledTime < _combatHintUntil ? " · " + _combatHint : string.Empty);
+
+            GUI.Box(new Rect(10f, 10f, 540f, 130f), GUIContent.none);
             GUI.Label(
-                new Rect(20f, 16f, 520f, 100f),
+                new Rect(20f, 16f, 520f, 118f),
+                combat + "\n" +
                 "Avelora · " + host + ":" + port + "\n" +
                 _status + "\n" +
                 "Entidad " + _entityId +
