@@ -77,6 +77,9 @@ namespace Avelora.Client
         // lista usa el primero; sin ninguno, los PNJ se dibujan como un cuadrado teñido con npcColor.
         [SerializeField] private NpcLook[] npcLooks = new NpcLook[0];
 
+        [Tooltip("La cámara principal sigue al jugador local (mapas más grandes que la pantalla).")]
+        [SerializeField] private bool cameraFollowsPlayer = true;
+
         // shortcut: copia de playerAttackRange y playerAttackCooldownSeconds de server.json. Si el
         // servidor los cambia, se envían ataques que rechaza; pasarán al Welcome con las armas (I-04).
         private const float AttackRange = 1.2f;
@@ -828,6 +831,12 @@ namespace Avelora.Client
             Vec2 position = _prediction.Render(alpha);
 
             transform.position = new Vector3(position.X, position.Y, transform.position.z);
+
+            Camera cam = Camera.main;
+            if (cameraFollowsPlayer && cam != null)
+            {
+                cam.transform.position = new Vector3(position.X, position.Y, cam.transform.position.z);
+            }
 
             if (_localRenderer != null && _lastDirectionX != 0)
             {

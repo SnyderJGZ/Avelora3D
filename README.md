@@ -1163,6 +1163,30 @@ causas, las dos en `ClientPrediction.Reconcile`:
    así que queda hasta medio paso (1/128) fuera del camino real. El snapshot suma otro medio paso.
    - **Arreglo:** la tolerancia pasa a **dos medios pasos** (1/64 de tile, medio píxel).
 
+### Mapa de prueba de 80×60 (J-01)
+
+El servidor y los bots cargan **`maps/avelora-prueba.avmap`**. Es un mapa de 80×60 casillas
+(x de −40 a 39, y de −30 a 29) generado por código en el Tilemap de `AveloraEtapaA.unity`:
+- **12 salas** de unas 19×19, separadas por muros en x = −20, 0 y 20 y en y = −10 y 10;
+- una puerta de 3 casillas entre cada par de salas vecinas;
+- 2 columnas de 2×2 por sala.
+
+Se generó con una semilla fija y se comprobó que las 4155 casillas de suelo se alcanzan desde la
+sala de inicio. El spawn está en (−9,5; 0,5), en una sala sin enemigos. `npcs.json` reparte 26
+enemigos en las otras 11 salas: los orcos guerreros (2002) en las del este.
+
+- **Mapa viejo:** `maps/avelora-etapa-a.avmap` (19×13) se conserva solo para las pruebas. Varias
+  usan sus paredes, y sigue siendo el valor por defecto de `ServerConfig.MapPath`.
+- **Cámara:** sigue al jugador local (`cameraFollowsPlayer` en `NetworkClient`).
+- **Bot `fight`:** pasea como `random` mientras no ve ningún enemigo.
+
+| Carga (50 bots, 120 s) | Resultado |
+| --- | --- |
+| `fight` | tick p99 **0.047 ms**; **731** ataques válidos; **216** orcos muertos y reaparecidos; **20** muertes de jugador; **0 correcciones**; **29.7 MB** enviados |
+| `random` | tick p99 **0.053 ms**; 286 golpes de orco y 6 muertes; **0.06** correcciones por bot y minuto; **30.4 MB** enviados |
+
+Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve menos entidades.
+
 ---
 
 ## Próximo paso

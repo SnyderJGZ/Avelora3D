@@ -32,45 +32,80 @@
   "spawners": [
     {
       "typeId": 2001,
-      "x": 3.5,
-      "y": 1.5,
-      "count": 10,
-      "wanderRadius": 2.5
+      "x": -29.5,
+      "y": -19.5,
+      "count": 4,
+      "wanderRadius": 3.0
     },
     {
       "typeId": 2001,
-      "x": -5.5,
-      "y": 2.5,
-      "count": 10,
-      "wanderRadius": 2.5
+      "x": -29.5,
+      "y": 0.5,
+      "count": 4,
+      "wanderRadius": 3.0
     },
     {
       "typeId": 2001,
-      "x": 5.5,
-      "y": -4.5,
-      "count": 5,
-      "wanderRadius": 2.5
+      "x": -29.5,
+      "y": 20.5,
+      "count": 4,
+      "wanderRadius": 3.0
     },
     {
       "typeId": 2001,
-      "x": -3.5,
-      "y": 5.5,
-      "count": 10,
-      "wanderRadius": 2.5
+      "x": -9.5,
+      "y": -19.5,
+      "count": 4,
+      "wanderRadius": 3.0
     },
     {
       "typeId": 2001,
-      "x": 7.5,
-      "y": -1.5,
-      "count": 10,
-      "wanderRadius": 2.5
+      "x": -9.5,
+      "y": 20.5,
+      "count": 4,
+      "wanderRadius": 3.0
+    },
+    {
+      "typeId": 2001,
+      "x": 10.5,
+      "y": -19.5,
+      "count": 4,
+      "wanderRadius": 3.0
+    },
+    {
+      "typeId": 2001,
+      "x": 10.5,
+      "y": 0.5,
+      "count": 4,
+      "wanderRadius": 3.0
+    },
+    {
+      "typeId": 2001,
+      "x": 10.5,
+      "y": 20.5,
+      "count": 4,
+      "wanderRadius": 3.0
     },
     {
       "typeId": 2002,
-      "x": 5.5,
-      "y": -4.5,
-      "count": 5,
-      "wanderRadius": 2.0
+      "x": 30.5,
+      "y": -19.5,
+      "count": 6,
+      "wanderRadius": 3.0
+    },
+    {
+      "typeId": 2002,
+      "x": 30.5,
+      "y": 0.5,
+      "count": 6,
+      "wanderRadius": 3.0
+    },
+    {
+      "typeId": 2002,
+      "x": 30.5,
+      "y": 20.5,
+      "count": 6,
+      "wanderRadius": 3.0
     }
   ]
 }

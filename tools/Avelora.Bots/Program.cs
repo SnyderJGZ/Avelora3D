@@ -956,7 +956,7 @@ namespace Avelora.Bots
 
             public int Seed { get; set; } = 20261019;
 
-            public string MapPath { get; set; } = "maps/avelora-etapa-a.avmap";
+            public string MapPath { get; set; } = "maps/avelora-prueba.avmap";
 
             public string AccountPrefix { get; set; } = "bot";
 

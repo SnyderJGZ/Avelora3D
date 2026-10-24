@@ -1653,11 +1653,27 @@ namespace Avelora.Bots
             }
         }
 
-        /// <summary>Camina hacia el enemigo vivo más cercano; si ya está a alcance, se para.</summary>
+        /// <summary>
+        /// Camina hacia el enemigo vivo más cercano; si ya está a alcance, se para. Sin ninguno a la
+        /// vista pasea como <c>random</c> hasta encontrarlo: en el mapa grande el spawn no tiene
+        /// enemigos dentro del área de interés (J-01).
+        /// </summary>
         private void UpdateFightDirection()
         {
-            if (FindNearestAlive(out float dx, out float dy, out float distanceSq) < 0 ||
-                distanceSq <= AttackRange * AttackRange)
+            if (FindNearestAlive(out float dx, out float dy, out float distanceSq) < 0)
+            {
+                if (Environment.TickCount64 >= _nextDirectionChangeAt)
+                {
+                    PickDirection();
+                }
+
+                return;
+            }
+
+            // Al ver un enemigo deja de pasear: la próxima vez que lo pierda elige rumbo nuevo.
+            _nextDirectionChangeAt = 0;
+
+            if (distanceSq <= AttackRange * AttackRange)
             {
                 _directionX = 0;
                 _directionY = 0;
