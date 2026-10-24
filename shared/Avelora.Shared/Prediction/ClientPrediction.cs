@@ -46,11 +46,12 @@ namespace Avelora.Shared.Prediction
 
         private struct PendingInput
         {
-            public PendingInput(uint sequence, sbyte directionX, sbyte directionY)
+            public PendingInput(uint sequence, sbyte directionX, sbyte directionY, Vec2 after)
             {
                 Sequence = sequence;
                 DirectionX = directionX;
                 DirectionY = directionY;
+                After = after;
             }
 
             public uint Sequence { get; }
@@ -58,6 +59,9 @@ namespace Avelora.Shared.Prediction
             public sbyte DirectionX { get; }
 
             public sbyte DirectionY { get; }
+
+            /// <summary>Posición predicha justo después de aplicar este input (sin cuantizar).</summary>
+            public Vec2 After { get; }
         }
 
         private readonly MapCollisionGrid _map;
@@ -71,6 +75,9 @@ namespace Avelora.Shared.Prediction
 
         private uint _lastSequence;
         private Vec2 _visualOffset;
+        private bool _hasAcked;
+        private uint _ackedSequence;
+        private Vec2 _ackedAfter;
 
         public ClientPrediction(
             MapCollisionGrid map,
@@ -190,6 +197,7 @@ namespace Avelora.Shared.Prediction
             _visualOffset = Vec2.Zero;
             _lastSequence = 0;
             _pending.Clear();
+            _hasAcked = false;
             LastCorrectionDelta = Vec2.Zero;
             LastCorrectionPendingInputs = 0;
             LastCorrectionPredictedPosition = position;
@@ -205,6 +213,7 @@ namespace Avelora.Shared.Prediction
             Position = position;
             PreviousPosition = position;
             _visualOffset = Vec2.Zero;
+            _hasAcked = false;
         }
 
         /// <summary>
@@ -241,7 +250,7 @@ namespace Avelora.Shared.Prediction
                 _halfSize,
                 _map);
 
-            _pending.Add(new PendingInput(_lastSequence, directionX, directionY));
+            _pending.Add(new PendingInput(_lastSequence, directionX, directionY, Position));
 
             if (_pending.Count > _maxPendingInputs)
             {
@@ -266,11 +275,33 @@ namespace Avelora.Shared.Prediction
             while (_pending.Count > 0 &&
                    !SequenceMath.IsNewer(_pending[0].Sequence, lastProcessedInputSequence))
             {
+                _hasAcked = true;
+                _ackedSequence = _pending[0].Sequence;
+                _ackedAfter = _pending[0].After;
                 _pending.RemoveAt(0);
             }
 
-            Vec2 previous = authoritativePosition;
-            Vec2 current = authoritativePosition;
+            // El servidor cuantiza a 1/64 de tile: medio paso por eje es ruido, no un error. Se
+            // admiten dos medios pasos: tras una corrección la predicción sale de una base ya
+            // cuantizada (hasta medio paso fuera del camino real) y el snapshot suma otro medio. Con
+            // uno solo, cada corrección encadenaba otras (I-03c).
+            const float Epsilon = 1e-5f;
+            float tolerance = (2f * ProtocolConstants.MaxQuantizationError) + Epsilon;
+
+            // Si el servidor confirma la posición que se predijo para ese input, se reaplica desde
+            // la predicha exacta y no desde la cuantizada: pegado a una esquina, el redondeo puede
+            // sacar la caja de la pared y el reaplicado avanzaría donde el servidor chocó (I-03c).
+            Vec2 start = authoritativePosition;
+            if (_hasAcked &&
+                _ackedSequence == lastProcessedInputSequence &&
+                MathF.Abs(authoritativePosition.X - _ackedAfter.X) <= tolerance &&
+                MathF.Abs(authoritativePosition.Y - _ackedAfter.Y) <= tolerance)
+            {
+                start = _ackedAfter;
+            }
+
+            Vec2 previous = start;
+            Vec2 current = start;
 
             for (int i = 0; i < _pending.Count; i++)
             {
@@ -293,10 +324,6 @@ namespace Avelora.Shared.Prediction
 
             Vec2 delta = current - Position;
 
-            // El servidor cuantiza a 1/64 de tile: medio paso por eje es ruido, no un error. Si se
-            // corrigiera, el personaje vibraría con cada snapshot (plan §5 y constantes).
-            const float Epsilon = 1e-5f;
-            float tolerance = ProtocolConstants.MaxQuantizationError + Epsilon;
             if (MathF.Abs(delta.X) <= tolerance && MathF.Abs(delta.Y) <= tolerance)
             {
                 return false;

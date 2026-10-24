@@ -14,7 +14,8 @@ namespace Avelora.Shared.Prediction
             sbyte directionY,
             EntityKind kind,
             byte healthPercent = 100,
-            EntityAction action = EntityAction.None)
+            EntityAction action = EntityAction.None,
+            ushort typeId = 0)
         {
             Position = position;
             DirectionX = directionX;
@@ -22,6 +23,7 @@ namespace Avelora.Shared.Prediction
             Kind = kind;
             HealthPercent = healthPercent;
             Action = action;
+            TypeId = typeId;
         }
 
         public Vec2 Position { get; }
@@ -37,6 +39,9 @@ namespace Avelora.Shared.Prediction
 
         /// <summary>Acción del snapshot más nuevo: no se interpola, se toma tal cual.</summary>
         public EntityAction Action { get; }
+
+        /// <summary>Tipo de PNJ del snapshot más nuevo; 0 para los jugadores (I-03c).</summary>
+        public ushort TypeId { get; }
     }
 
     /// <summary>
@@ -166,7 +171,8 @@ namespace Avelora.Shared.Prediction
                             to.DirectionY,
                             to.Kind,
                             to.HealthPercent,
-                            to.Action);
+                            to.Action,
+                            to.TypeId);
                         return true;
                     }
                 }
@@ -228,7 +234,8 @@ namespace Avelora.Shared.Prediction
                 afterSample.DirectionY,
                 afterSample.Kind,
                 afterSample.HealthPercent,
-                afterSample.Action);
+                afterSample.Action,
+                afterSample.TypeId);
             return true;
         }
 
@@ -257,7 +264,8 @@ namespace Avelora.Shared.Prediction
                             state.DirectionY,
                             state.Kind,
                             state.HealthPercent,
-                            state.Action);
+                            state.Action,
+                            state.TypeId);
                         return true;
                     }
                 }

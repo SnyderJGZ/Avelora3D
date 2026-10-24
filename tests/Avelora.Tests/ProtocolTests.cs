@@ -57,7 +57,7 @@ namespace Avelora.Tests
             // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más las dos
             // cadenas con su longitud uint16.
             Assert.Equal(297 + 2 + 6 + 2 + 9, bytes.Length);
-            Assert.Equal((ushort)5, original.ProtocolVersion);
+            Assert.Equal((ushort)6, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
             Assert.Equal(original.ClientToken, decoded.ClientToken);
@@ -385,7 +385,8 @@ namespace Avelora.Tests
             var entities = new[]
             {
                 new EntityState(1, 64, -128, 1, 0, EntityKind.Player, 100, EntityAction.None),
-                new EntityState(9, -32768, 32767, -1, -1, EntityKind.Npc, 50, EntityAction.Attacking),
+                new EntityState(9, -32768, 32767, -1, -1, EntityKind.Npc, 50, EntityAction.Attacking, 65535),
+                new EntityState(10, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2002),
             };
 
             var original = new SnapshotMessage(1234u, 5678u, entities);
@@ -393,11 +394,14 @@ namespace Avelora.Tests
             byte[] bytes = MessageCodec.EncodeSnapshot(original);
 
             Assert.True(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out SnapshotMessage decoded));
-            Assert.Equal(1 + 4 + 4 + 2 + (2 * 13), bytes.Length);
+            Assert.Equal(1 + 4 + 4 + 2 + (3 * 15), bytes.Length);
             Assert.Equal(original.ServerTick, decoded.ServerTick);
             Assert.Equal(original.LastProcessedInputSequence, decoded.LastProcessedInputSequence);
-            Assert.Equal(2, decoded.Entities.Length);
+            Assert.Equal(3, decoded.Entities.Length);
             Assert.Equal(1, decoded.Entities[0].Id);
+            Assert.Equal((ushort)0, decoded.Entities[0].TypeId);
+            Assert.Equal((ushort)65535, decoded.Entities[1].TypeId);
+            Assert.Equal((ushort)2002, decoded.Entities[2].TypeId);
             Assert.Equal(64, decoded.Entities[0].X);
             Assert.Equal(-128, decoded.Entities[0].Y);
             Assert.Equal((sbyte)1, decoded.Entities[0].DirectionX);

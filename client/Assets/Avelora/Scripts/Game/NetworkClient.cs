@@ -73,16 +73,9 @@ namespace Avelora.Client
 
         [SerializeField] private Color npcColor = new Color(1f, 0.6f, 0.2f, 1f);
 
-        // Hojas del orco (I-01b): cuadros por dirección en el orden abajo, arriba, izquierda,
-        // derecha. Si están vacías, los PNJ se dibujan como un cuadrado teñido con npcColor.
-        [SerializeField] private Sprite[] npcIdleSprites = new Sprite[0];
-
-        [SerializeField] private Sprite[] npcWalkSprites = new Sprite[0];
-
-        [SerializeField] private Sprite[] npcHurtSprites = new Sprite[0];
-
-        [SerializeField] private Sprite[] npcDeathSprites = new Sprite[0];
-        [SerializeField] private Sprite[] npcAttackSprites = new Sprite[0];
+        // Aspecto de cada tipo de PNJ por su id de npcs.json (I-03c). Un tipo que no está en la
+        // lista usa el primero; sin ninguno, los PNJ se dibujan como un cuadrado teñido con npcColor.
+        [SerializeField] private NpcLook[] npcLooks = new NpcLook[0];
 
         // shortcut: copia de playerAttackRange y playerAttackCooldownSeconds de server.json. Si el
         // servidor los cambia, se envían ataques que rechaza; pasarán al Welcome con las armas (I-04).
@@ -876,7 +869,7 @@ namespace Avelora.Client
 
                 if (!_remoteViews.TryGetValue(state.Id, out RemotePlayerView view) || view == null)
                 {
-                    view = CreateRemoteView(state.Id, state.Kind);
+                    view = CreateRemoteView(state.Id, state.Kind, state.TypeId);
                     _remoteViews[state.Id] = view;
                 }
 
@@ -907,7 +900,20 @@ namespace Avelora.Client
             }
         }
 
-        private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind)
+        private NpcLook FindNpcLook(ushort typeId)
+        {
+            for (int i = 0; i < npcLooks.Length; i++)
+            {
+                if (npcLooks[i] != null && npcLooks[i].typeId == typeId)
+                {
+                    return npcLooks[i];
+                }
+            }
+
+            return npcLooks.Length > 0 ? npcLooks[0] : null;
+        }
+
+        private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId)
         {
             if (_remoteRoot == null)
             {
@@ -933,9 +939,10 @@ namespace Avelora.Client
                 remotePlayerColor,
                 npcColor);
 
-            if (kind == EntityKind.Npc)
+            NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId) : null;
+            if (look != null)
             {
-                view.SetNpcSheets(npcIdleSprites, npcWalkSprites, npcHurtSprites, npcDeathSprites, npcAttackSprites);
+                view.SetNpcSheets(look.idle, look.walk, look.hurt, look.death, look.attack);
             }
 
             if (sprite == null)

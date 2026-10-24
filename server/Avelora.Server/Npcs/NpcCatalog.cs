@@ -313,10 +313,11 @@ namespace Avelora.Server.Npcs
                     throw new InvalidOperationException("npcs.json: " + where + " está vacío.");
                 }
 
-                if (type.Id <= 0)
+                // El id viaja en el snapshot como ushort (I-03c).
+                if (type.Id <= 0 || type.Id > ushort.MaxValue)
                 {
                     throw new InvalidOperationException(
-                        "npcs.json: " + where + " tiene id " + type.Id + "; debe ser mayor que 0.");
+                        "npcs.json: " + where + " tiene id " + type.Id + "; debe estar entre 1 y 65535.");
                 }
 
                 for (int j = 0; j < i; j++)

@@ -18,9 +18,10 @@ namespace Avelora.Shared.Protocol
         /// porque el <c>MoveInput</c> lleva la dirección de los inputs anteriores (redundancia);
         /// H-02 a 4 porque el servidor manda un <c>Challenge</c> y el <c>Hello</c> lleva las
         /// credenciales cifradas en vez de en claro. I-02 a 5 porque aparece el <c>Attack</c> y
-        /// <c>EntityState</c> gana vida y acción (2 bytes más).
+        /// <c>EntityState</c> gana vida y acción (2 bytes más). I-03c a 6 porque <c>EntityState</c> gana
+        /// el tipo de PNJ (2 bytes más) para que el cliente distinga un enemigo de otro.
         /// </summary>
-        public const ushort Version = 5;
+        public const ushort Version = 6;
 
         /// <summary>
         /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias
@@ -72,11 +73,11 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>
         /// Tope de entidades en un snapshot. El paquete va por el canal secuenciado, que LiteNetLib
-        /// no fragmenta: su máximo es 1020 B. La cabecera ocupa 11 B y cada entidad 13 B (I-02),
-        /// así que 11 + 77·13 = 1012 B cabe y 11 + 78·13 = 1025 B no (lanzaría
+        /// no fragmenta: su máximo es 1020 B. La cabecera ocupa 11 B y cada entidad 15 B (I-03c),
+        /// así que 11 + 67·15 = 1016 B cabe y 11 + 68·15 = 1031 B no (lanzaría
         /// TooBigPacketException en el hilo de red).
         /// </summary>
-        public const int MaxEntitiesPerSnapshot = 77;
+        public const int MaxEntitiesPerSnapshot = 67;
 
         /// <summary>Puerto UDP por defecto.</summary>
         public const int DefaultPort = 7777;

@@ -620,6 +620,64 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Snapshot_Lleva_El_TypeId_Jugador_Cero_Y_Orco_2002()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.InterestRadius = 6f;
+                config.InterestCellSize = 2f;
+                config.InterestHysteresis = 0f;
+            });
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            player.Position = new Vec2(0f, 5f);
+
+            // Orco guerrero (tipo 2002) más lento, más duro y pega más fuerte.
+            var orc2002 = new NpcEntity(
+                100,
+                2002,
+                0f,
+                new Vec2(0.5f, 5f),
+                2f,
+                nextDirectionChangeTick: long.MaxValue,
+                maxHealth: 60,
+                respawnTicks: 400,
+                spawnerIndex: -1,
+                aggroRadius: 5f,
+                leashRadius: 8f,
+                attackDamage: 14,
+                attackRange: 1f,
+                attackCooldownTicks: 40)
+            {
+                Position = new Vec2(0.5f, 5f),
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+
+            harness.Zone.AddEntity(orc2002);
+            harness.Zone.Tick();
+
+            harness.Transport.Sent.Clear();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            SnapshotMessage snapshot = SnapshotFor(harness, 1);
+
+            // El jugador siempre manda TypeId = 0.
+            EntityState playerState = Assert.Single(snapshot.Entities, e => e.Id == player.Id);
+            Assert.Equal(EntityKind.Player, playerState.Kind);
+            Assert.Equal((ushort)0, playerState.TypeId);
+
+            // El orco 2002 manda su tipo en TypeId.
+            EntityState orcState = Assert.Single(snapshot.Entities, e => e.Id == 100);
+            Assert.Equal(EntityKind.Npc, orcState.Kind);
+            Assert.Equal((ushort)2002, orcState.TypeId);
+        }
+
+        [Fact]
         public void El_Jugador_Local_Se_Incluye_Aunque_El_Radio_Sea_Minimo()
         {
             using var harness = new Harness(config =>

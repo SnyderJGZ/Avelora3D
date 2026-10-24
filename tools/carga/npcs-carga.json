@@ -13,13 +13,64 @@
       "attackDamage": 8,
       "attackRange": 1.0,
       "attackCooldownSeconds": 1.5
+    },
+    {
+      "id": 2002,
+      "name": "Orco guerrero",
+      "speed": 1.6,
+      "halfWidth": 0.35,
+      "halfHeight": 0.35,
+      "maxHealth": 60,
+      "respawnSeconds": 20,
+      "aggroRadius": 5.0,
+      "leashRadius": 8.0,
+      "attackDamage": 14,
+      "attackRange": 1.0,
+      "attackCooldownSeconds": 2.0
     }
   ],
   "spawners": [
-    { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 10, "wanderRadius": 2.5 },
-    { "typeId": 2001, "x": -5.5, "y": 2.5, "count": 10, "wanderRadius": 2.5 },
-    { "typeId": 2001, "x": 5.5, "y": -4.5, "count": 10, "wanderRadius": 2.5 },
-    { "typeId": 2001, "x": -3.5, "y": 5.5, "count": 10, "wanderRadius": 2.5 },
-    { "typeId": 2001, "x": 7.5, "y": -1.5, "count": 10, "wanderRadius": 2.5 }
+    {
+      "typeId": 2001,
+      "x": 3.5,
+      "y": 1.5,
+      "count": 10,
+      "wanderRadius": 2.5
+    },
+    {
+      "typeId": 2001,
+      "x": -5.5,
+      "y": 2.5,
+      "count": 10,
+      "wanderRadius": 2.5
+    },
+    {
+      "typeId": 2001,
+      "x": 5.5,
+      "y": -4.5,
+      "count": 5,
+      "wanderRadius": 2.5
+    },
+    {
+      "typeId": 2001,
+      "x": -3.5,
+      "y": 5.5,
+      "count": 10,
+      "wanderRadius": 2.5
+    },
+    {
+      "typeId": 2001,
+      "x": 7.5,
+      "y": -1.5,
+      "count": 10,
+      "wanderRadius": 2.5
+    },
+    {
+      "typeId": 2002,
+      "x": 5.5,
+      "y": -4.5,
+      "count": 5,
+      "wanderRadius": 2.0
+    }
   ]
 }

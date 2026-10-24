@@ -1201,7 +1201,8 @@ namespace Avelora.Server.Net
                     entity.DirectionY,
                     entity.Kind,
                     healthPercent,
-                    entity.Action);
+                    entity.Action,
+                    entity is NpcEntity typed ? (ushort)typed.TypeId : (ushort)0);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

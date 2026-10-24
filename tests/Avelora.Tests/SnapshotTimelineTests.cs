@@ -54,9 +54,10 @@ namespace Avelora.Tests
         {
             var timeline = new SnapshotTimeline();
             timeline.Add(Snapshot(1, new EntityState(7, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None)), 10.0);
-            timeline.Add(Snapshot(2, new EntityState(7, 64, 0, 0, 0, EntityKind.Npc, 0, EntityAction.Dead)), 10.05);
+            timeline.Add(Snapshot(2, new EntityState(7, 64, 0, 0, 0, EntityKind.Npc, 0, EntityAction.Dead, 2002)), 10.05);
 
             Assert.True(timeline.TrySample(7, 10.025, out EntitySample sample));
+            Assert.Equal((ushort)2002, sample.TypeId);
             Assert.Equal(0, sample.HealthPercent);
             Assert.Equal(EntityAction.Dead, sample.Action);
         }

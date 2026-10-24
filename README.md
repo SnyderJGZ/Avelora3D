@@ -4,14 +4,17 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F y G cerradas, Etapa H en curso y Etapa I en curso.** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso.** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
 > solo uso; al entrar, el personaje aparece en la posición que tenía guardada si el mapa coincide.
 > Desde I-01 el mundo tiene enemigos que el servidor mueve y todos ven; desde I-02 (**protocolo v5**)
-> esos enemigos tienen vida, reciben los ataques de los jugadores, mueren y reaparecen.
-> Ver [Etapa H](#qué-hace-la-etapa-h) y [Etapa I](#qué-hace-la-etapa-i).
+> esos enemigos tienen vida, reciben los ataques de los jugadores, mueren y reaparecen. Desde I-03
+> persiguen y golpean al jugador, y el jugador tiene vida, muerte y reaparición. Desde I-03c
+> (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67
+> entidades. Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i) e
+> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -20,7 +23,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **304/304 en verde** |
+| `dotnet test Avelora.slnx` | **348/348 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -471,11 +474,15 @@ Cada snapshot trae `lastProcessedInputSequence`, el último input que el servido
 cliente**. Al recibirlo:
 
 1. Se descartan los inputs pendientes con secuencia **≤** la confirmada.
-2. Se reaplican los pendientes desde la **posición autoritativa** del snapshot.
+2. Se reaplican los pendientes desde la **posición autoritativa** del snapshot. Si coincide con la
+   que el cliente predijo para ese input (dentro de la tolerancia), se reaplica desde la **predicha
+   exacta**: en una esquina, el redondeo puede sacar la caja de la pared y el reaplicado avanzaría
+   donde el servidor chocó (I-03c).
 3. Se compara la posición predicha con la recién calculada:
-   - **Diferencia por eje ≤ `MaxQuantizationError` (1/128 de tile) + 1e-5:** es ruido de
-     cuantización; se conserva la predicción y **no se corrige** (si se corrigiera, el personaje
-     vibraría con cada snapshot).
+   - **Diferencia por eje ≤ 2 × `MaxQuantizationError` (1/64 de tile) + 1e-5:** es ruido de
+     cuantización; se conserva la predicción y **no se corrige**. Son dos medios pasos: el del
+     snapshot y el de una base cuantizada tras una corrección anterior. Si se corrigiera, el
+     personaje vibraría.
    - **Diferencia pequeña (≤ 0.5 tile):** se acepta la posición del servidor y se guarda un
      **desplazamiento visual** que se desvanece a 10 tiles/s. El personaje llega a la verdad
      autoritativa en unas décimas de segundo sin que se note el tirón.
@@ -1016,7 +1023,8 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate y botín | ⏳ I-01 e I-02 hechas |
+| **I** | Enemigos, combate y botín | ⏳ I-01, I-02 e I-03 hechas |
+| **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1093,6 +1101,67 @@ con `Action = Dead`.
 La reaparición usa `ClientPrediction.Teleport`, que mueve la predicción **sin** reiniciar la
 secuencia de inputs. Con `Reset`, la secuencia volvía a 1 y el servidor descartaba como viejos todos
 los inputs posteriores. Por eso la primera carga dio 163 correcciones por bot y minuto.
+
+---
+
+### Tipo de entidad en el snapshot (I-03c, protocolo v6)
+
+El snapshot ahora lleva el **tipo de PNJ** para que el cliente distinga un enemigo de otro.
+
+- **Protocolo**: sube de v5 a **v6** porque `EntityState` gana `TypeId` (`ushort`, 2 bytes) al final, tras
+  `Action`. `EntityStateSize` pasa de 13 a **15 B**.
+- **Jugadores** mandan `TypeId = 0`. **PNJs** mandan su `id` de `npcs.json` (2001, 2002…).
+- **Tope de entidades por snapshot**: con 15 B/entidad + 11 B de cabecera bajo 1020 B, caben **67**
+  (antes 77). `MaxEntitiesPerSnapshot` se actualiza a 67.
+- El códec **no valida** el tipo: cualquier `ushort` es válido; el cliente dibuja un tipo desconocido
+  con el aspecto por defecto.
+- **Validación en `npcs.json`**: `id` debe estar entre **1 y 65535** (cabe en `ushort`).
+- **`SnapshotTimeline.EntitySample`** gana `TypeId` y lo copia del snapshot más nuevo (igual que
+  `HealthPercent` y `Action`).
+
+**`npcs.json` con dos tipos (ejemplo):**
+
+```json
+{
+  "types": [
+    { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35,
+      "maxHealth": 30, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
+      "attackDamage": 8, "attackRange": 1.0, "attackCooldownSeconds": 1.5 },
+    { "id": 2002, "name": "Orco guerrero", "speed": 1.6, "halfWidth": 0.35, "halfHeight": 0.35,
+      "maxHealth": 60, "respawnSeconds": 20, "aggroRadius": 5.0, "leashRadius": 8.0,
+      "attackDamage": 14, "attackRange": 1.0, "attackCooldownSeconds": 2.0 }
+  ],
+  "spawners": [
+    { "typeId": 2001, "x": 3.5, "y": 1.5, "count": 3, "wanderRadius": 3.0 },
+    { "typeId": 2001, "x": -5.5, "y": 2.5, "count": 2, "wanderRadius": 2.5 },
+    { "typeId": 2002, "x": 5.5, "y": -4.5, "count": 1, "wanderRadius": 2.0 }
+  ]
+}
+```
+
+El `id` de cada tipo debe estar entre **1 y 65535**.
+
+| Prueba | Resultado |
+| --- | --- |
+| `dotnet build` | **0 errores, 0 advertencias** |
+| `dotnet test` | **348/348 en verde** (5 nuevas: `TypeId` ida y vuelta, rango del `id`, snapshot del servidor con jugador 0 y orco 2002, tolerancia de reconciliación y esquina con base exacta) |
+| Carga `fight`, 50 bots, 120 s | tick p99 **0.054 ms**, peor **5.024 ms**; **0 correcciones** (antes del arreglo: entre 0.03 y 3.61 por bot y minuto según la pasada); 10 muertes y 10 reapariciones de jugadores |
+| Carga `random`, 50 bots, 120 s | tick p99 **0.066 ms**; **0.67** correcciones por bot y minuto con **94** muertes: son los inputs en vuelo al morir |
+| Bytes enviados | **119–120 MB** en `fight` frente a 115 MB en I-03 (**+4 %**). Cada entidad pesa un 15 % más, pero las cabeceras no cambian |
+
+**Correcciones de predicción encontradas en I-03c.** En `fight` variaban mucho entre pasadas porque
+dependían de que algún bot acabase pegado a una esquina. El registro `-LogCorrections` mostró dos
+causas, las dos en `ClientPrediction.Reconcile`:
+
+1. **Reaplicar desde la base cuantizada en una esquina.** Con la caja rozando a la vez dos bordes de
+   tile, el redondeo a 1/64 la saca 1/128 de la pared. El reaplicado avanzaba en diagonal donde el
+   servidor, con la posición exacta, chocaba. Se corregía a una posición equivocada, y el snapshot
+   siguiente lo devolvía: siempre en pares.
+   - **Arreglo:** cada input pendiente guarda la posición predicha tras aplicarlo. Si el servidor
+     confirma esa posición dentro del redondeo, se reaplica desde la predicha exacta.
+2. **Cascada por tolerancia justa.** Tras una corrección, la predicción parte de una base cuantizada,
+   así que queda hasta medio paso (1/128) fuera del camino real. El snapshot suma otro medio paso.
+   - **Arreglo:** la tolerancia pasa a **dos medios pasos** (1/64 de tile, medio píxel).
 
 ---
 

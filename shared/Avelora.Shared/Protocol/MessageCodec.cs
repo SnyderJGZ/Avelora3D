@@ -30,7 +30,7 @@ namespace Avelora.Shared.Protocol
         private const int AttackSize = 1 + 4;
         private const int RejectSize = 1 + 1;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
-        private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1;
+        private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
 
         private const int WelcomeSize =
             1 + // tipo
@@ -557,6 +557,7 @@ namespace Avelora.Shared.Protocol
                 writer.WriteByte((byte)state.Kind);
                 writer.WriteByte(state.HealthPercent);
                 writer.WriteByte((byte)state.Action);
+                writer.WriteUInt16(state.TypeId);
             }
 
             return buffer;
@@ -614,6 +615,10 @@ namespace Avelora.Shared.Protocol
                     byte healthPercent = reader.ReadByte();
                     byte rawAction = reader.ReadByte();
 
+                    // El códec no conoce el catálogo de PNJ: cualquier tipo es válido aquí y el
+                    // cliente dibuja uno desconocido con el aspecto por defecto.
+                    ushort typeId = reader.ReadUInt16();
+
                     // Ni el tipo, la dirección, la vida ni la acción pueden ser valores inventados:
                     // si lo son, el snapshot entero está mal y no se aplica. El límite es el último
                     // valor definido; la prueba de enumeraciones completas avisa si se añade otro.
@@ -633,7 +638,8 @@ namespace Avelora.Shared.Protocol
                         directionY,
                         (EntityKind)rawKind,
                         healthPercent,
-                        (EntityAction)rawAction);
+                        (EntityAction)rawAction,
+                        typeId);
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);

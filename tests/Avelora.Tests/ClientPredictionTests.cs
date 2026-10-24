@@ -1,5 +1,6 @@
 using System;
 using Avelora.Shared;
+using Avelora.Shared.Maps;
 using Avelora.Shared.Prediction;
 using Avelora.Shared.Protocol;
 using Xunit;
@@ -46,6 +47,48 @@ namespace Avelora.Tests
             Assert.Equal(1, prediction.PendingCount);
             CasiIgual(2.7f, prediction.Position.X);
             CasiIgual(2.5f, prediction.Position.Y);
+        }
+
+        [Fact]
+        public void En_Una_Esquina_Reaplica_Desde_La_Prediccion_Exacta_Y_No_Desde_La_Cuantizada()
+        {
+            // Caso real de la carga I-03c: la caja toca a la vez x = 0 e y = 1 junto al tabique.
+            // Cuantizada (-0,40625; 1,40625) queda 1/128 fuera de la esquina y el reaplicado avanzaba
+            // en diagonal donde el servidor, con la posición exacta, choca.
+            var prediction = new ClientPrediction(
+                MapFile.Load(System.IO.Path.Combine(AppContext.BaseDirectory, "maps", "avelora-etapa-a.avmap")),
+                HalfSize,
+                4f,
+                SimulationConstants.FixedDt);
+            // Un pelo bajo y = 1,4 (el float que dejó la carga): el borde inferior roza la fila del
+            // tabique y frena el avance en x; la base cuantizada, 1/128 más arriba, ya no.
+            prediction.Reset(new Vec2(-0.4f, 1.3999999f));
+
+            prediction.AddInput(0, 0);
+            Vec2 acked = prediction.Position;
+            prediction.AddInput(1, 1);
+            Assert.Equal(-0.4f, prediction.Position.X);
+
+            Assert.False(prediction.Reconcile(
+                new Vec2(
+                    ProtocolConstants.DequantizePosition(ProtocolConstants.QuantizePosition(acked.X)),
+                    ProtocolConstants.DequantizePosition(ProtocolConstants.QuantizePosition(acked.Y))),
+                1u));
+            Assert.Equal(0, prediction.Corrections);
+        }
+
+        [Fact]
+        public void Tolera_Dos_Medios_Pasos_De_Cuantizacion_Y_Corrige_Por_Encima()
+        {
+            // Base cuantizada (medio paso) más una predicción que ya salió de otra base cuantizada
+            // (otro medio): hasta 1/64 es ruido; más allá, un error real (I-03c).
+            float half = ProtocolConstants.MaxQuantizationError;
+
+            ClientPrediction dentro = NuevaPrediccion();
+            Assert.False(dentro.Reconcile(new Vec2(Spawn.X + (1.9f * half), Spawn.Y), 0u));
+
+            ClientPrediction fuera = NuevaPrediccion();
+            Assert.True(fuera.Reconcile(new Vec2(Spawn.X + (2.5f * half), Spawn.Y), 0u));
         }
 
         [Fact]

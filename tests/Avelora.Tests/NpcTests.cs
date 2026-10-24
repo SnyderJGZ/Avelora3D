@@ -136,6 +136,20 @@ namespace Avelora.Tests
             Assert.Contains("no existe", error.Message);
         }
 
+        [Theory]
+        [InlineData(0)]
+        [InlineData(65536)]
+        public void Un_Id_De_Tipo_Que_No_Cabe_En_El_Snapshot_No_Valida(int id)
+        {
+            NpcCatalog catalog = Catalog(Spawner(3f, 3f, 1, 2f, typeId: id));
+            catalog.Types[0].Id = id;
+
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                () => catalog.Validate(MapCollisionGrid.AllWalkable(20, 20)));
+
+            Assert.Contains("entre 1 y 65535", error.Message);
+        }
+
         [Fact]
         public void Un_Spawner_Dentro_De_Una_Pared_No_Valida()
         {
