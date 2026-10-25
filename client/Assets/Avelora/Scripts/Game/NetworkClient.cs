@@ -87,6 +87,16 @@ namespace Avelora.Client
         private const float HintSeconds = 1.5f;
         private const float PickRadius = 0.5f;
 
+        // Doble clic (I-06c): ventana entre clics, margen para pararse dentro del alcance aunque la
+        // posición del servidor vaya un poco por detrás, y zona muerta por eje para no zigzaguear.
+        private const float DoubleClickSeconds = 0.35f;
+        private const float ApproachFraction = 0.85f;
+        private const float AxisDeadZone = 0.15f;
+
+        private bool _autoAttack;
+        private int _lastClickId;
+        private float _lastClickAt;
+
         private int _selectedNpcId;
         private float _nextAttackAt;
         private string _combatHint = string.Empty;
@@ -381,6 +391,16 @@ namespace Avelora.Client
             {
                 directionX = 0;
                 directionY = 0;
+                _autoAttack = false;
+            }
+            else if (directionX != 0 || directionY != 0)
+            {
+                // Moverse a mano cancela el ataque automático.
+                _autoAttack = false;
+            }
+            else if (_autoAttack)
+            {
+                ApproachTarget(out directionX, out directionY);
             }
 
             while (_accumulator >= SimulationConstants.FixedDt)
@@ -464,19 +484,38 @@ namespace Avelora.Client
 
         /// <summary>
         /// Clic izquierdo selecciona el PNJ vivo bajo el ratón (o quita la selección); Espacio
-        /// pide atacarlo (I-02b). El servidor valida todo: aquí solo se evita mandar lo que seguro
-        /// rechazaría.
+        /// pide atacarlo (I-02b). Doble clic en un PNJ lo persigue y lo ataca solo hasta que muere,
+        /// o hasta moverse, pulsar Esc o elegir otro objetivo (I-06c). El servidor valida todo: aquí
+        /// solo se evita mandar lo que seguro rechazaría.
         /// </summary>
         private void HandleCombatInput()
         {
             Mouse mouse = Mouse.current;
             Camera cam = Camera.main;
+            Keyboard keyboard = Keyboard.current;
 
             if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame)
             {
                 Vector2 screen = mouse.position.ReadValue();
                 Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
-                Select(PickEntityAt(world, EntityKind.Npc, PickRadius));
+                int picked = PickEntityAt(world, EntityKind.Npc, PickRadius);
+                bool doubleClick = picked != 0 && picked == _lastClickId &&
+                    Time.unscaledTime - _lastClickAt <= DoubleClickSeconds;
+                _lastClickId = picked;
+                _lastClickAt = Time.unscaledTime;
+
+                if (picked != _selectedNpcId)
+                {
+                    _autoAttack = false;
+                }
+
+                Select(picked);
+                _autoAttack |= doubleClick;
+            }
+
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                _autoAttack = false;
             }
 
             RemotePlayerView target = SelectedTarget();
@@ -485,8 +524,13 @@ namespace Avelora.Client
                 Select(0);
             }
 
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null || !keyboard.spaceKey.isPressed || Time.unscaledTime < _nextAttackAt)
+            if (target == null)
+            {
+                _autoAttack = false;
+            }
+
+            bool wantsAttack = _autoAttack || (keyboard != null && keyboard.spaceKey.isPressed);
+            if (!wantsAttack || Time.unscaledTime < _nextAttackAt)
             {
                 return;
             }
@@ -501,7 +545,12 @@ namespace Avelora.Client
             CurrentWeapon(out float attackRange, out float attackCooldown);
             if (delta.sqrMagnitude > attackRange * attackRange)
             {
-                ShowHint("fuera de alcance");
+                // En automático no es un error: ApproachTarget ya está caminando hacia él.
+                if (!_autoAttack)
+                {
+                    ShowHint("fuera de alcance");
+                }
+
                 return;
             }
 
@@ -617,6 +666,42 @@ namespace Avelora.Client
             }
 
             return -1;
+        }
+
+        /// <summary>
+        /// Dirección hacia el objetivo del ataque automático (I-06c), o cero si ya está a alcance. Va
+        /// por el MoveInput de siempre: el servidor mueve y valida igual que con el teclado.
+        /// </summary>
+        // shortcut: camina en línea recta y se queda contra la pared si hay una en medio; añadir
+        // búsqueda de caminos sobre la rejilla del mapa si en las salas grandes molesta.
+        private void ApproachTarget(out sbyte directionX, out sbyte directionY)
+        {
+            directionX = 0;
+            directionY = 0;
+
+            RemotePlayerView target = SelectedTarget();
+            if (target == null)
+            {
+                return;
+            }
+
+            Vector2 delta = (Vector2)(target.transform.position - transform.position);
+            CurrentWeapon(out float range, out _);
+            float stop = range * ApproachFraction;
+            if (delta.sqrMagnitude <= stop * stop)
+            {
+                return;
+            }
+
+            if (Mathf.Abs(delta.x) > AxisDeadZone)
+            {
+                directionX = (sbyte)(delta.x > 0f ? 1 : -1);
+            }
+
+            if (Mathf.Abs(delta.y) > AxisDeadZone)
+            {
+                directionY = (sbyte)(delta.y > 0f ? 1 : -1);
+            }
         }
 
         /// <summary>Alcance y recarga del arma equipada, o de los puños si no hay (catálogo del servidor).</summary>
@@ -1308,6 +1393,7 @@ namespace Avelora.Client
             }
 
             string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId.ToString() : "ninguno") +
+                (_autoAttack ? " (auto · Esc cancela)" : string.Empty) +
                 " · Ataques " + _attacksSent +
                 (Time.unscaledTime < _combatHintUntil ? " · " + _combatHint : string.Empty);
 
