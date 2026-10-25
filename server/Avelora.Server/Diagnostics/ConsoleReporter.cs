@@ -91,6 +91,17 @@ namespace Avelora.Server.Diagnostics
                 " ticks), regeneración " + Invariant(config.PlayerRegenPerSecond, "0.##") + "/s tras " +
                 Invariant(config.PlayerRegenDelaySeconds, "0.#") + " s sin daño");
             Console.WriteLine(
+                "  Objetos       : huecos " + config.InventorySlots +
+                ", catálogo " + (string.IsNullOrWhiteSpace(config.ItemsPath) ? "desactivado" : config.ItemsPath) +
+                ", suelo " + Invariant(config.GroundItemSeconds, "0.#") + " s (" +
+                (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate) +
+                " ticks), máx " + config.MaxGroundItems +
+                ", recoger " + Invariant(config.PickupRange, "0.##") + " (+" +
+                Invariant(config.AttackRangeTolerance, "0.##") + ") tiles" +
+                ", poción cd " + Invariant(config.PotionCooldownSeconds, "0.#") + " s (" +
+                (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate) +
+                " ticks), cola " + config.MaxQueuedItemActions);
+            Console.WriteLine(
                 "  Límites       : " + config.MaxIntentsPerTick + " inputs/tick, " +
                 config.MaxIntentsPerPlayerPerTick + "/jugador/tick, cola de jugador " +
                 config.InputBufferCapacity + ", cola de entrada " + config.MaxQueuedIntents +
@@ -148,6 +159,23 @@ namespace Avelora.Server.Diagnostics
                 " npc_reapariciones=" + zone.NpcRespawns +
                 " jugador_muertes=" + zone.PlayerDeaths +
                 " jugador_reapariciones=" + zone.PlayerRespawns);
+
+            Console.WriteLine(
+                "            objetos: objetos_soltados=" + zone.ItemsDropped +
+                " objetos_recogidos=" + zone.ItemsPickedUp +
+                " objetos_caducados=" + zone.ItemsExpired +
+                " objetos_descartados=" + zone.ItemsDiscarded +
+                " objetos_en_suelo=" + zone.GroundItemCount +
+                " recoger_rech_muerto=" + zone.RejectedPickupDead +
+                " recoger_rech_objeto=" + zone.RejectedPickupItem +
+                " recoger_rech_distancia=" + zone.RejectedPickupDistance +
+                " recoger_rech_lleno=" + zone.RejectedPickupFull +
+                " usar_rech_muerto=" + zone.RejectedUseDead +
+                " usar_rech_objeto=" + zone.RejectedUseItem +
+                " usar_rech_lleno=" + zone.RejectedUseFull +
+                " usar_rech_recarga=" + zone.RejectedUseCooldown +
+                " pociones_usadas=" + zone.PotionsUsed +
+                " acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
 
             Console.WriteLine(
                 "            cuenta: login_ok=" + network.LoginsSucceeded +
@@ -257,6 +285,22 @@ namespace Avelora.Server.Diagnostics
             Console.WriteLine(
                 "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
                 zone.PlayerRespawns + " reapariciones");
+            Console.WriteLine(
+                "  Objetos         : objetos_soltados=" + zone.ItemsDropped +
+                ", objetos_recogidos=" + zone.ItemsPickedUp +
+                ", objetos_caducados=" + zone.ItemsExpired +
+                ", objetos_descartados=" + zone.ItemsDiscarded +
+                ", objetos_en_suelo=" + zone.GroundItemCount +
+                ", recoger_rech_muerto=" + zone.RejectedPickupDead +
+                ", recoger_rech_objeto=" + zone.RejectedPickupItem +
+                ", recoger_rech_distancia=" + zone.RejectedPickupDistance +
+                ", recoger_rech_lleno=" + zone.RejectedPickupFull +
+                ", usar_rech_muerto=" + zone.RejectedUseDead +
+                ", usar_rech_objeto=" + zone.RejectedUseItem +
+                ", usar_rech_lleno=" + zone.RejectedUseFull +
+                ", usar_rech_recarga=" + zone.RejectedUseCooldown +
+                ", pociones_usadas=" + zone.PotionsUsed +
+                ", acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +

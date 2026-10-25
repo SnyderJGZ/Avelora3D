@@ -26,7 +26,8 @@ namespace Avelora.Server.Persistence
             Vec2 position,
             byte[] mapHash,
             DateTime createdUtc,
-            DateTime updatedUtc)
+            DateTime updatedUtc,
+            InventoryItemRecord[]? inventoryItems = null)
         {
             if (id <= 0)
             {
@@ -62,6 +63,9 @@ namespace Avelora.Server.Persistence
             MapHash = (byte[])mapHash.Clone();
             CreatedUtc = createdUtc;
             UpdatedUtc = updatedUtc;
+            InventoryItems = inventoryItems == null
+                ? Array.Empty<InventoryItemRecord>()
+                : (InventoryItemRecord[])inventoryItems.Clone();
         }
 
         public int Id { get; }
@@ -89,6 +93,9 @@ namespace Avelora.Server.Persistence
 
         public DateTime UpdatedUtc { get; }
 
+        /// <summary>Contenido de inventario guardado por ranura.</summary>
+        public InventoryItemRecord[] InventoryItems { get; }
+
         /// <summary>Copia el personaje con una posición, zona y mapa nuevos, dejando el resto igual.</summary>
         public CharacterRecord WithPosition(int zoneId, Vec2 position, byte[] mapHash) =>
             new CharacterRecord(
@@ -103,7 +110,8 @@ namespace Avelora.Server.Persistence
                 position,
                 mapHash,
                 CreatedUtc,
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                InventoryItems);
 
         /// <summary>
         /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
@@ -122,6 +130,39 @@ namespace Avelora.Server.Persistence
                 position,
                 mapHash,
                 CreatedUtc,
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                InventoryItems);
+
+        /// <summary>Crea una foto nueva con el inventario completo.</summary>
+        public CharacterRecord WithInventory(InventoryItemRecord[] inventoryItems) =>
+            new CharacterRecord(
+                Id,
+                AccountId,
+                Name,
+                Level,
+                Experience,
+                Health,
+                Mana,
+                ZoneId,
+                Position,
+                MapHash,
+                CreatedUtc,
+                DateTime.UtcNow,
+                inventoryItems);
+    }
+
+    /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>
+    public readonly struct InventoryItemRecord
+    {
+        public InventoryItemRecord(int slot, int itemId, int count)
+        {
+            Slot = slot;
+            ItemId = itemId;
+            Count = count;
+        }
+
+        public int Slot { get; }
+        public int ItemId { get; }
+        public int Count { get; }
     }
 }

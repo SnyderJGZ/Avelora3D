@@ -28,6 +28,8 @@ namespace Avelora.Shared.Protocol
         // (dirX, dirY), así que el mensaje mide 6 + 2n entre 8 y 14 bytes.
         private const int MoveInputHeaderSize = 1 + 4 + 1;
         private const int AttackSize = 1 + 4;
+        private const int PickUpSize = 1 + 4;
+        private const int UseItemSize = 1 + 1;
         private const int RejectSize = 1 + 1;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
@@ -400,6 +402,70 @@ namespace Avelora.Shared.Protocol
             }
         }
 
+        /// <summary>Codifica una intención de recoger: tipo (1) + entityId (4) = 5 bytes.</summary>
+        public static byte[] EncodePickUp(in PickUpMessage message)
+        {
+            var buffer = new byte[PickUpSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.PickUp);
+            writer.WriteInt32(message.EntityId);
+            return buffer;
+        }
+
+        /// <summary>Lee una intención de recoger. La longitud debe ser exactamente 5 bytes.</summary>
+        public static bool TryReadPickUp(byte[] buffer, int offset, int length, out PickUpMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.PickUp, PickUpSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                message = new PickUpMessage(reader.ReadInt32());
+                return reader.Remaining == 0;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica una intención de usar objeto: tipo (1) + slot (1) = 2 bytes.</summary>
+        public static byte[] EncodeUseItem(in UseItemMessage message)
+        {
+            var buffer = new byte[UseItemSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.UseItem);
+            writer.WriteByte(message.Slot);
+            return buffer;
+        }
+
+        /// <summary>Lee una intención de usar objeto. La longitud debe ser exactamente 2 bytes.</summary>
+        public static bool TryReadUseItem(byte[] buffer, int offset, int length, out UseItemMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.UseItem, UseItemSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                message = new UseItemMessage(reader.ReadByte());
+                return reader.Remaining == 0;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
         // ---------------------------------------------------------------- servidor → cliente
         /// <summary>Codifica la aceptación del saludo: 69 bytes.</summary>
         public static byte[] EncodeWelcome(in WelcomeMessage message)
@@ -622,7 +688,7 @@ namespace Avelora.Shared.Protocol
                     // Ni el tipo, la dirección, la vida ni la acción pueden ser valores inventados:
                     // si lo son, el snapshot entero está mal y no se aplica. El límite es el último
                     // valor definido; la prueba de enumeraciones completas avisa si se añade otro.
-                    if (rawKind > (byte)EntityKind.Npc ||
+                    if (rawKind > (byte)EntityKind.Item ||
                         !MovementSimulator.IsValidDirection(directionX, directionY) ||
                         healthPercent > 100 ||
                         rawAction > (byte)EntityAction.Dead)
@@ -643,6 +709,109 @@ namespace Avelora.Shared.Protocol
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Codifica un inventario: tipo (1) + slotCount (1) + slotCount * (itemId(2) + count(2)).
+        /// </summary>
+        public static byte[] EncodeInventory(in InventoryMessage message)
+        {
+            if (message.SlotCount > 60 ||
+                message.ItemIds == null ||
+                message.Counts == null ||
+                message.ItemIds.Length != message.SlotCount ||
+                message.Counts.Length != message.SlotCount)
+            {
+                throw new ArgumentException("El inventario debe tener entre 0 y 60 huecos coherentes.", nameof(message));
+            }
+
+            for (int i = 0; i < message.SlotCount; i++)
+            {
+                if ((message.ItemIds[i] == 0) != (message.Counts[i] == 0))
+                {
+                    throw new ArgumentException("El itemId y la cantidad del hueco no son coherentes.", nameof(message));
+                }
+            }
+
+            int size = 1 + 1 + (message.SlotCount * 4);
+            var buffer = new byte[size];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Inventory);
+            writer.WriteByte(message.SlotCount);
+
+            for (int i = 0; i < message.SlotCount; i++)
+            {
+                writer.WriteUInt16(message.ItemIds[i]);
+                writer.WriteUInt16(message.Counts[i]);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>
+        /// Lee un inventario. Valida longitud exacta, slotCount ≤ 60, y coherencia itemId/count.
+        /// </summary>
+        public static bool TryReadInventory(byte[] buffer, int offset, int length, out InventoryMessage message)
+        {
+            message = default;
+
+            if (buffer is null || offset < 0 || offset > buffer.Length ||
+                length < 2 || length > ProtocolConstants.MaxMessageSize || length > buffer.Length - offset)
+            {
+                return false;
+            }
+
+            if (buffer[offset] != (byte)MessageType.Inventory)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte slotCount = reader.ReadByte();
+
+                if (slotCount > 60)
+                {
+                    return false;
+                }
+
+                int expectedSize = 1 + 1 + (slotCount * 4);
+                if (length != expectedSize)
+                {
+                    return false;
+                }
+
+                var itemIds = new ushort[slotCount];
+                var counts = new ushort[slotCount];
+
+                for (int i = 0; i < slotCount; i++)
+                {
+                    ushort itemId = reader.ReadUInt16();
+                    ushort count = reader.ReadUInt16();
+
+                    // Validar coherencia: itemId 0 con count > 0, o itemId > 0 con count 0
+                    if ((itemId == 0 && count > 0) || (itemId > 0 && count == 0))
+                    {
+                        return false;
+                    }
+
+                    itemIds[i] = itemId;
+                    counts[i] = count;
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new InventoryMessage(slotCount, itemIds, counts);
                 return true;
             }
             catch (ProtocolException)

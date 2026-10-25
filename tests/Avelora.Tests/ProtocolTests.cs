@@ -57,7 +57,7 @@ namespace Avelora.Tests
             // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más las dos
             // cadenas con su longitud uint16.
             Assert.Equal(297 + 2 + 6 + 2 + 9, bytes.Length);
-            Assert.Equal((ushort)6, original.ProtocolVersion);
+            Assert.Equal((ushort)7, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
             Assert.Equal(original.ClientToken, decoded.ClientToken);
@@ -417,6 +417,19 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Un_Snapshot_Acepta_Objeto_En_El_Suelo()
+        {
+            byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(
+                1,
+                0,
+                new[] { new EntityState(8, 64, -64, 0, 0, EntityKind.Item, 100, EntityAction.None, 3001) }));
+
+            Assert.True(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out SnapshotMessage snapshot));
+            Assert.Equal(EntityKind.Item, snapshot.Entities[0].Kind);
+            Assert.Equal((ushort)3001, snapshot.Entities[0].TypeId);
+        }
+
+        [Fact]
         public void Un_Snapshot_Vacio_Es_Valido()
         {
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(1u, 0u, Array.Empty<EntityState>()));
@@ -528,6 +541,60 @@ namespace Avelora.Tests
             Assert.True(MessageCodec.TryReadAttack(bytes, 0, bytes.Length, out AttackMessage decoded));
             Assert.Equal(5, bytes.Length);
             Assert.Equal(123456, decoded.TargetId);
+        }
+
+        [Fact]
+        public void PickUp_UseItem_E_Inventory_Van_Y_Vuelven_Igual()
+        {
+            byte[] pickup = MessageCodec.EncodePickUp(new PickUpMessage(123456));
+            Assert.True(MessageCodec.TryReadPickUp(pickup, 0, pickup.Length, out PickUpMessage pickupRead));
+            Assert.Equal(5, pickup.Length);
+            Assert.Equal(123456, pickupRead.EntityId);
+
+            byte[] use = MessageCodec.EncodeUseItem(new UseItemMessage(19));
+            Assert.True(MessageCodec.TryReadUseItem(use, 0, use.Length, out UseItemMessage useRead));
+            Assert.Equal(2, use.Length);
+            Assert.Equal((byte)19, useRead.Slot);
+
+            var inventory = new InventoryMessage(
+                3,
+                new ushort[] { 3001, 0, 3002 },
+                new ushort[] { 99, 0, 1 });
+            byte[] encodedInventory = MessageCodec.EncodeInventory(inventory);
+            Assert.True(MessageCodec.TryReadInventory(
+                encodedInventory, 0, encodedInventory.Length, out InventoryMessage inventoryRead));
+            Assert.Equal(14, encodedInventory.Length);
+            Assert.Equal(inventory.ItemIds, inventoryRead.ItemIds);
+            Assert.Equal(inventory.Counts, inventoryRead.Counts);
+        }
+
+        [Fact]
+        public void Los_Mensajes_De_Objeto_Rechazan_Longitudes_Y_Huecos_Invalidos()
+        {
+            byte[] pickup = MessageCodec.EncodePickUp(new PickUpMessage(7));
+            byte[] use = MessageCodec.EncodeUseItem(new UseItemMessage(0));
+            Assert.False(MessageCodec.TryReadPickUp(pickup, 0, pickup.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadPickUp(pickup, 0, pickup.Length + 1, out _));
+            Assert.False(MessageCodec.TryReadUseItem(use, 0, use.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadUseItem(use, 0, use.Length + 1, out _));
+
+            byte[] empty = MessageCodec.EncodeInventory(new InventoryMessage(1, new ushort[] { 0 }, new ushort[] { 0 }));
+            Assert.False(MessageCodec.TryReadInventory(empty, 0, empty.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadInventory(empty, 0, empty.Length + 1, out _));
+            empty[2] = 1;
+            Assert.False(MessageCodec.TryReadInventory(empty, 0, empty.Length, out _));
+
+            byte[] tooManySlots = { (byte)MessageType.Inventory, 61 };
+            Assert.False(MessageCodec.TryReadInventory(tooManySlots, 0, tooManySlots.Length, out _));
+
+            byte[] itemWithoutCount = MessageCodec.EncodeInventory(
+                new InventoryMessage(1, new ushort[] { 3001 }, new ushort[] { 1 }));
+            itemWithoutCount[4] = 0;
+            itemWithoutCount[5] = 0;
+            Assert.False(MessageCodec.TryReadInventory(itemWithoutCount, 0, itemWithoutCount.Length, out _));
+
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeInventory(
+                new InventoryMessage(1, new ushort[] { 0 }, new ushort[] { 1 })));
         }
 
         [Fact]

@@ -4,6 +4,7 @@ using System.IO;
 using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Net;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -22,9 +23,19 @@ namespace Avelora.Tests
         private static string MapPath =>
             Path.Combine(AppContext.BaseDirectory, "maps", "avelora-etapa-a.avmap");
 
-        private static Zone NewZone(ServerConfig config)
+        private static Zone NewZone(ServerConfig config, bool withItems = false)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
+            var items = withItems
+                ? new ItemCatalog
+                {
+                    Items = new List<ItemType>
+                    {
+                        new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 99 },
+                        new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
+                    },
+                }
+                : null;
 
             return new Zone(
                 1,
@@ -44,18 +55,26 @@ namespace Avelora.Tests
                     config.PlayerAttackRange,
                     config.AttackRangeTolerance,
                     config.PlayerAttackCooldownSeconds),
-                playerVitals: config.PlayerVitals);
+                playerVitals: config.PlayerVitals,
+                items: items,
+                itemActions: withItems ? new ItemActionQueue(config.MaxQueuedItemActions) : null,
+                inventorySlots: config.InventorySlots,
+                maxGroundItems: config.MaxGroundItems,
+                groundItemTicks: (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate),
+                pickupRange: config.PickupRange,
+                pickupRangeTolerance: config.AttackRangeTolerance,
+                potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate));
         }
 
         private sealed class Harness : IDisposable
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
 
-            public Harness(Action<ServerConfig>? configure = null, Func<long>? clock = null)
+            public Harness(Action<ServerConfig>? configure = null, Func<long>? clock = null, bool withItems = false)
             {
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
-                Zone = NewZone(Config);
+                Zone = NewZone(Config, withItems);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
                 Server = new NetworkServer(Zone, Config, Transport, MapHash, clock: clock);
@@ -137,7 +156,7 @@ namespace Avelora.Tests
             harness.Pump();
 
             Assert.Equal(1, harness.Zone.Entities.Count);
-            Assert.Single(harness.Transport.Sent);
+            Assert.Equal(2, harness.Transport.Sent.Count);
 
             SentMessage sent = harness.Transport.Sent[0];
             Assert.Equal(1, sent.ConnectionId);
@@ -153,7 +172,54 @@ namespace Avelora.Tests
             Assert.Equal(harness.Config.PlayerHalfWidth, welcome.HalfWidth);
             Assert.Equal(harness.Config.PlayerHalfHeight, welcome.HalfHeight);
             Assert.Equal(harness.MapHash, welcome.MapHash);
+            Assert.True(MessageCodec.TryReadInventory(
+                harness.Transport.Sent[1].Data,
+                0,
+                harness.Transport.Sent[1].Data.Length,
+                out InventoryMessage inventory));
+            Assert.Equal((byte)20, inventory.SlotCount);
+            Assert.All(inventory.ItemIds, id => Assert.Equal((ushort)0, id));
             Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void La_Red_Encola_Recoger_Y_Usar_Y_Envía_El_Inventario_Completo()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            var ground = new GroundItemEntity(
+                harness.Zone.Ids.Allocate(), 3001, 2, 100)
+            {
+                Position = player.Position,
+            };
+            harness.Zone.AddEntity(ground);
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodePickUp(new PickUpMessage(ground.Id)));
+            harness.Zone.Tick();
+            Assert.Equal((ushort)2, player.Inventory[0].Count);
+            Assert.False(harness.Zone.Entities.TryGet(ground.Id, out _));
+
+            harness.Transport.Sent.Clear();
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.SlotCount == 20 && inventory.ItemIds[0] == 3001 && inventory.Counts[0] == 2);
+
+            player.Health = 50;
+            player.Inventory[0] = new InventorySlot(3002, 1);
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUseItem(new UseItemMessage(0)));
+            harness.Zone.Tick();
+            Assert.Equal(80, player.Health);
+            Assert.Equal((ushort)0, player.Inventory[0].ItemId);
+
+            harness.Transport.Sent.Clear();
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.ItemIds[0] == 0 && inventory.Counts[0] == 0);
         }
 
         [Fact]

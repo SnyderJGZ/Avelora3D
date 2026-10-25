@@ -51,6 +51,13 @@ namespace Avelora.Tests
             Assert.Equal(16, config.MaxPendingLogins);
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
+            Assert.Equal("items.json", config.ItemsPath);
+            Assert.Equal(20, config.InventorySlots);
+            Assert.Equal(60d, config.GroundItemSeconds);
+            Assert.Equal(500, config.MaxGroundItems);
+            Assert.Equal(1.5f, config.PickupRange);
+            Assert.Equal(1d, config.PotionCooldownSeconds);
+            Assert.Equal(1024, config.MaxQueuedItemActions);
         }
 
         [Fact]
@@ -272,6 +279,29 @@ namespace Avelora.Tests
                 new ServerConfig { MaxFailedLoginsPerAccountPerMinute = 0 }.Validate);
 
             new ServerConfig { MaxPendingLogins = 1, MaxFailedLoginsPerAccountPerMinute = 1 }.Validate();
+        }
+
+        [Fact]
+        public void Los_Ajustes_De_Objetos_Validan_Sus_Rangos_Y_Resuelven_La_Ruta()
+        {
+            Assert.Throws<InvalidOperationException>(new ServerConfig { InventorySlots = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { InventorySlots = 61 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { GroundItemSeconds = 4.9 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { GroundItemSeconds = 3601 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { GroundItemSeconds = double.NaN }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { MaxGroundItems = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { MaxGroundItems = 5001 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PickupRange = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PickupRange = 5.1f }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PotionCooldownSeconds = 0.09 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PotionCooldownSeconds = double.PositiveInfinity }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { MaxQueuedItemActions = 0 }.Validate);
+
+            string configPath = Path_("config/server.json");
+            var config = new ServerConfig { ItemsPath = "items/items.json" };
+            Assert.Equal(Path.GetFullPath(Path.Combine(_folder, "config", "items", "items.json")),
+                config.ResolveItemsPath(configPath));
+            Assert.Equal(string.Empty, new ServerConfig { ItemsPath = " " }.ResolveItemsPath(configPath));
         }
 
         [Fact]

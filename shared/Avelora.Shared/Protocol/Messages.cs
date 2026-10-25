@@ -237,6 +237,32 @@ namespace Avelora.Shared.Protocol
         public int TargetId { get; }
     }
 
+    /// <summary>Intención de recoger un objeto del suelo (I-04). Solo lleva el identificador de la
+    /// entidad-objeto; el servidor valida distancia, espacio en el inventario y lo añade.</summary>
+    public readonly struct PickUpMessage
+    {
+        public PickUpMessage(int entityId)
+        {
+            EntityId = entityId;
+        }
+
+        /// <summary>Identificador de la entidad <see cref="EntityKind.Item"/> a recoger.</summary>
+        public int EntityId { get; }
+    }
+
+    /// <summary>Intención de usar un objeto del inventario (I-04). Solo lleva el índice del hueco;
+    /// el servidor valida que sea una poción, que el jugador no tenga la vida llena y la recarga.</summary>
+    public readonly struct UseItemMessage
+    {
+        public UseItemMessage(byte slot)
+        {
+            Slot = slot;
+        }
+
+        /// <summary>Índice del hueco del inventario (0..<see cref="ServerConfig.MaxInventorySlots"/>-1).</summary>
+        public byte Slot { get; }
+    }
+
     /// <summary>Respuesta afirmativa al saludo: identidad, punto de aparición y reglas del servidor.</summary>
     /// <remarks>
     /// Viajan la velocidad y el tamaño de la caja de colisión porque las impone el servidor: el
@@ -442,5 +468,27 @@ namespace Avelora.Shared.Protocol
         public uint LastProcessedInputSequence { get; }
 
         public EntityState[] Entities { get; }
+    }
+
+    /// <summary>Inventario completo del jugador (I-04). Se manda tras el <see cref="WelcomeMessage"/> y
+    /// tras cada cambio (recoger o usar). Lleva el número de huecos y, por cada uno, el <c>itemId</c>
+    /// (0 = vacío) y la cantidad.</summary>
+    public readonly struct InventoryMessage
+    {
+        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts)
+        {
+            SlotCount = slotCount;
+            ItemIds = itemIds ?? Array.Empty<ushort>();
+            Counts = counts ?? Array.Empty<ushort>();
+        }
+
+        /// <summary>Número de huecos del inventario (≤ 60).</summary>
+        public byte SlotCount { get; }
+
+        /// <summary>Identificador de objeto por hueco. 0 = vacío.</summary>
+        public ushort[] ItemIds { get; }
+
+        /// <summary>Cantidad por hueco. Debe ser 0 si <see cref="ItemIds"/> es 0, y > 0 si no lo es.</summary>
+        public ushort[] Counts { get; }
     }
 }

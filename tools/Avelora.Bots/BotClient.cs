@@ -90,6 +90,7 @@ namespace Avelora.Bots
         /// (I-02); el servidor suma además su tolerancia de interpolación.
         /// </summary>
         private const float AttackRange = 1.2f;
+        private const ushort DefaultPotionItemId = 3002;
 
         /// <summary>Margen que se suma a la recarga al mandar ataques, para no llegar justos al tick.</summary>
         private const int AttackSlackMs = 50;
@@ -134,6 +135,7 @@ namespace Avelora.Bots
         private readonly string? _tracePositionsPath;
         private readonly string? _reportWelcomePath;
         private readonly int _attackCooldownMs;
+        private readonly float _pickupRange;
 
         private IClientTransport? _transport;
 
@@ -207,6 +209,14 @@ namespace Avelora.Bots
         private bool _ownDead;
         private long _ownDeaths;
         private long _ownRespawns;
+        private byte _ownHealthPercent = 100;
+        private uint _lastAttackTick;
+        private ushort[] _inventoryItemIds = Array.Empty<ushort>();
+        private ushort[] _inventoryCounts = Array.Empty<ushort>();
+        private SnapshotMessage _pendingFightSnapshot;
+        private bool _itemDecisionPending;
+        private long _sentPickups;
+        private long _sentPotions;
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -236,7 +246,8 @@ namespace Avelora.Bots
             bool logCorrections = false,
             string? tracePositionsPath = null,
             string? reportWelcomePath = null,
-            string? serverKeyFingerprint = null)
+            string? serverKeyFingerprint = null,
+            float pickupRange = 1.5f)
         {
             if (startDelayMs < 0)
             {
@@ -280,6 +291,7 @@ namespace Avelora.Bots
             _welcomeTimeoutMs = welcomeTimeoutMs;
             _behavior = behavior;
             _attackCooldownMs = attackCooldownMs;
+            _pickupRange = pickupRange;
             _logCorrections = logCorrections;
             _tracePositionsPath = tracePositionsPath;
             _reportWelcomePath = reportWelcomePath;
@@ -378,6 +390,12 @@ namespace Avelora.Bots
 
         /// <summary>Reapariciones propias vistas en los snapshots (I-03).</summary>
         public long OwnRespawns => Interlocked.Read(ref _ownRespawns);
+
+        /// <summary>Intenciones de recoger enviadas por el bot fight.</summary>
+        public long SentPickups => Interlocked.Read(ref _sentPickups);
+
+        /// <summary>Intenciones de usar pociones enviadas por el bot fight.</summary>
+        public long SentPotions => Interlocked.Read(ref _sentPotions);
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
@@ -631,6 +649,12 @@ namespace Avelora.Bots
                         SendAttackIfInRange(now);
                     }
 
+                    if (_behavior == BotBehavior.Fight && !_ownDead && _itemDecisionPending)
+                    {
+                        UpdateItemActions(_pendingFightSnapshot);
+                        _itemDecisionPending = false;
+                    }
+
                     // Los abusos van en su propio temporizador: el bot sigue moviéndose normal
                     // salvo en flood, donde los inputs válidos ya van a 200/s.
                     if (_behavior == BotBehavior.Garbage && now >= _nextGarbageAt)
@@ -851,6 +875,11 @@ namespace Avelora.Bots
             // La vida es de la sesión: al reconectar se vuelve a mirar el primer snapshot.
             _ownAction = EntityAction.None;
             _ownDead = false;
+            _ownHealthPercent = 100;
+            _lastAttackTick = 0;
+            _inventoryItemIds = Array.Empty<ushort>();
+            _inventoryCounts = Array.Empty<ushort>();
+            _itemDecisionPending = false;
         }
 
         private void DiscardTransport()
@@ -1326,6 +1355,13 @@ namespace Avelora.Bots
                 return;
             }
 
+            if (MessageCodec.TryReadInventory(buffer, offset, length, out InventoryMessage inventory))
+            {
+                _inventoryItemIds = inventory.ItemIds;
+                _inventoryCounts = inventory.Counts;
+                return;
+            }
+
             if (MessageCodec.TryReadSnapshot(buffer, offset, length, out SnapshotMessage snapshot))
             {
                 Interlocked.Increment(ref _snapshots);
@@ -1379,6 +1415,7 @@ namespace Avelora.Bots
                         // de ahí, no contar el salto como una corrección enorme.
                         EntityAction previousAction = _ownAction;
                         _ownAction = snapshot.Entities[i].Action;
+                        _ownHealthPercent = snapshot.Entities[i].HealthPercent;
 
                         if (_ownAction == EntityAction.Dead)
                         {
@@ -1426,6 +1463,16 @@ namespace Avelora.Bots
 
                         break;
                     }
+                }
+
+                if (_behavior == BotBehavior.Fight && !_ownDead)
+                {
+                    _pendingFightSnapshot = snapshot;
+                    _itemDecisionPending = true;
+                }
+                else if (_ownDead)
+                {
+                    _itemDecisionPending = false;
                 }
             }
         }
@@ -1697,10 +1744,56 @@ namespace Avelora.Bots
             byte[] attack = MessageCodec.EncodeAttack(new AttackMessage(target));
             _transport!.Send(attack, attack.Length, DeliveryMode.ReliableOrdered);
             Interlocked.Increment(ref _sentAttacks);
+            _lastAttackTick = _lastSnapshotTick;
 
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
             // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.
             _nextAttackAt = now + _attackCooldownMs + AttackSlackMs;
+        }
+
+        /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>
+        private void UpdateItemActions(in SnapshotMessage snapshot)
+        {
+            if (_ownHealthPercent < 40)
+            {
+                int slots = Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length);
+                for (int slot = 0; slot < slots; slot++)
+                {
+                    if (_inventoryItemIds[slot] == DefaultPotionItemId && _inventoryCounts[slot] > 0)
+                    {
+                        byte[] use = MessageCodec.EncodeUseItem(new UseItemMessage((byte)slot));
+                        _transport!.Send(use, use.Length, DeliveryMode.ReliableOrdered);
+                        Interlocked.Increment(ref _sentPotions);
+                        break;
+                    }
+                }
+            }
+
+            if (snapshot.ServerTick == _lastAttackTick)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snapshot.Entities.Length; i++)
+            {
+                EntityState state = snapshot.Entities[i];
+                if (state.Kind != EntityKind.Item)
+                {
+                    continue;
+                }
+
+                float dx = ProtocolConstants.DequantizePosition(state.X) - _x;
+                float dy = ProtocolConstants.DequantizePosition(state.Y) - _y;
+                if ((dx * dx) + (dy * dy) > _pickupRange * _pickupRange)
+                {
+                    continue;
+                }
+
+                byte[] pickup = MessageCodec.EncodePickUp(new PickUpMessage(state.Id));
+                _transport!.Send(pickup, pickup.Length, DeliveryMode.ReliableOrdered);
+                Interlocked.Increment(ref _sentPickups);
+                break;
+            }
         }
 
         /// <summary>Enemigo vivo más cercano de la vista; devuelve su id y el vector hacia él.</summary>

@@ -70,6 +70,13 @@ namespace Avelora.Client
             }
         }
 
+        /// <summary>Un objeto del suelo (I-04b): cuadrado pequeño teñido con el color del tipo.</summary>
+        public void SetItemLook(Color color)
+        {
+            _itemColor = color;
+            transform.localScale = new Vector3(ItemScale, ItemScale, 1f);
+        }
+
         /// <summary>Tipo de la última muestra aplicada.</summary>
         public EntityKind Kind { get; private set; }
 
@@ -131,7 +138,9 @@ namespace Avelora.Client
             }
             else
             {
-                _renderer.color = sample.Kind == EntityKind.Player ? _playerColor : _npcColor;
+                _renderer.color = sample.Kind == EntityKind.Player ? _playerColor
+                    : sample.Kind == EntityKind.Item ? _itemColor
+                    : _npcColor;
 
                 if (sample.DirectionX != 0)
                 {
@@ -275,6 +284,7 @@ namespace Avelora.Client
         private const float HurtFps = 12f;
         private const float DeathFps = 10f;
         private const float AttackFps = 16f;
+        private const float ItemScale = 0.4f;
         private const float MovingEpsilonSq = 0.0001f * 0.0001f;
         private const float BarWidth = 0.8f;
         private const float BarHeight = 0.08f;
@@ -286,6 +296,7 @@ namespace Avelora.Client
         private Sprite[] _death;
         private Sprite[] _attack;
         private bool _moving;
+        private Color _itemColor = Color.white;
         private bool _wasAttacking;
         private float _attackStartedAt = -1f;
         private int _facing = FacingDown;

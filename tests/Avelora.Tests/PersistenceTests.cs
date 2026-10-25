@@ -6,6 +6,7 @@ using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Net;
 using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
@@ -14,6 +15,7 @@ using Avelora.Shared;
 using Avelora.Shared.Maps;
 using Avelora.Shared.Protocol;
 using Xunit;
+using Microsoft.Data.Sqlite;
 
 namespace Avelora.Tests
 {
@@ -50,6 +52,15 @@ namespace Avelora.Tests
         }
 
         private string DatabasePath => Path.Combine(_folder, "avelora.db");
+
+        private static ItemCatalog ItemCatalogForTests() => new ItemCatalog
+        {
+            Items = new List<ItemType>
+            {
+                new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
+                new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
+            },
+        };
 
         [Fact]
         public void La_Cuenta_Se_Registra_Y_Se_Verifica_Sin_Distinguir_Mayusculas()
@@ -165,6 +176,134 @@ namespace Avelora.Tests
                 Assert.Equal(NewHash(9), loaded.MapHash);
                 Assert.Equal(1, loaded.ZoneId);
             }
+        }
+
+        [Fact]
+        public void El_Inventario_Se_Guarda_Y_Se_Carga()
+        {
+            byte[] mapHash = NewHash(8);
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3))
+            {
+                repository.Initialize();
+                AccountLoginResult login = repository.Login("bolsa", "secreto1", "inv", "inv");
+                CharacterRecord character = repository.GetOrCreateCharacter(
+                    login.AccountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
+                repository.SaveCharacter(character.WithInventory(new[]
+                {
+                    new InventoryItemRecord(0, 3001, 5),
+                    new InventoryItemRecord(2, 3002, 1),
+                }));
+            }
+
+            using var reopened = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3);
+            reopened.Initialize();
+            AccountLoginResult again = reopened.Login("bolsa", "secreto1", "", "");
+            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                again.AccountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+            Assert.Equal(2, loaded.InventoryItems.Length);
+            Assert.Contains(loaded.InventoryItems, item => item.Slot == 0 && item.ItemId == 3001 && item.Count == 5);
+            Assert.Contains(loaded.InventoryItems, item => item.Slot == 2 && item.ItemId == 3002 && item.Count == 1);
+        }
+
+        [Fact]
+        public void La_Migracion_De_V1_A_V2_Conserva_Los_Personajes()
+        {
+            int characterId;
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+                AccountLoginResult login = repository.Login("migracion", "secreto1", "inv", "inv");
+                CharacterRecord character = repository.GetOrCreateCharacter(
+                    login.AccountId, "Heroe", 1, new Vec2(1, 1), NewHash(9))!;
+                characterId = character.Id;
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = "DROP TABLE inventory_items; PRAGMA user_version=1;";
+                command.ExecuteNonQuery();
+            }
+
+            using (var migrated = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                migrated.Initialize();
+            }
+
+            using var verify = new SqliteConnection("Data Source=" + DatabasePath);
+            verify.Open();
+            using SqliteCommand version = verify.CreateCommand();
+            version.CommandText = "PRAGMA user_version;";
+            Assert.Equal(2, Convert.ToInt32(version.ExecuteScalar()));
+            using SqliteCommand characters = verify.CreateCommand();
+            characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
+            characters.Parameters.AddWithValue("@id", characterId);
+            Assert.Equal(1, Convert.ToInt32(characters.ExecuteScalar()));
+        }
+
+        [Fact]
+        public void Un_Esquema_Desconocido_Sigue_Impidiendo_El_Arranque()
+        {
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = "PRAGMA user_version=99;";
+                command.ExecuteNonQuery();
+            }
+
+            using var incompatible = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(incompatible.Initialize);
+            Assert.Contains("versión 99", error.Message);
+        }
+
+        [Fact]
+        public void Filas_De_Inventario_Invalidas_Se_Descartan_Al_Cargar()
+        {
+            int accountId;
+            int characterId;
+            byte[] mapHash = NewHash(10);
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 2))
+            {
+                repository.Initialize();
+                accountId = repository.Login("filas", "secreto1", "inv", "inv").AccountId;
+                characterId = repository.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!.Id;
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = @"
+INSERT INTO inventory_items VALUES (@character, 0, 3001, 5);
+INSERT INTO inventory_items VALUES (@character, 1, 3999, 1);
+INSERT INTO inventory_items VALUES (@character, 2, 3001, 1);
+INSERT INTO inventory_items VALUES (@character, 3, 3001, 6);
+INSERT INTO inventory_items VALUES (@character, 4, 3001, 0);
+INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
+                command.Parameters.AddWithValue("@character", characterId);
+                command.ExecuteNonQuery();
+            }
+
+            using var reopened = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 2);
+            reopened.Initialize();
+            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+            InventoryItemRecord only = Assert.Single(loaded.InventoryItems);
+            Assert.Equal(0, only.Slot);
+            Assert.Equal(3001, only.ItemId);
+            Assert.Equal(5, only.Count);
         }
 
         [Fact]

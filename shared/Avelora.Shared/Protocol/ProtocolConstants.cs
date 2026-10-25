@@ -19,9 +19,10 @@ namespace Avelora.Shared.Protocol
         /// H-02 a 4 porque el servidor manda un <c>Challenge</c> y el <c>Hello</c> lleva las
         /// credenciales cifradas en vez de en claro. I-02 a 5 porque aparece el <c>Attack</c> y
         /// <c>EntityState</c> gana vida y acción (2 bytes más). I-03c a 6 porque <c>EntityState</c> gana
-        /// el tipo de PNJ (2 bytes más) para que el cliente distinga un enemigo de otro.
+        /// el tipo de PNJ (2 bytes más) para que el cliente distinga un enemigo de otro. I-04 a 7
+        /// porque aparecen <c>PickUp</c>, <c>UseItem</c>, <c>Inventory</c> y <c>EntityKind.Item</c>.
         /// </summary>
-        public const ushort Version = 6;
+        public const ushort Version = 7;
 
         /// <summary>
         /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias

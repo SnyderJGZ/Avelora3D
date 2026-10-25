@@ -228,6 +228,8 @@ namespace Avelora.Bots
             long deathsSeen = 0;
             long ownDeaths = 0;
             long ownRespawns = 0;
+            long sentPickups = 0;
+            long sentPotions = 0;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
@@ -262,6 +264,8 @@ namespace Avelora.Bots
                 deathsSeen += bot.DeathsSeen;
                 ownDeaths += bot.OwnDeaths;
                 ownRespawns += bot.OwnRespawns;
+                sentPickups += bot.SentPickups;
+                sentPotions += bot.SentPotions;
 
                 if (bot.EntityId > 0)
                 {
@@ -307,7 +311,9 @@ namespace Avelora.Bots
                 {
                     Console.WriteLine(
                         "      combate: ataques=" + bot.SentAttacks +
-                        " muertes_vistas=" + bot.DeathsSeen);
+                        " muertes_vistas=" + bot.DeathsSeen +
+                        " recogidas=" + bot.SentPickups +
+                        " pociones=" + bot.SentPotions);
                 }
 
                 if (abusive)
@@ -356,7 +362,8 @@ namespace Avelora.Bots
             {
                 Console.WriteLine(
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
-                    deathsSeen + " muertes vistas");
+                    deathsSeen + " muertes vistas, " + sentPickups + " recogidas, " +
+                    sentPotions + " pociones usadas");
             }
 
             if (abusive)

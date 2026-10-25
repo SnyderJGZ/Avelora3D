@@ -11,6 +11,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Diagnostics;
 using Avelora.Server.Entities;
 using Avelora.Server.Net;
+using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
 using Avelora.Server.Security;
@@ -98,8 +99,25 @@ namespace Avelora.Server
             byte[] mapHash = MapFile.ComputeContentHashBytes(map);
             string mapHashHex = MapFile.ToHexString(mapHash);
 
+            // Objetos (I-04): el catálogo se valida al arrancar y también sirve para comprobar las
+            // referencias del botín de npcs.json. Una ruta vacía desactiva el catálogo.
+            ItemCatalog items;
+            try
+            {
+                items = string.IsNullOrWhiteSpace(config.ItemsPath)
+                    ? new ItemCatalog()
+                    : ItemCatalog.Load(config.ResolveItemsPath(configPath));
+                items.Validate();
+            }
+            catch (Exception ex) when (
+                ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)
+            {
+                ConsoleReporter.WriteError("No se pudieron cargar los objetos: " + ex.Message);
+                return 2;
+            }
+
             // Enemigos (I-01). Con npcsPath vacío la zona se queda sin PNJ. Con ruta, el archivo
-            // tiene que existir y ser válido contra este mapa: si no, no se arranca.
+            // tiene que existir y ser válido contra el mapa y el catálogo de objetos.
             NpcCatalog? npcs = null;
 
             if (!string.IsNullOrWhiteSpace(config.NpcsPath))
@@ -108,7 +126,7 @@ namespace Avelora.Server
                 {
                     string npcPath = config.ResolveNpcsPath(configPath);
                     npcs = NpcCatalog.Load(npcPath);
-                    npcs.Validate(map);
+                    npcs.Validate(map, items);
                 }
                 catch (Exception ex) when (
                     ex is IOException ||
@@ -131,7 +149,10 @@ namespace Avelora.Server
                 try
                 {
                     databasePath = config.ResolveDatabasePath(configPath);
-                    repository = new SqlitePlayerRepository(databasePath);
+                    repository = new SqlitePlayerRepository(
+                        databasePath,
+                        items: items,
+                        inventorySlots: config.InventorySlots);
                     repository.Initialize();
                     saves = new CharacterSaveService(repository);
                 }
@@ -193,7 +214,15 @@ namespace Avelora.Server
                     config.PlayerAttackRange,
                     config.AttackRangeTolerance,
                     config.PlayerAttackCooldownSeconds),
-                config.PlayerVitals);
+                config.PlayerVitals,
+                items,
+                new ItemActionQueue(config.MaxQueuedItemActions),
+                config.InventorySlots,
+                config.MaxGroundItems,
+                (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate),
+                config.PickupRange,
+                config.AttackRangeTolerance,
+                (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate));
 
             try
             {

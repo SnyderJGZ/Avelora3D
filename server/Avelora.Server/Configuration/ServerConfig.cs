@@ -73,6 +73,30 @@ namespace Avelora.Server.Configuration
         public string NpcsPath { get; set; } = "npcs.json";
 
         /// <summary>
+        /// Ruta del archivo de objetos (<c>items.json</c>, I-04). Si es relativa se resuelve junto
+        /// a la configuración, como <see cref="DatabasePath"/>. Vacío = sin objetos.
+        /// </summary>
+        public string ItemsPath { get; set; } = "items.json";
+
+        /// <summary>Número de huecos del inventario (I-04).</summary>
+        public int InventorySlots { get; set; } = 20;
+
+        /// <summary>Segundos que un objeto permanece en el suelo antes de caducar (I-04).</summary>
+        public double GroundItemSeconds { get; set; } = 60d;
+
+        /// <summary>Máximo de objetos en el suelo por zona (I-04).</summary>
+        public int MaxGroundItems { get; set; } = 500;
+
+        /// <summary>Distancia máxima para recoger, en tiles, medida entre centros (I-04).</summary>
+        public float PickupRange { get; set; } = 1.5f;
+
+        /// <summary>Segundos de recarga entre dos pociones (I-04).</summary>
+        public double PotionCooldownSeconds { get; set; } = 1.0d;
+
+        /// <summary>Tope de acciones de objeto encoladas por la red (I-04).</summary>
+        public int MaxQueuedItemActions { get; set; } = 1024;
+
+        /// <summary>
         /// Semilla del azar de la IA de los enemigos. Con la misma semilla y los mismos datos, dos
         /// zonas producen exactamente las mismas posiciones.
         /// </summary>
@@ -359,6 +383,7 @@ namespace Avelora.Server.Configuration
             ValidateCombat();
             ValidateVitals();
             ValidatePersistence();
+            ValidateItems();
         }
 
         /// <summary>
@@ -480,6 +505,52 @@ namespace Avelora.Server.Configuration
         }
 
         /// <summary>
+        /// Valida los objetos e inventario (I-04).
+        /// </summary>
+        private void ValidateItems()
+        {
+            if (InventorySlots < 1 || InventorySlots > 60)
+            {
+                throw new InvalidOperationException("inventorySlots debe estar entre 1 y 60.");
+            }
+
+            if (!(GroundItemSeconds >= 5d) ||
+                GroundItemSeconds > 3600d ||
+                double.IsNaN(GroundItemSeconds) ||
+                double.IsInfinity(GroundItemSeconds))
+            {
+                throw new InvalidOperationException(
+                    "groundItemSeconds debe estar entre 5 y 3600.");
+            }
+
+            if (MaxGroundItems < 1 || MaxGroundItems > 5000)
+            {
+                throw new InvalidOperationException("maxGroundItems debe estar entre 1 y 5000.");
+            }
+
+            if (!(PickupRange > 0f) ||
+                PickupRange > 5f ||
+                float.IsNaN(PickupRange) ||
+                float.IsInfinity(PickupRange))
+            {
+                throw new InvalidOperationException(
+                    "pickupRange debe ser mayor que 0 y como mucho 5.");
+            }
+
+            if (!(PotionCooldownSeconds >= 0.1d) ||
+                double.IsNaN(PotionCooldownSeconds) ||
+                double.IsInfinity(PotionCooldownSeconds))
+            {
+                throw new InvalidOperationException("potionCooldownSeconds debe ser >= 0,1.");
+            }
+
+            if (MaxQueuedItemActions < 1)
+            {
+                throw new InvalidOperationException("maxQueuedItemActions debe ser >= 1.");
+            }
+        }
+
+        /// <summary>
         /// Resuelve el archivo SQLite. A diferencia del mapa, si es relativo se crea junto a la
         /// configuración (no se busca uno existente en otros directorios): la base de datos es
         /// del servidor, no un contenido compartido.
@@ -539,6 +610,26 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ServerKeyPath));
+        }
+
+        /// <summary>
+        /// Resuelve el archivo de objetos. Como la base de datos, si la ruta es relativa se
+        /// resuelve junto a la configuración. Una ruta vacía significa «sin objetos».
+        /// </summary>
+        public string ResolveItemsPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(ItemsPath))
+            {
+                return string.Empty;
+            }
+
+            if (Path.IsPathRooted(ItemsPath))
+            {
+                return ItemsPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ItemsPath));
         }
 
         /// <summary>

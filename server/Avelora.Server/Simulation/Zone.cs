@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Shared;
 
@@ -36,6 +37,10 @@ namespace Avelora.Server.Simulation
         private readonly NpcSystem? _npcs;
         private readonly CombatSystem? _combat;
         private readonly PlayerVitalsSystem? _vitals;
+        private readonly ItemSystem? _items;
+        private readonly List<ItemAction> _itemInbox = new List<ItemAction>(64);
+        private readonly System.Random _random;
+        private readonly NpcCatalog? _npcCatalog;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
@@ -64,7 +69,15 @@ namespace Avelora.Server.Simulation
             int npcSeed = 12345,
             AttackQueue? attacks = null,
             CombatSettings? combat = null,
-            PlayerVitalsSettings? playerVitals = null)
+            PlayerVitalsSettings? playerVitals = null,
+            ItemCatalog? items = null,
+            ItemActionQueue? itemActions = null,
+            int inventorySlots = 20,
+            int maxGroundItems = 500,
+            long groundItemTicks = 1200,
+            float pickupRange = 1.5f,
+            float pickupRangeTolerance = 0.5f,
+            long potionCooldownTicks = 20)
         {
             if (map is null)
             {
@@ -106,12 +119,20 @@ namespace Avelora.Server.Simulation
                     "La cola de ataques y las reglas de combate se configuran juntas o no se configuran.");
             }
 
+            if (items == null && itemActions != null)
+            {
+                throw new ArgumentException("La cola de acciones de objeto requiere un catálogo de objetos.");
+            }
+
             Id = id;
             Map = map;
             Entities = entities;
             Ids = ids;
             Inputs = inputs;
             Attacks = attacks;
+            ItemActions = itemActions;
+            _npcCatalog = npcs;
+            _random = new System.Random(npcSeed);
             _movement = movement;
 
             if (attacks != null && combat.HasValue)
@@ -127,6 +148,25 @@ namespace Avelora.Server.Simulation
                 _vitals = new PlayerVitalsSystem(playerVitals.Value);
             }
 
+            if (inventorySlots < 1 || inventorySlots > 60)
+            {
+                throw new ArgumentOutOfRangeException(nameof(inventorySlots));
+            }
+
+            if (items != null)
+            {
+                _items = new ItemSystem(
+                    items,
+                    _random,
+                    maxGroundItems,
+                    groundItemTicks,
+                    pickupRange,
+                    pickupRangeTolerance,
+                    potionCooldownTicks);
+            }
+
+            InventorySlots = inventorySlots;
+
             _maxIntentsPerTick = maxIntentsPerTick;
             _maxIntentsPerPlayerPerTick = maxIntentsPerPlayerPerTick;
 
@@ -134,7 +174,8 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, npcSeed, _interest.Grid);
+                _npcs = new NpcSystem(map, _random, _interest.Grid);
+                _npcs.NpcDied += OnNpcDied;
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
                 for (int i = 0; i < Entities.Count; i++)
@@ -164,6 +205,18 @@ namespace Avelora.Server.Simulation
         /// (por ejemplo, en pruebas de movimiento).
         /// </summary>
         public AttackQueue? Attacks { get; }
+
+        /// <summary>Cola de acciones de objeto de la red, o null en zonas sin objetos.</summary>
+        public ItemActionQueue? ItemActions { get; }
+
+        /// <summary>Número configurado de huecos del inventario.</summary>
+        public int InventorySlots { get; }
+
+        /// <summary>Catálogo de PNJ de la zona, para consultar el botín al morir.</summary>
+        public NpcCatalog? Npcs => _npcCatalog;
+
+        /// <summary>Notificación de cambios para enviar el inventario completo por la red.</summary>
+        public event Action<PlayerEntity>? InventoryChanged;
 
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
@@ -226,6 +279,22 @@ namespace Avelora.Server.Simulation
         /// <summary>Jugadores que han reaparecido desde el arranque (I-03).</summary>
         public long PlayerRespawns => _vitals?.Respawns ?? 0;
 
+        public long ItemsDropped => _items?.ItemsDropped ?? 0;
+        public long ItemsPickedUp => _items?.ItemsPickedUp ?? 0;
+        public long ItemsExpired => _items?.ItemsExpired ?? 0;
+        public long ItemsDiscarded => _items?.ItemsDiscarded ?? 0;
+        public int GroundItemCount => _items?.GroundItemCount ?? 0;
+        public long RejectedPickupDead => _items?.RejectedPickupDead ?? 0;
+        public long RejectedPickupItem => _items?.RejectedPickupItem ?? 0;
+        public long RejectedPickupDistance => _items?.RejectedPickupDistance ?? 0;
+        public long RejectedPickupFull => _items?.RejectedPickupFull ?? 0;
+        public long RejectedUseDead => _items?.RejectedUseDead ?? 0;
+        public long RejectedUseItem => _items?.RejectedUseItem ?? 0;
+        public long RejectedUseFull => _items?.RejectedUseFull ?? 0;
+        public long RejectedUseCooldown => _items?.RejectedUseCooldown ?? 0;
+        public long PotionsUsed => _items?.PotionsUsed ?? 0;
+        public long RejectedItemActionQueueFull => ItemActions?.RejectedQueueFull ?? 0;
+
         /// <summary>Añade un jugador a la zona y devuelve su entidad.</summary>
         /// <param name="initialHealth">
         /// Vida con la que entra. Un valor ≤ 0 (personaje nuevo o dato inválido) entra con la vida
@@ -259,7 +328,7 @@ namespace Avelora.Server.Simulation
                 health = maxHealth;
             }
 
-            var player = new PlayerEntity(Ids.Allocate(), characterId, inputBufferCapacity)
+            var player = new PlayerEntity(Ids.Allocate(), characterId, inputBufferCapacity, InventorySlots)
             {
                 MapId = Id,
                 Position = position,
@@ -309,6 +378,9 @@ namespace Avelora.Server.Simulation
         public void CollectVisibleEntities(PlayerEntity viewer, List<Entity> results) =>
             _interest.CollectVisible(viewer, results);
 
+        /// <summary>Notifica al anfitrión de red que cambió el inventario de este jugador.</summary>
+        public void NotifyInventoryChanged(PlayerEntity player) => InventoryChanged?.Invoke(player);
+
         /// <summary>Un tick: leer intenciones, simular el mundo y publicar el estado.</summary>
         public void Tick()
         {
@@ -322,6 +394,21 @@ namespace Avelora.Server.Simulation
             {
                 Attacks!.DrainInto(_attackInbox);
                 _combat.Tick(Entities, _attackInbox, _tickCount);
+            }
+
+            // Acciones y caducidades se resuelven tras el combate y antes de la IA de los PNJ.
+            if (_items != null)
+            {
+                if (ItemActions != null)
+                {
+                    ItemActions.DrainInto(_itemInbox);
+                }
+                else
+                {
+                    _itemInbox.Clear();
+                }
+
+                _items.Tick(this, _itemInbox, _tickCount);
             }
 
             // Los enemigos se mueven después de los jugadores y antes de reindexar: así el área de
@@ -358,6 +445,11 @@ namespace Avelora.Server.Simulation
             PublishPlayers();
 
             System.Threading.Interlocked.Increment(ref _tickCount);
+        }
+
+        private void OnNpcDied(NpcEntity npc, long tick)
+        {
+            _items?.DropLoot(this, npc, tick);
         }
 
         /// <summary>

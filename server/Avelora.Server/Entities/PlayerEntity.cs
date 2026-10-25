@@ -18,11 +18,12 @@ namespace Avelora.Server.Entities
     /// </remarks>
     public sealed class PlayerEntity : Entity
     {
-        public PlayerEntity(int id, int characterId, int inputBufferCapacity)
+        public PlayerEntity(int id, int characterId, int inputBufferCapacity, int inventorySlots = 20)
             : base(id, EntityKind.Player)
         {
             CharacterId = characterId;
             Input = new PlayerInputBuffer(inputBufferCapacity);
+            Inventory = new InventorySlot[inventorySlots];
         }
 
         /// <summary>Identificador del personaje (en la Etapa F vendrá de la base de datos).</summary>
@@ -39,6 +40,12 @@ namespace Avelora.Server.Entities
 
         /// <summary>Inputs recibidos por la red que esperan a ser aplicados, uno por tick.</summary>
         public PlayerInputBuffer Input { get; }
+
+        /// <summary>Huecos de inventario, modificados solo por el hilo de simulación.</summary>
+        public InventorySlot[] Inventory { get; }
+
+        /// <summary>Tick del último uso válido de poción; -1 si todavía no ha usado ninguna.</summary>
+        public long LastPotionTick { get; set; } = -1;
 
         /// <summary>
         /// Tick del último ataque <b>válido</b> (I-02); <c>-1</c> si aún no ha atacado. La recarga

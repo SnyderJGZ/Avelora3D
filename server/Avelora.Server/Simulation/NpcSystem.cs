@@ -61,11 +61,19 @@ namespace Avelora.Server.Simulation
         private long _hits;
 
         public NpcSystem(MapCollisionGrid map, int seed, EntitySpatialGrid grid)
+            : this(map, new System.Random(seed), grid)
+        {
+        }
+
+        public NpcSystem(MapCollisionGrid map, System.Random random, EntitySpatialGrid grid)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _grid = grid ?? throw new ArgumentNullException(nameof(grid));
-            _random = new System.Random(seed);
+            _random = random ?? throw new ArgumentNullException(nameof(random));
         }
+
+        /// <summary>Se invoca en el hilo del tick al registrar una muerte, antes de simular PNJ.</summary>
+        public event Action<NpcEntity, long>? NpcDied;
 
         /// <summary>Ticks de IA ejecutados. Es el reloj con el que se programan cambios y reapariciones.</summary>
         public long TickCount => _tick;
@@ -207,6 +215,7 @@ namespace Avelora.Server.Simulation
             npc.DeathScheduled = true;
             npc.DeathTick = _tick;
             _deaths++;
+            NpcDied?.Invoke(npc, _tick);
 
             if (npc.SpawnerIndex < 0 || npc.SpawnerIndex >= _spawners.Length)
             {

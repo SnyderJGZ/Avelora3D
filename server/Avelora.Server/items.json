@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "id": 3001, "name": "Colmillo de orco", "kind": "material", "maxStack": 99 },
+    { "id": 3002, "name": "Poción de vida", "kind": "potion", "maxStack": 10, "heal": 30 }
+  ]
+}

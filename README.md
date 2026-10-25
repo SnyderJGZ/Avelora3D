@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso.** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; servidor de I-04 implementado (cliente I-04b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -12,9 +12,10 @@ calcular igual (movimiento y colisión).
 > Desde I-01 el mundo tiene enemigos que el servidor mueve y todos ven; desde I-02 (**protocolo v5**)
 > esos enemigos tienen vida, reciben los ataques de los jugadores, mueren y reaparecen. Desde I-03
 > persiguen y golpean al jugador, y el jugador tiene vida, muerte y reaparición. Desde I-03c
-> (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67
-> entidades. Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i) e
-> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6).
+> (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67 entidades.
+> Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones.
+> Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
+> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6) e [I-04](#botín-e-inventario-i-04).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -23,7 +24,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **348/348 en verde** |
+| `dotnet test Avelora.slnx` | **383/383 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -328,16 +329,22 @@ pueden discrepar** del formato.
 | `Attack` | 3 | C → S | 5 B | objetivo (i32) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
 | `Reject` | 11 | S → C | 2 B | motivo (u8) |
-| `Snapshot` | 12 | S → C | 11 B + 13 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), tipo (u8), vida (u8, 0–100), acción (u8) |
+| `Snapshot` | 12 | S → C | 11 B + 15 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), kind (u8), vida (u8), acción (u8), TypeId (u16) |
+| `PickUp` | 4 | C → S | 5 B | id de entidad del objeto (i32) |
+| `UseItem` | 5 | C → S | 2 B | índice del hueco (u8) |
+| `Inventory` | 14 | S → C | 2 B + 4 B/hueco | número de huecos (u8), luego itemId y cantidad (u16 cada uno; 0/0 = vacío) |
+| `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 
 Canales:
 
-- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject` y `Attack`.
+- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem` e `Inventory`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
 > El **protocolo v5** (I-02) añade `Attack` y dos bytes por entidad en el snapshot (`HealthPercent` y
 > `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
+> I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
+> `PickUp`, `UseItem` e `Inventory`.
 
 ### Handshake
 
@@ -861,8 +868,8 @@ Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md
 
 Los enemigos son entidades del servidor (`EntityKind.Npc`, valor 1 del protocolo, que ya viajaba en
 el snapshot). El servidor los mueve con su IA y todos los clientes los ven. Desde I-02 también tienen
-vida, reciben ataques, mueren y reaparecen; desde I-03 persiguen y golpean al jugador. El botín
-queda para I-04.
+vida, reciben ataques, mueren y reaparecen; desde I-03 persiguen y golpean al jugador. I-04 añade el
+botín e inventario autoritativos.
 
 `server/Avelora.Server/npcs.json` se copia junto al ejecutable, como `server.json`:
 
@@ -1023,8 +1030,9 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate y botín | ⏳ I-01, I-02 e I-03 hechas |
+| **I** | Enemigos, combate y botín | ⏳ I-01, I-02, I-03 e I-04 de servidor hechas; pendiente I-04b de cliente |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
+| **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1163,6 +1171,82 @@ causas, las dos en `ClientPrediction.Reconcile`:
    así que queda hasta medio paso (1/128) fuera del camino real. El snapshot suma otro medio paso.
    - **Arreglo:** la tolerancia pasa a **dos medios pasos** (1/64 de tile, medio píxel).
 
+### Botín e inventario (I-04)
+
+El cliente solo envía `PickUp(entityId)` y `UseItem(slot)`: el servidor valida la vida, la distancia,
+el tipo de objeto, el espacio y la recarga. El protocolo es **v7**; `EntityKind.Item = 2` identifica
+los objetos del suelo y su `TypeId` es el `itemId`. Sus snapshots llevan vida 100, acción `None` y
+dirección `(0,0)`. `PickUp` y `UseItem` son de cliente a servidor; `Inventory` devuelve todos los
+huecos tras el `Welcome` y después de cada cambio (contenido: 81 B con 20 huecos; con el byte de tipo
+del mensaje, 82 B en el cable).
+
+`server/Avelora.Server/items.json` declara los objetos. `kind` solo puede ser `material` o `potion`;
+`id` es único (1–65535), `maxStack` va de 1 a 999; `heal` (1–100000) es obligatorio en pociones y
+está prohibido en materiales. El arranque valida estos datos y las referencias de botín:
+
+```json
+{
+  "items": [
+    { "id": 3001, "name": "Colmillo de orco", "kind": "material", "maxStack": 99 },
+    { "id": 3002, "name": "Poción de vida", "kind": "potion", "maxStack": 10, "heal": 30 }
+  ]
+}
+```
+
+Cada tipo de `npcs.json` puede declarar `loot: [{ itemId, chance, min, max }]`. El `itemId` debe
+existir y `1 ≤ min ≤ max ≤ maxStack`; `chance` está en (0, 1]. Al morir un PNJ, cada entrada tira
+su probabilidad y cantidad con el mismo `Random` determinista de `NpcSystem`. Cada entrada que sale
+crea una entidad en su posición con desplazamiento de ±0,4 tiles por eje y caduca tras
+`groundItemSeconds` (60 s por defecto). El límite por zona es `maxGroundItems`; lo que lo supera se
+cuenta como `objetos_descartados`.
+
+**Recoger:** se acepta solo si el jugador está vivo, el id es un `GroundItemEntity` y la distancia
+entre centros no supera `pickupRange + attackRangeTolerance` (1,5 + 0,5 = 2 tiles por defecto). El
+servidor calcula antes si cabe el stack entero; primero llena pilas del mismo objeto hasta `maxStack`
+y luego huecos vacíos en orden. Si no cabe todo, no cambia nada. En la cola de un mismo tick gana la
+primera petición válida.
+
+**Pociones:** `UseItem` requiere jugador vivo, ranura existente con tipo `potion`, vida por debajo del
+máximo y recarga cumplida. Cura hasta el máximo, consume una unidad y vacía la ranura al gastar la
+última. La recarga se redondea a `ceil(potionCooldownSeconds × TickRate)` ticks. Las acciones de
+objetos se resuelven después del combate y antes de `NpcSystem`; la simulación conserva un único hilo
+propietario del mundo, mientras la red solo encola.
+
+**Persistencia:** `inventory_items` guarda `(character_id, slot, item_id, count)` con borrado en
+cascada. El esquema SQLite v1 migra a v2 dentro de una transacción sin perder personajes; otras
+versiones desconocidas impiden el arranque. Guardar el personaje reescribe también sus filas de
+inventario en la misma transacción. Al cargar se descartan y registran filas de objetos eliminados,
+ranuras fuera de rango o cantidades no válidas, sin impedir el login.
+
+El informe periódico y el resumen final muestran `objetos_soltados`, `objetos_recogidos`,
+`objetos_caducados`, `objetos_descartados`, `objetos_en_suelo`, los cuatro rechazos de recogida y de
+uso, `pociones_usadas` y `acciones_objeto_cola_llena`. En modo `fight`, los bots recogen objetos
+cercanos y usan la poción 3002 cuando su vida baja del 40 %; el resumen incluye `recogidas` y
+`pociones`.
+
+| Campo de `server.json` | Defecto | Rango / significado |
+| --- | --- | --- |
+| `itemsPath` | `items.json` | Ruta junto a la configuración; vacío desactiva objetos. |
+| `inventorySlots` | 20 | Número de huecos, 1–60. |
+| `groundItemSeconds` | 60 | Permanencia en el suelo, 5–3600 s. |
+| `maxGroundItems` | 500 | Máximo de entidades objeto por zona, 1–5000. |
+| `pickupRange` | 1.5 | Tiles entre centros, > 0 y ≤ 5; se suma la tolerancia de ataque. |
+| `potionCooldownSeconds` | 1.0 | Recarga, ≥ 0,1 s. |
+| `maxQueuedItemActions` | 1024 | Tope de acciones pendientes de la red, ≥ 1. |
+
+**Verificación y carga I-04:** reproducir con
+`.\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior fight -LogCorrections -NuevaBase`.
+En esta ejecución (servidor 160 s, 50/50 bots): tick p99 **0,069 ms**, peor **5,703 ms**, **0** ticks
+por encima de 50 ms; **0 correcciones** (**0/bot/min**, igual que J-01). Se soltaron **166** objetos,
+se recogieron **165**, caducó **0** y quedó **1** en el suelo; hubo **258** rechazos de recoger por
+objeto inexistente/ya recogido y ninguno por jugador muerto, distancia o inventario lleno. Se usaron
+**27** pociones y hubo **12** muertes / **10** reapariciones de jugador; hubo 4 rechazos de uso por
+objeto y 1 por recarga. Los bots enviaron 423 peticiones de recoger y 32 de poción. El servidor envió
+**35 242 538 B (35,2 MB)**, **5,5 MB más (+18,7 %)** que J-01 (29,7 MB); no apareció ninguna línea
+`[corrección]` que requiriera análisis individual. El p99 subió **0,022 ms** respecto a J-01 (0,047 ms).
+
+---
+
 ### Mapa de prueba de 80×60 (J-01)
 
 El servidor y los bots cargan **`maps/avelora-prueba.avmap`**. Es un mapa de 80×60 casillas
@@ -1191,17 +1275,8 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-La **Etapa F** ya está cerrada: las cuentas y los personajes viven en SQLite, el login es real y
-corre en su propio hilo, y la posición sobrevive a la desconexión. La misma cuenta no puede jugar dos
-veces: la sesión anterior recibe `LoggedInElsewhere` y se cierra con la pausa suficiente para que el
-cliente lea el motivo. El protocolo subió a **v2** solo por el saludo; el tick, los snapshots y la
-predicción siguen igual.
-
-El siguiente bloque es la **Etapa G: bots y pruebas de carga** (plan §10). Hay que llevar los bots a
-**30–50** conexiones simultáneas y medir el **peor caso** (todos en el mismo punto, entradas y salidas
-masivas), la **resistencia** de varias horas sin que crezca la memoria, la **mala red** (latencia y
-pérdida simuladas), el **abuso** (mensajes inválidos, inundación, movimiento acelerado) y las
-**caídas** (matar el servidor en pleno juego, reiniciarlo y comprobar que se pierde como mucho el
-último minuto y que la base queda consistente). Conviene vigilar también las **~9 correcciones de
-predicción** que aparecieron al moverse en diagonal en el editor, probablemente por tirones de frames
-mientras el editor está sin foco.
+La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
+la desconexión. El backend de **I-04** añade ahora botín, inventario y pociones con persistencia v2.
+El siguiente trabajo de este bloque es **I-04b**, conectar protocolo v7, recoger objetos y mostrar el
+inventario en el cliente de Unity; también siguen pendientes los trabajos de seguridad de H que no
+forman parte de esta tarea.

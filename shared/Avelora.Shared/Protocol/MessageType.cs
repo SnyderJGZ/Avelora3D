@@ -17,6 +17,12 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: intención de atacar a una entidad (I-02).</summary>
         Attack = 3,
 
+        /// <summary>Cliente → servidor: recoger un objeto del suelo (I-04).</summary>
+        PickUp = 4,
+
+        /// <summary>Cliente → servidor: usar un objeto del inventario (I-04).</summary>
+        UseItem = 5,
+
         /// <summary>Servidor → cliente: aceptación del saludo con la identidad y el punto de aparición.</summary>
         Welcome = 10,
 
@@ -31,5 +37,8 @@ namespace Avelora.Shared.Protocol
         /// Se envía nada más conectar, antes de que el cliente mande <see cref="Hello"/>.
         /// </summary>
         Challenge = 13,
+
+        /// <summary>Servidor → cliente: inventario completo (I-04).</summary>
+        Inventory = 14,
     }
 }

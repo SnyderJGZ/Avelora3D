@@ -88,6 +88,17 @@ namespace Avelora.Client
         // shortcut: copia de playerRespawnSeconds de server.json, solo para la cuenta atrás del aviso;
         // si el servidor la cambia, el aviso se equivoca pero la reaparición la sigue decidiendo él.
         private const float RespawnSeconds = 5f;
+
+        // shortcut: copia de pickupRange de server.json y de items.json (nombres y qué es poción);
+        // si el servidor los cambia, se piden recogidas que rechaza y se ven nombres viejos. Pasarán
+        // al Welcome con el catálogo de objetos (I-05).
+        private const float PickupRange = 1.5f;
+        private const ushort PotionItemId = 3002;
+        private static readonly Dictionary<ushort, string> ItemNames = new Dictionary<ushort, string>
+        {
+            { 3001, "Colmillo de orco" },
+            { 3002, "Poción de vida" },
+        };
         private const float HintSeconds = 1.5f;
         private const float PickRadius = 0.5f;
 
@@ -132,6 +143,9 @@ namespace Avelora.Client
         private uint _lastProcessedSequence;
         private Vec2 _lastAuthoritative;
         private int _entityId;
+        private ushort[] _inventoryIds = new ushort[0];
+        private ushort[] _inventoryCounts = new ushort[0];
+        private bool _showInventory = true;
         private byte _ownHealthPercent = 100;
         private bool _ownDead;
         private float _ownDeathAt;
@@ -267,6 +281,8 @@ namespace Avelora.Client
             _entityId = 0;
             _ownHealthPercent = 100;
             _ownDead = false;
+            _inventoryIds = new ushort[0];
+            _inventoryCounts = new ushort[0];
             _accumulator = 0;
             _lastReject = null;
             _welcomeReceived = false;
@@ -336,6 +352,12 @@ namespace Avelora.Client
             if (!_ownDead)
             {
                 HandleCombatInput();
+                HandleItemInput();
+            }
+
+            if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
+            {
+                _showInventory = !_showInventory;
             }
 
             double frame = Time.deltaTime;
@@ -451,7 +473,7 @@ namespace Avelora.Client
             {
                 Vector2 screen = mouse.position.ReadValue();
                 Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
-                Select(PickNpcAt(world));
+                Select(PickEntityAt(world, EntityKind.Npc, PickRadius));
             }
 
             RemotePlayerView target = SelectedTarget();
@@ -485,15 +507,60 @@ namespace Avelora.Client
             _nextAttackAt = Time.unscaledTime + AttackCooldownSeconds;
         }
 
-        private int PickNpcAt(Vector3 world)
+        /// <summary>
+        /// E recoge el objeto del suelo más cercano a alcance; Q bebe la primera poción (I-04b). El
+        /// servidor valida todo: aquí solo se evita mandar lo que seguro rechazaría.
+        /// </summary>
+        private void HandleItemInput()
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null || _transport == null)
+            {
+                return;
+            }
+
+            if (keyboard.eKey.wasPressedThisFrame)
+            {
+                int item = PickEntityAt(transform.position, EntityKind.Item, PickupRange);
+                if (item == 0)
+                {
+                    ShowHint("nada que recoger");
+                }
+                else
+                {
+                    byte[] bytes = MessageCodec.EncodePickUp(new PickUpMessage(item));
+                    _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+                }
+            }
+
+            if (keyboard.qKey.wasPressedThisFrame)
+            {
+                int slot = Array.IndexOf(_inventoryIds, PotionItemId);
+                if (slot < 0)
+                {
+                    ShowHint("sin pociones");
+                }
+                else if (_ownHealthPercent >= 100)
+                {
+                    ShowHint("vida llena");
+                }
+                else
+                {
+                    byte[] bytes = MessageCodec.EncodeUseItem(new UseItemMessage((byte)slot));
+                    _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+                }
+            }
+        }
+
+        private int PickEntityAt(Vector3 world, EntityKind kind, float radius)
         {
             int best = 0;
-            float bestDistance = PickRadius * PickRadius;
+            float bestDistance = radius * radius;
 
             foreach (KeyValuePair<int, RemotePlayerView> pair in _remoteViews)
             {
                 RemotePlayerView view = pair.Value;
-                if (view == null || view.Kind != EntityKind.Npc || view.IsDead)
+                if (view == null || view.Kind != kind || view.IsDead)
                 {
                     continue;
                 }
@@ -695,6 +762,16 @@ namespace Avelora.Client
                         _lastReject = reject.Reason;
                         _status = "rechazado: " + DescribeReject(reject.Reason);
                         _disconnectRequested = true;
+                    }
+
+                    break;
+
+                case MessageType.Inventory:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadInventory(buffer, offset, length, out InventoryMessage inventory))
+                    {
+                        _inventoryIds = inventory.ItemIds;
+                        _inventoryCounts = inventory.Counts;
                     }
 
                     break;
@@ -948,6 +1025,12 @@ namespace Avelora.Client
                 remotePlayerColor,
                 npcColor);
 
+            if (kind == EntityKind.Item)
+            {
+                // shortcut: sin arte de objetos todavía; un cuadrado pequeño con el color del tipo.
+                view.SetItemLook(typeId == PotionItemId ? new Color(0.9f, 0.2f, 0.3f, 1f) : new Color(0.95f, 0.9f, 0.75f, 1f));
+            }
+
             NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId) : null;
             if (look != null)
             {
@@ -1132,6 +1215,32 @@ namespace Avelora.Client
             }
         }
 
+        /// <summary>Inventario a la derecha (I-04b): una línea por hueco ocupado; I lo oculta.</summary>
+        private void DrawInventory()
+        {
+            var lines = new System.Text.StringBuilder("Inventario (I) · E recoger · Q poción");
+            int used = 0;
+
+            for (int i = 0; i < _inventoryIds.Length; i++)
+            {
+                if (_inventoryIds[i] == 0)
+                {
+                    continue;
+                }
+
+                string name = ItemNames.TryGetValue(_inventoryIds[i], out string known) ? known : "Objeto " + _inventoryIds[i];
+                lines.Append("\n").Append(i + 1).Append(". ").Append(name).Append(" x").Append(_inventoryCounts[i]);
+                used++;
+            }
+
+            lines.Append("\n").Append(used).Append('/').Append(_inventoryIds.Length).Append(" huecos");
+
+            float height = 44f + (18f * (used + 1));
+            var box = new Rect(Screen.width - 280f, 10f, 270f, height);
+            GUI.Box(box, GUIContent.none);
+            GUI.Label(new Rect(box.x + 10f, box.y + 6f, 250f, height - 8f), lines.ToString(), _overlayStyle);
+        }
+
         /// <summary>Barra de vida propia abajo al centro y aviso de muerte con cuenta atrás (I-03b).</summary>
         private void DrawOwnHealth()
         {
@@ -1146,6 +1255,11 @@ namespace Avelora.Client
             GUI.DrawTexture(new Rect(back.x, back.y, width * _ownHealthPercent / 100f, height), Texture2D.whiteTexture);
             GUI.color = previous;
             GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), "Vida " + _ownHealthPercent + " %", _overlayStyle);
+
+            if (_showInventory)
+            {
+                DrawInventory();
+            }
 
             if (_ownDead)
             {

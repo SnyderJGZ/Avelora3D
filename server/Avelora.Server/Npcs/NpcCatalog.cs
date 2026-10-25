@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Avelora.Server.Items;
 using Avelora.Shared;
 
 namespace Avelora.Server.Npcs
@@ -56,6 +57,9 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Segundos entre dos golpes del PNJ (≥ 0,2).</summary>
         public float AttackCooldownSeconds { get; set; }
+
+        /// <summary>Botín que puede soltar al morir (I-04).</summary>
+        public List<LootEntry> Loot { get; set; } = new List<LootEntry>();
 
         /// <summary>Recarga del golpe en ticks, redondeando hacia arriba (I-03).</summary>
         public long AttackCooldownTicks => Math.Max(
@@ -227,7 +231,7 @@ namespace Avelora.Server.Npcs
         /// Comprueba que los datos son utilizables en <paramref name="map"/> y lanza una
         /// <see cref="InvalidOperationException"/> con el primer problema que encuentre.
         /// </summary>
-        public void Validate(MapCollisionGrid map)
+        public void Validate(MapCollisionGrid map, ItemCatalog? items = null)
         {
             if (map is null)
             {
@@ -237,7 +241,7 @@ namespace Avelora.Server.Npcs
             Types ??= new List<NpcType>();
             Spawners ??= new List<NpcSpawner>();
 
-            ValidateTypes();
+            ValidateTypes(items);
 
             int total = 0;
 
@@ -301,7 +305,7 @@ namespace Avelora.Server.Npcs
             }
         }
 
-        private void ValidateTypes()
+        private void ValidateTypes(ItemCatalog? items)
         {
             for (int i = 0; i < Types.Count; i++)
             {
@@ -400,6 +404,58 @@ namespace Avelora.Server.Npcs
                     throw new InvalidOperationException(
                         "npcs.json: el tipo " + type.Id + " tiene attackCooldownSeconds " +
                         type.AttackCooldownSeconds + "; debe ser >= " + MinAttackCooldownSeconds + ".");
+                }
+
+                // Validar botín (I-04)
+                if (type.Loot != null)
+                {
+                    for (int l = 0; l < type.Loot.Count; l++)
+                    {
+                        LootEntry loot = type.Loot[l];
+                        string lootWhere = where + " > loot " + (l + 1);
+
+                        if (loot == null)
+                        {
+                            throw new InvalidOperationException("npcs.json: " + lootWhere + " está vacío.");
+                        }
+
+                        if (loot.ItemId <= 0 || loot.ItemId > ushort.MaxValue)
+                        {
+                            throw new InvalidOperationException(
+                                "npcs.json: " + lootWhere + " tiene itemId " + loot.ItemId +
+                                "; debe estar entre 1 y 65535.");
+                        }
+
+                        if (!(loot.Chance > 0d) || loot.Chance > 1d ||
+                            double.IsNaN(loot.Chance) || double.IsInfinity(loot.Chance))
+                        {
+                            throw new InvalidOperationException(
+                                "npcs.json: " + lootWhere + " tiene chance " + loot.Chance +
+                                "; debe estar en (0, 1].");
+                        }
+
+                        if (loot.Min < 1 || loot.Max < loot.Min)
+                        {
+                            throw new InvalidOperationException(
+                                "npcs.json: " + lootWhere + " tiene min=" + loot.Min + ", max=" + loot.Max +
+                                "; debe ser 1 ≤ min ≤ max.");
+                        }
+
+                        ItemType? item = items?.Find(loot.ItemId);
+                        if (item == null)
+                        {
+                            throw new InvalidOperationException(
+                                "npcs.json: " + lootWhere + " usa itemId " + loot.ItemId +
+                                ", que no existe en items.json.");
+                        }
+
+                        if (loot.Max > item.MaxStack)
+                        {
+                            throw new InvalidOperationException(
+                                "npcs.json: " + lootWhere + " tiene max " + loot.Max +
+                                ", mayor que maxStack " + item.MaxStack + " del objeto " + loot.ItemId + ".");
+                        }
+                    }
                 }
             }
         }

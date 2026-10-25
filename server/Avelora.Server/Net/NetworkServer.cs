@@ -200,6 +200,7 @@ namespace Avelora.Server.Net
             _transport.Connected += OnConnected;
             _transport.Disconnected += OnDisconnected;
             _transport.Received += OnReceived;
+            _zone.InventoryChanged += OnInventoryChanged;
         }
 
         /// <summary>Puerto UDP efectivo.</summary>
@@ -478,6 +479,34 @@ namespace Avelora.Server.Net
                 if (_zone.Attacks != null)
                 {
                     _zone.Attacks.TryEnqueue(new AttackIntent(entityId, attack.TargetId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadPickUp(buffer, offset, length, out PickUpMessage pickup))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.PickUp(entityId, pickup.EntityId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadUseItem(buffer, offset, length, out UseItemMessage useItem))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.UseItem(entityId, useItem.Slot));
                 }
                 else
                 {
@@ -1011,6 +1040,20 @@ namespace Avelora.Server.Net
                 _config.InputBufferCapacity,
                 control.Character?.Health ?? 0);
 
+            if (control.Character != null)
+            {
+                for (int i = 0; i < control.Character.InventoryItems.Length; i++)
+                {
+                    InventoryItemRecord saved = control.Character.InventoryItems[i];
+                    if (saved.Slot >= 0 && saved.Slot < player.Inventory.Length)
+                    {
+                        player.Inventory[saved.Slot] = new InventorySlot(
+                            (ushort)saved.ItemId,
+                            (ushort)saved.Count);
+                    }
+                }
+            }
+
             player.ConnectionId = connectionId;
 
             _sessions[connectionId] = new Session(
@@ -1037,6 +1080,7 @@ namespace Avelora.Server.Net
                 _mapHash));
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
         /// <summary>
@@ -1148,8 +1192,43 @@ namespace Avelora.Server.Net
                 position = player.Position;
             }
 
-            session.Character = session.Character.WithState(zone.Id, position, _mapHash, health);
+            var inventory = new List<InventoryItemRecord>(player.Inventory.Length);
+            for (int i = 0; i < player.Inventory.Length; i++)
+            {
+                InventorySlot slot = player.Inventory[i];
+                if (slot.ItemId != 0 && slot.Count > 0)
+                {
+                    inventory.Add(new InventoryItemRecord(i, slot.ItemId, slot.Count));
+                }
+            }
+
+            session.Character = session.Character
+                .WithState(zone.Id, position, _mapHash, health)
+                .WithInventory(inventory.ToArray());
             _saves.Enqueue(session.Character);
+        }
+
+        private void OnInventoryChanged(PlayerEntity player)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
+                session.EntityId == player.Id)
+            {
+                Enqueue(player.ConnectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            }
+        }
+
+        private static byte[] EncodeInventory(PlayerEntity player)
+        {
+            int count = player.Inventory.Length;
+            var itemIds = new ushort[count];
+            var amounts = new ushort[count];
+            for (int i = 0; i < count; i++)
+            {
+                itemIds[i] = player.Inventory[i].ItemId;
+                amounts[i] = player.Inventory[i].Count;
+            }
+
+            return MessageCodec.EncodeInventory(new InventoryMessage((byte)count, itemIds, amounts));
         }
 
         private void ReleaseConnection(int connectionId)
@@ -1202,7 +1281,8 @@ namespace Avelora.Server.Net
                     entity.Kind,
                     healthPercent,
                     entity.Action,
-                    entity is NpcEntity typed ? (ushort)typed.TypeId : (ushort)0);
+                    entity is NpcEntity typed ? (ushort)typed.TypeId :
+                    entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

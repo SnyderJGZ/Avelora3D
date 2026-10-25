@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using Avelora.Server.Items;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 using Microsoft.Data.Sqlite;
@@ -19,7 +20,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
 
         /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
         public const int MaxCharactersPerAccount = 3;
@@ -28,13 +29,17 @@ namespace Avelora.Server.Persistence
 
         private readonly string _connectionString;
         private readonly int _passwordIterations;
+        private readonly ItemCatalog? _items;
+        private readonly int _inventorySlots;
         private readonly object _initializeGate = new object();
         private bool _initialized;
         private bool _disposed;
 
         public SqlitePlayerRepository(
             string databasePath,
-            int passwordIterations = PasswordHasher.DefaultIterations)
+            int passwordIterations = PasswordHasher.DefaultIterations,
+            ItemCatalog? items = null,
+            int inventorySlots = 20)
         {
             if (string.IsNullOrWhiteSpace(databasePath))
             {
@@ -50,6 +55,13 @@ namespace Avelora.Server.Persistence
 
             DatabasePath = databasePath;
             _passwordIterations = passwordIterations;
+            _items = items;
+            if (inventorySlots < 1 || inventorySlots > 60)
+            {
+                throw new ArgumentOutOfRangeException(nameof(inventorySlots));
+            }
+
+            _inventorySlots = inventorySlots;
 
             if (databasePath != ":memory:")
             {
@@ -101,6 +113,13 @@ namespace Avelora.Server.Persistence
                 {
                     using SqliteTransaction transaction = connection.BeginTransaction();
                     CreateSchema(connection, transaction);
+                    SetUserVersion(connection, transaction, SchemaVersion);
+                    transaction.Commit();
+                }
+                else if (version == 1)
+                {
+                    using SqliteTransaction transaction = connection.BeginTransaction();
+                    CreateInventorySchema(connection, transaction);
                     SetUserVersion(connection, transaction, SchemaVersion);
                     transaction.Commit();
                 }
@@ -275,7 +294,9 @@ namespace Avelora.Server.Persistence
             }
 
             using SqliteConnection connection = OpenConnection();
+            using SqliteTransaction transaction = connection.BeginTransaction();
             using SqliteCommand update = connection.CreateCommand();
+            update.Transaction = transaction;
             update.CommandText =
                 "UPDATE characters SET " +
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
@@ -301,6 +322,31 @@ namespace Avelora.Server.Persistence
                     "No se pudo guardar el personaje " + character.Id +
                     ": la base de datos no conoce esa combinación de personaje y cuenta.");
             }
+
+            using (SqliteCommand delete = connection.CreateCommand())
+            {
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM inventory_items WHERE character_id = @id;";
+                delete.Parameters.AddWithValue("@id", character.Id);
+                delete.ExecuteNonQuery();
+            }
+
+            for (int i = 0; i < character.InventoryItems.Length; i++)
+            {
+                InventoryItemRecord item = character.InventoryItems[i];
+                using SqliteCommand insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText =
+                    "INSERT INTO inventory_items (character_id, slot, item_id, count) " +
+                    "VALUES (@character, @slot, @item, @count);";
+                insert.Parameters.AddWithValue("@character", character.Id);
+                insert.Parameters.AddWithValue("@slot", item.Slot);
+                insert.Parameters.AddWithValue("@item", item.ItemId);
+                insert.Parameters.AddWithValue("@count", item.Count);
+                insert.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
         }
 
         public void Dispose()
@@ -356,6 +402,23 @@ CREATE TABLE characters (
 );
 
 CREATE INDEX characters_account_idx ON characters(account_id);
+";
+            command.ExecuteNonQuery();
+            CreateInventorySchema(connection, transaction);
+        }
+
+        private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = @"
+CREATE TABLE inventory_items (
+    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    slot         INTEGER NOT NULL,
+    item_id      INTEGER NOT NULL,
+    count        INTEGER NOT NULL,
+    PRIMARY KEY (character_id, slot)
+);
 ";
             command.ExecuteNonQuery();
         }
@@ -433,7 +496,7 @@ CREATE INDEX characters_account_idx ON characters(account_id);
             return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         }
 
-        private static CharacterRecord? FindCharacter(
+        private CharacterRecord? FindCharacter(
             SqliteConnection connection,
             int accountId,
             string characterName)
@@ -446,34 +509,73 @@ CREATE INDEX characters_account_idx ON characters(account_id);
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@name", characterName);
 
+            CharacterRecord? character;
+            using (SqliteDataReader reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return null;
+                }
+
+                byte[] mapHash = (byte[])reader.GetValue(10);
+                if (mapHash.Length != ProtocolConstants.MapHashSize)
+                {
+                    throw new InvalidOperationException(
+                        "El personaje " + reader.GetInt32(0) + " tiene una huella de mapa corrupta.");
+                }
+
+                character = new CharacterRecord(
+                    reader.GetInt32(0),
+                    reader.GetInt32(1),
+                    reader.GetString(2),
+                    reader.GetInt32(3),
+                    reader.GetInt32(4),
+                    reader.GetInt32(5),
+                    reader.GetInt32(6),
+                    reader.GetInt32(7),
+                    new Vec2((float)reader.GetDouble(8), (float)reader.GetDouble(9)),
+                    mapHash,
+                    ParseTime(reader.GetString(11)),
+                    ParseTime(reader.GetString(12)));
+            }
+
+            return character.WithInventory(LoadInventory(connection, character.Id));
+        }
+
+        private InventoryItemRecord[] LoadInventory(SqliteConnection connection, int characterId)
+        {
+            var inventory = new System.Collections.Generic.List<InventoryItemRecord>();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT slot, item_id, count FROM inventory_items " +
+                "WHERE character_id = @character ORDER BY slot;";
+            command.Parameters.AddWithValue("@character", characterId);
+
             using SqliteDataReader reader = command.ExecuteReader();
-
-            if (!reader.Read())
+            while (reader.Read())
             {
-                return null;
+                long slot = reader.GetInt64(0);
+                long itemId = reader.GetInt64(1);
+                long count = reader.GetInt64(2);
+                ItemType? type = itemId > 0 && itemId <= ushort.MaxValue
+                    ? _items?.Find((int)itemId)
+                    : null;
+                bool valid = slot >= 0 && slot < _inventorySlots &&
+                    itemId > 0 && itemId <= ushort.MaxValue && count >= 1 && count <= 999 &&
+                    (_items == null || (type != null && count <= type.MaxStack));
+
+                if (!valid)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se descartó una fila de inventory_items inválida del personaje " +
+                        characterId + " (slot=" + slot + ", item_id=" + itemId + ", count=" + count + ").");
+                    continue;
+                }
+
+                inventory.Add(new InventoryItemRecord((int)slot, (int)itemId, (int)count));
             }
 
-            byte[] mapHash = (byte[])reader.GetValue(10);
-
-            if (mapHash.Length != ProtocolConstants.MapHashSize)
-            {
-                throw new InvalidOperationException(
-                    "El personaje " + reader.GetInt32(0) + " tiene una huella de mapa corrupta.");
-            }
-
-            return new CharacterRecord(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetString(2),
-                reader.GetInt32(3),
-                reader.GetInt32(4),
-                reader.GetInt32(5),
-                reader.GetInt32(6),
-                reader.GetInt32(7),
-                new Vec2((float)reader.GetDouble(8), (float)reader.GetDouble(9)),
-                mapHash,
-                ParseTime(reader.GetString(11)),
-                ParseTime(reader.GetString(12)));
+            return inventory.ToArray();
         }
 
         private static string FormatTime(DateTime value) =>

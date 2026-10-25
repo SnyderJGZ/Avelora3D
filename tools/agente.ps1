@@ -9,9 +9,9 @@
 param(
     [Parameter(Mandatory = $true)][ValidateSet('avelora-dev', 'avelora-unity')][string]$Agente,
     [Parameter(Mandatory = $true)][string]$Tarea,
-    # 2026-10-24: el cupo gratuito de OpenCode es de toda la cuenta y se agotó para todos sus
-    # modelos («Free usage limit reached»); Nemotron 3 Ultra gratuito por OpenRouter sí responde.
-    [string]$Modelo = 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free'
+    # Suscripción OpenCode Go desde el 2026-10-24. Alternativas gratuitas si caduca:
+    # openrouter/nvidia/nemotron-3-ultra-550b-a55b:free (tope diario) u opencode/*-free.
+    [string]$Modelo = 'opencode-go/gpt-6-luna'
 )
 
 $raiz = Split-Path $PSScriptRoot -Parent

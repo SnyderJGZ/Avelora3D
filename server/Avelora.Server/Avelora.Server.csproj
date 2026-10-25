@@ -31,6 +31,9 @@
     <!-- Enemigos junto al ejecutable, como server.json (I-01). -->
     <None Update="npcs.json" CopyToOutputDirectory="PreserveNewest" />
 
+    <!-- Catálogo de objetos junto al ejecutable (I-04). -->
+    <None Update="items.json" CopyToOutputDirectory="PreserveNewest" />
+
     <!-- El mapa vive en maps/ (contenido compartido cliente/servidor) y viaja junto al ejecutable. -->
     <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
