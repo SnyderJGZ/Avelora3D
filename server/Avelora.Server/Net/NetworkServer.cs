@@ -9,6 +9,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Persistence;
 using Avelora.Server.Simulation;
+using Avelora.Server.Items;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 
@@ -508,6 +509,34 @@ namespace Avelora.Server.Net
                 if (_zone.ItemActions != null)
                 {
                     _zone.ItemActions.TryEnqueue(ItemAction.UseItem(entityId, useItem.Slot));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadEquip(buffer, offset, length, out EquipMessage equip))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.Equip(entityId, equip.Slot));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadUnequip(buffer, offset, length, out _))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.Unequip(entityId));
                 }
                 else
                 {
@@ -1062,6 +1091,8 @@ namespace Avelora.Server.Net
                             (ushort)saved.Count);
                     }
                 }
+
+                player.EquippedWeaponId = character.EquippedItemId;
             }
 
             player.ConnectionId = connectionId;
@@ -1090,6 +1121,7 @@ namespace Avelora.Server.Net
                 _mapHash));
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Enqueue(connectionId, EncodeItemCatalog(), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
@@ -1187,7 +1219,8 @@ namespace Avelora.Server.Net
 
             session.Character = session.Character
                 .WithState(zone.Id, position, _mapHash, health)
-                .WithInventory(inventory.ToArray());
+                .WithInventory(inventory.ToArray())
+                .WithEquippedItem(player.EquippedWeaponId);
             _saves.Enqueue(session.Character);
         }
 
@@ -1198,6 +1231,35 @@ namespace Avelora.Server.Net
             {
                 Enqueue(player.ConnectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             }
+        }
+
+        private byte[] EncodeItemCatalog()
+        {
+            ItemCatalog? catalog = _zone.Items;
+            var entries = new ItemCatalogEntry[catalog?.Items.Count ?? 0];
+            for (int i = 0; i < entries.Length; i++)
+            {
+                ItemType item = catalog!.Items[i];
+                ItemKind kind = item.IsPotion
+                    ? ItemKind.Potion
+                    : item.IsWeapon ? ItemKind.Weapon : ItemKind.Material;
+                entries[i] = new ItemCatalogEntry(
+                    (ushort)item.Id,
+                    kind,
+                    (ushort)item.MaxStack,
+                    item.IsPotion ? (uint)item.Heal : 0u,
+                    item.IsWeapon ? (uint)item.Damage : 0u,
+                    item.IsWeapon ? item.Range : 0f,
+                    item.IsWeapon ? (float)item.CooldownSeconds : 0f,
+                    item.Name);
+            }
+
+            return MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                _config.PickupRange,
+                (uint)_config.PlayerAttackDamage,
+                _config.PlayerAttackRange,
+                (float)_config.PlayerAttackCooldownSeconds,
+                entries));
         }
 
         private static byte[] EncodeInventory(PlayerEntity player)
@@ -1211,7 +1273,8 @@ namespace Avelora.Server.Net
                 amounts[i] = player.Inventory[i].Count;
             }
 
-            return MessageCodec.EncodeInventory(new InventoryMessage((byte)count, itemIds, amounts));
+            return MessageCodec.EncodeInventory(new InventoryMessage(
+                (byte)count, itemIds, amounts, player.EquippedWeaponId));
         }
 
         private void ReleaseConnection(int connectionId)

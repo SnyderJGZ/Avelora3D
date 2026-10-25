@@ -23,6 +23,12 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: usar un objeto del inventario (I-04).</summary>
         UseItem = 5,
 
+        /// <summary>Cliente → servidor: equipar el arma de un hueco (I-05).</summary>
+        Equip = 6,
+
+        /// <summary>Cliente → servidor: guardar el arma equipada en el inventario (I-05).</summary>
+        Unequip = 7,
+
         /// <summary>Servidor → cliente: aceptación del saludo con la identidad y el punto de aparición.</summary>
         Welcome = 10,
 
@@ -40,5 +46,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: inventario completo (I-04).</summary>
         Inventory = 14,
+
+        /// <summary>Servidor → cliente: catálogo y reglas de objetos (I-05).</summary>
+        ItemCatalog = 15,
     }
 }

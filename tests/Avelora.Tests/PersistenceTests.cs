@@ -59,6 +59,7 @@ namespace Avelora.Tests
             {
                 new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
             },
         };
 
@@ -208,7 +209,65 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void La_Migracion_De_V1_A_V2_Conserva_Los_Personajes()
+        public void El_Arma_Equipada_Se_Guarda_Y_Se_Carga()
+        {
+            byte[] mapHash = NewHash(14);
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests()))
+            {
+                repository.Initialize();
+                int accountId = repository.Login("equipo", "secreto1", "inv", "inv").AccountId;
+                CharacterRecord character = repository.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
+                repository.SaveCharacter(character.WithEquippedItem(3101));
+            }
+
+            using var reopened = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
+            reopened.Initialize();
+            int loadedAccount = reopened.Login("equipo", "secreto1", "", "").AccountId;
+            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+            Assert.Equal((ushort)3101, loaded.EquippedItemId);
+        }
+
+        [Theory]
+        [InlineData(9999)]
+        [InlineData(3001)]
+        public void Arma_Equipada_Desconocida_O_Que_No_Es_Arma_Se_Descarta(int equippedItemId)
+        {
+            byte[] mapHash = NewHash(15);
+            int accountId;
+            int characterId;
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests()))
+            {
+                repository.Initialize();
+                accountId = repository.Login("equipo-invalido", "secreto1", "inv", "inv").AccountId;
+                characterId = repository.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!.Id;
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand update = connection.CreateCommand();
+                update.CommandText = "UPDATE characters SET equipped_item_id=@item WHERE id=@id;";
+                update.Parameters.AddWithValue("@item", equippedItemId);
+                update.Parameters.AddWithValue("@id", characterId);
+                update.ExecuteNonQuery();
+            }
+
+            using var reopened = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
+            reopened.Initialize();
+            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+            Assert.Equal((ushort)0, loaded.EquippedItemId);
+        }
+
+        [Fact]
+        public void La_Migracion_De_V1_A_V3_Conserva_Los_Personajes()
         {
             int characterId;
             using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
@@ -224,7 +283,10 @@ namespace Avelora.Tests
             {
                 connection.Open();
                 using SqliteCommand command = connection.CreateCommand();
-                command.CommandText = "DROP TABLE inventory_items; PRAGMA user_version=1;";
+                command.CommandText =
+                    "DROP TABLE inventory_items; " +
+                    "ALTER TABLE characters DROP COLUMN equipped_item_id; " +
+                    "PRAGMA user_version=1;";
                 command.ExecuteNonQuery();
             }
 
@@ -237,11 +299,54 @@ namespace Avelora.Tests
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(2, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(3, Convert.ToInt32(version.ExecuteScalar()));
             using SqliteCommand characters = verify.CreateCommand();
             characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
             characters.Parameters.AddWithValue("@id", characterId);
             Assert.Equal(1, Convert.ToInt32(characters.ExecuteScalar()));
+        }
+
+        [Fact]
+        public void La_Migracion_De_V2_A_V3_Conserva_Personaje_E_Inventario()
+        {
+            int accountId;
+            int characterId;
+            byte[] mapHash = NewHash(12);
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3))
+            {
+                repository.Initialize();
+                accountId = repository.Login("migracion2", "secreto1", "inv", "inv").AccountId;
+                CharacterRecord character = repository.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(2, 3), mapHash)!;
+                characterId = character.Id;
+                repository.SaveCharacter(character.WithInventory(new[] { new InventoryItemRecord(1, 3001, 2) }));
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = "ALTER TABLE characters DROP COLUMN equipped_item_id; PRAGMA user_version=2;";
+                command.ExecuteNonQuery();
+            }
+
+            using (var migrated = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3))
+            {
+                migrated.Initialize();
+                CharacterRecord character = migrated.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+                Assert.Equal(characterId, character.Id);
+                Assert.Contains(character.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
+                Assert.Equal((ushort)0, character.EquippedItemId);
+            }
+
+            using var verify = new SqliteConnection("Data Source=" + DatabasePath);
+            verify.Open();
+            using SqliteCommand version = verify.CreateCommand();
+            version.CommandText = "PRAGMA user_version;";
+            Assert.Equal(3, Convert.ToInt32(version.ExecuteScalar()));
         }
 
         [Fact]
@@ -648,6 +753,28 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
         }
 
         [Fact]
+        public void Al_Reconectar_TryGetLatest_Conserva_El_Arma_Equipada()
+        {
+            using var harness = new ServerHarness(DatabasePath, items: ItemCatalogForTests());
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            first.EquippedWeaponId = 3101;
+
+            harness.Connect(2);
+            harness.Handshake(2, "dev", "avelora-dev", "dev");
+            harness.Pump(2);
+
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(
+                harness.Zone.Entities.Get(harness.LastWelcome(2).EntityId));
+            Assert.Equal((ushort)3101, reconnected.EquippedWeaponId);
+            Assert.True(harness.Saves.TryGetLatest(first.CharacterId, out CharacterRecord latest));
+            Assert.Equal((ushort)3101, latest.EquippedItemId);
+        }
+
+        [Fact]
         public void La_Misma_Cuenta_Desde_Dos_Conexiones_Echa_A_La_Conexion_Cero()
         {
             using var harness = new ServerHarness(DatabasePath);
@@ -759,7 +886,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
 
-            public ServerHarness(string databasePath, NpcCatalog? npcs = null)
+            public ServerHarness(string databasePath, NpcCatalog? npcs = null, ItemCatalog? items = null)
             {
                 Config = new ServerConfig
                 {
@@ -788,13 +915,16 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                     new InterestSettings(Config.InterestRadius, Config.InterestCellSize, Config.InterestHysteresis),
                     npcs,
                     12345,
-                    playerVitals: Config.PlayerVitals);
+                    playerVitals: Config.PlayerVitals,
+                    items: items,
+                    itemActions: items == null ? null : new ItemActionQueue(Config.MaxQueuedItemActions),
+                    inventorySlots: Config.InventorySlots);
 
                 MapHash = MapFile.ComputeContentHashBytes(map);
                 Transport = new FakeServerTransport();
 
                 // Pocas iteraciones: estas pruebas no miden PBKDF2, solo el flujo de login.
-                Repository = new SqlitePlayerRepository(databasePath, passwordIterations: 1_000);
+                Repository = new SqlitePlayerRepository(databasePath, passwordIterations: 1_000, items: items);
                 Repository.Initialize();
                 Saves = new CharacterSaveService(Repository);
                 Server = new NetworkServer(

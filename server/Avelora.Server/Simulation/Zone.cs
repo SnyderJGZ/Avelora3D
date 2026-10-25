@@ -38,6 +38,7 @@ namespace Avelora.Server.Simulation
         private readonly CombatSystem? _combat;
         private readonly PlayerVitalsSystem? _vitals;
         private readonly ItemSystem? _items;
+        private readonly ItemCatalog? _itemCatalog;
         private readonly List<ItemAction> _itemInbox = new List<ItemAction>(64);
         private readonly System.Random _random;
         private readonly NpcCatalog? _npcCatalog;
@@ -132,12 +133,13 @@ namespace Avelora.Server.Simulation
             Attacks = attacks;
             ItemActions = itemActions;
             _npcCatalog = npcs;
+            _itemCatalog = items;
             _random = new System.Random(npcSeed);
             _movement = movement;
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value);
+                _combat = new CombatSystem(combat.Value, items);
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -215,6 +217,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Catálogo de PNJ de la zona, para consultar el botín al morir.</summary>
         public NpcCatalog? Npcs => _npcCatalog;
 
+        /// <summary>Catálogo de objetos anunciado por red y consultado por el combate.</summary>
+        public ItemCatalog? Items => _itemCatalog;
+
         /// <summary>Notificación de cambios para enviar el inventario completo por la red.</summary>
         public event Action<PlayerEntity>? InventoryChanged;
 
@@ -264,6 +269,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques rechazados porque el jugador estaba muerto (I-03).</summary>
         public long RejectedAttackDead => _combat?.RejectedDead ?? 0;
 
+        /// <summary>Ataques válidos con arma equipada.</summary>
+        public long AttacksWithWeapon => _combat?.AttacksWithWeapon ?? 0;
+
         /// <summary>Enemigos muertos desde el arranque (I-02).</summary>
         public long NpcDeaths => _npcs?.Deaths ?? 0;
 
@@ -294,6 +302,12 @@ namespace Avelora.Server.Simulation
         public long RejectedUseCooldown => _items?.RejectedUseCooldown ?? 0;
         public long PotionsUsed => _items?.PotionsUsed ?? 0;
         public long RejectedItemActionQueueFull => ItemActions?.RejectedQueueFull ?? 0;
+        public long ItemsEquipped => _items?.Equipped ?? 0;
+        public long ItemsUnequipped => _items?.Unequipped ?? 0;
+        public long RejectedEquipDead => _items?.RejectedEquipDead ?? 0;
+        public long RejectedEquipItem => _items?.RejectedEquipItem ?? 0;
+        public long RejectedEquipFull => _items?.RejectedEquipFull ?? 0;
+        public long RejectedEquipEmpty => _items?.RejectedEquipEmpty ?? 0;
 
         /// <summary>Añade un jugador a la zona y devuelve su entidad.</summary>
         /// <param name="initialHealth">

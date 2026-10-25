@@ -135,7 +135,7 @@ namespace Avelora.Bots
         private readonly string? _tracePositionsPath;
         private readonly string? _reportWelcomePath;
         private readonly int _attackCooldownMs;
-        private readonly float _pickupRange;
+        private float _pickupRange;
 
         private IClientTransport? _transport;
 
@@ -213,10 +213,17 @@ namespace Avelora.Bots
         private uint _lastAttackTick;
         private ushort[] _inventoryItemIds = Array.Empty<ushort>();
         private ushort[] _inventoryCounts = Array.Empty<ushort>();
+        private readonly Dictionary<ushort, ItemCatalogEntry> _itemCatalog = new Dictionary<ushort, ItemCatalogEntry>();
+        private ushort _equippedItemId;
+        private ushort _pendingEquipItemId;
+        private float _fistDamage = 10f;
+        private float _fistRange = AttackRange;
+        private float _fistCooldownSeconds = 0.8f;
         private SnapshotMessage _pendingFightSnapshot;
         private bool _itemDecisionPending;
         private long _sentPickups;
         private long _sentPotions;
+        private long _equipped;
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -396,6 +403,9 @@ namespace Avelora.Bots
 
         /// <summary>Intenciones de usar pociones enviadas por el bot fight.</summary>
         public long SentPotions => Interlocked.Read(ref _sentPotions);
+
+        /// <summary>Armas que el servidor confirmó como equipadas durante la sesión.</summary>
+        public long Equipped => Interlocked.Read(ref _equipped);
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
@@ -879,6 +889,12 @@ namespace Avelora.Bots
             _lastAttackTick = 0;
             _inventoryItemIds = Array.Empty<ushort>();
             _inventoryCounts = Array.Empty<ushort>();
+            _itemCatalog.Clear();
+            _equippedItemId = 0;
+            _pendingEquipItemId = 0;
+            _fistDamage = 10f;
+            _fistRange = AttackRange;
+            _fistCooldownSeconds = _attackCooldownMs / 1000f;
             _itemDecisionPending = false;
         }
 
@@ -1355,10 +1371,42 @@ namespace Avelora.Bots
                 return;
             }
 
+            if (MessageCodec.TryReadItemCatalog(buffer, offset, length, out ItemCatalogMessage catalog))
+            {
+                _itemCatalog.Clear();
+                for (int i = 0; i < catalog.Items.Length; i++)
+                {
+                    _itemCatalog[catalog.Items[i].Id] = catalog.Items[i];
+                }
+
+                _pickupRange = catalog.PickupRange;
+                _fistDamage = catalog.FistDamage;
+                _fistRange = catalog.FistRange;
+                _fistCooldownSeconds = catalog.FistCooldownSeconds;
+                return;
+            }
+
             if (MessageCodec.TryReadInventory(buffer, offset, length, out InventoryMessage inventory))
             {
                 _inventoryItemIds = inventory.ItemIds;
                 _inventoryCounts = inventory.Counts;
+                _equippedItemId = inventory.EquippedItemId;
+
+                if (_pendingEquipItemId != 0)
+                {
+                    if (_equippedItemId == _pendingEquipItemId)
+                    {
+                        Interlocked.Increment(ref _equipped);
+                    }
+
+                    _pendingEquipItemId = 0;
+                }
+
+                if (_behavior == BotBehavior.Fight)
+                {
+                    TryEquipBetterWeapon();
+                }
+
                 return;
             }
 
@@ -1720,7 +1768,8 @@ namespace Avelora.Bots
             // Al ver un enemigo deja de pasear: la próxima vez que lo pierda elige rumbo nuevo.
             _nextDirectionChangeAt = 0;
 
-            if (distanceSq <= AttackRange * AttackRange)
+            float range = CurrentAttackRange;
+            if (distanceSq <= range * range)
             {
                 _directionX = 0;
                 _directionY = 0;
@@ -1736,7 +1785,8 @@ namespace Avelora.Bots
         {
             int target = FindNearestAlive(out _, out _, out float distanceSq);
 
-            if (target < 0 || distanceSq > AttackRange * AttackRange)
+            float range = CurrentAttackRange;
+            if (target < 0 || distanceSq > range * range)
             {
                 return;
             }
@@ -1748,7 +1798,7 @@ namespace Avelora.Bots
 
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
             // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.
-            _nextAttackAt = now + _attackCooldownMs + AttackSlackMs;
+            _nextAttackAt = now + CurrentAttackCooldownMs + AttackSlackMs;
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>
@@ -1794,6 +1844,59 @@ namespace Avelora.Bots
                 Interlocked.Increment(ref _sentPickups);
                 break;
             }
+        }
+
+        private float CurrentAttackRange =>
+            _itemCatalog.TryGetValue(_equippedItemId, out ItemCatalogEntry weapon) && weapon.Kind == ItemKind.Weapon
+                ? weapon.Range
+                : _fistRange;
+
+        private int CurrentAttackCooldownMs =>
+            (int)Math.Ceiling(
+                (_itemCatalog.TryGetValue(_equippedItemId, out ItemCatalogEntry weapon) && weapon.Kind == ItemKind.Weapon
+                    ? weapon.CooldownSeconds
+                    : _fistCooldownSeconds) * 1000f);
+
+        /// <summary>Solicita el arma de mayor daño que supere a la equipada actualmente.</summary>
+        private void TryEquipBetterWeapon()
+        {
+            if (_pendingEquipItemId != 0 || _transport == null)
+            {
+                return;
+            }
+
+            uint equippedDamage = _itemCatalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped) &&
+                equipped.Kind == ItemKind.Weapon
+                    ? equipped.Damage
+                    : _fistDamage > 0f ? (uint)_fistDamage : 0u;
+            uint bestDamage = equippedDamage;
+            byte bestSlot = 0;
+            ushort bestItemId = 0;
+            int slots = Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length);
+
+            for (int i = 0; i < slots; i++)
+            {
+                ushort itemId = _inventoryItemIds[i];
+                if (_inventoryCounts[i] == 0 ||
+                    !_itemCatalog.TryGetValue(itemId, out ItemCatalogEntry item) ||
+                    item.Kind != ItemKind.Weapon || item.Damage <= bestDamage)
+                {
+                    continue;
+                }
+
+                bestDamage = item.Damage;
+                bestSlot = (byte)i;
+                bestItemId = itemId;
+            }
+
+            if (bestItemId == 0)
+            {
+                return;
+            }
+
+            byte[] equip = MessageCodec.EncodeEquip(new EquipMessage(bestSlot));
+            _transport.Send(equip, equip.Length, DeliveryMode.ReliableOrdered);
+            _pendingEquipItemId = bestItemId;
         }
 
         /// <summary>Enemigo vivo más cercano de la vista; devuelve su id y el vector hacia él.</summary>

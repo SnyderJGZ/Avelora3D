@@ -6,6 +6,8 @@ namespace Avelora.Server.Simulation
     {
         PickUp = 0,
         UseItem = 1,
+        Equip = 2,
+        Unequip = 3,
     }
 
     /// <summary>Intención validada sintácticamente en la red y pendiente de resolver en el tick.</summary>
@@ -29,5 +31,11 @@ namespace Avelora.Server.Simulation
 
         public static ItemAction UseItem(int playerEntityId, byte slot) =>
             new ItemAction(ItemActionKind.UseItem, playerEntityId, 0, slot);
+
+        public static ItemAction Equip(int playerEntityId, byte slot) =>
+            new ItemAction(ItemActionKind.Equip, playerEntityId, 0, slot);
+
+        public static ItemAction Unequip(int playerEntityId) =>
+            new ItemAction(ItemActionKind.Unequip, playerEntityId, 0, 0);
     }
 }

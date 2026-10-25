@@ -20,7 +20,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 2;
+        public const int SchemaVersion = 3;
 
         /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
         public const int MaxCharactersPerAccount = 3;
@@ -118,10 +118,18 @@ namespace Avelora.Server.Persistence
                 }
                 else if (version == 1)
                 {
-                    using SqliteTransaction transaction = connection.BeginTransaction();
-                    CreateInventorySchema(connection, transaction);
-                    SetUserVersion(connection, transaction, SchemaVersion);
-                    transaction.Commit();
+                    using (SqliteTransaction transaction = connection.BeginTransaction())
+                    {
+                        CreateInventorySchema(connection, transaction);
+                        SetUserVersion(connection, transaction, 2);
+                        transaction.Commit();
+                    }
+
+                    MigrateV2ToV3(connection);
+                }
+                else if (version == 2)
+                {
+                    MigrateV2ToV3(connection);
                 }
                 else if (version != SchemaVersion)
                 {
@@ -300,7 +308,7 @@ namespace Avelora.Server.Persistence
             update.CommandText =
                 "UPDATE characters SET " +
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
-                "zone_id = @zone, x = @x, y = @y, map_hash = @map, updated_utc = @updated " +
+                "zone_id = @zone, x = @x, y = @y, map_hash = @map, equipped_item_id = @equipped, updated_utc = @updated " +
                 "WHERE id = @id AND account_id = @account;";
             update.Parameters.AddWithValue("@level", character.Level);
             update.Parameters.AddWithValue("@experience", character.Experience);
@@ -310,6 +318,7 @@ namespace Avelora.Server.Persistence
             update.Parameters.AddWithValue("@x", (double)character.Position.X);
             update.Parameters.AddWithValue("@y", (double)character.Position.Y);
             update.Parameters.AddWithValue("@map", character.MapHash);
+            update.Parameters.AddWithValue("@equipped", character.EquippedItemId);
             update.Parameters.AddWithValue("@updated", FormatTime(character.UpdatedUtc));
             update.Parameters.AddWithValue("@id", character.Id);
             update.Parameters.AddWithValue("@account", character.AccountId);
@@ -396,6 +405,7 @@ CREATE TABLE characters (
     x               REAL NOT NULL,
     y               REAL NOT NULL,
     map_hash        BLOB NOT NULL,
+    equipped_item_id INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL,
     UNIQUE (account_id, name)
@@ -405,6 +415,17 @@ CREATE INDEX characters_account_idx ON characters(account_id);
 ";
             command.ExecuteNonQuery();
             CreateInventorySchema(connection, transaction);
+        }
+
+        private static void MigrateV2ToV3(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "ALTER TABLE characters ADD COLUMN equipped_item_id INTEGER NOT NULL DEFAULT 0;";
+            command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, SchemaVersion);
+            transaction.Commit();
         }
 
         private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
@@ -504,7 +525,7 @@ CREATE TABLE inventory_items (
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
-                "map_hash, created_utc, updated_utc " +
+                "map_hash, created_utc, updated_utc, equipped_item_id " +
                 "FROM characters WHERE account_id = @account AND name = @name COLLATE NOCASE LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@name", characterName);
@@ -536,7 +557,25 @@ CREATE TABLE inventory_items (
                     new Vec2((float)reader.GetDouble(8), (float)reader.GetDouble(9)),
                     mapHash,
                     ParseTime(reader.GetString(11)),
-                    ParseTime(reader.GetString(12)));
+                    ParseTime(reader.GetString(12)),
+                    inventoryItems: null,
+                    equippedItemId: 0);
+
+                long rawEquippedItemId = reader.GetInt64(13);
+                if (rawEquippedItemId != 0)
+                {
+                    if (rawEquippedItemId > 0 && rawEquippedItemId <= ushort.MaxValue &&
+                        _items?.Find((int)rawEquippedItemId) is ItemType equipped && equipped.IsWeapon)
+                    {
+                        character = character.WithEquippedItem((ushort)rawEquippedItemId);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine(
+                            "AVISO: se descartó equipped_item_id inválido del personaje " +
+                            character.Id + " (equipped_item_id=" + rawEquippedItemId + ").");
+                    }
+                }
             }
 
             return character.WithInventory(LoadInventory(connection, character.Id));

@@ -17,6 +17,8 @@ namespace Avelora.Tests
             {
                 new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
             },
         };
 
@@ -303,6 +305,107 @@ namespace Avelora.Tests
 
             Assert.Equal(1, zone.RejectedUseDead);
             Assert.Equal((ushort)1, player.Inventory[0].Count);
+        }
+
+        [Fact]
+        public void Equipar_Intercambia_El_Arma_Anterior_En_El_Mismo_Hueco()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.EquippedWeaponId = 3101;
+            player.Inventory[1] = new InventorySlot(3102, 1);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 1));
+            zone.Tick();
+
+            Assert.Equal((ushort)3102, player.EquippedWeaponId);
+            Assert.Equal(new InventorySlot(3101, 1), player.Inventory[1]);
+            Assert.Equal(1, zone.ItemsEquipped);
+            Assert.Equal(0, zone.RejectedEquipItem);
+        }
+
+        [Fact]
+        public void Equipar_Arma_Sin_Arma_Anterior_Vacia_El_Hueco()
+        {
+            Zone zone = NewZone(slots: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3101, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+
+            zone.Tick();
+
+            Assert.Equal((ushort)3101, player.EquippedWeaponId);
+            Assert.Equal(new InventorySlot(0, 0), player.Inventory[0]);
+        }
+
+        [Fact]
+        public void Equipar_Rechaza_Jugador_Muerto()
+        {
+            Zone zone = NewZone(slots: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Action = EntityAction.Dead;
+            player.Inventory[0] = new InventorySlot(3101, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+
+            zone.Tick();
+
+            Assert.Equal(1, zone.RejectedEquipDead);
+            Assert.Equal((ushort)0, player.EquippedWeaponId);
+            Assert.Equal((ushort)3101, player.Inventory[0].ItemId);
+        }
+
+        [Fact]
+        public void Equipar_Rechaza_Hueco_Vacio_Fuera_De_Rango_Y_Objeto_Que_No_Es_Arma()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+            zone.ItemActions.TryEnqueue(ItemAction.Equip(player.Id, 1));
+            zone.ItemActions.TryEnqueue(ItemAction.Equip(player.Id, 2));
+
+            zone.Tick();
+
+            Assert.Equal(3, zone.RejectedEquipItem);
+            Assert.Equal((ushort)0, player.EquippedWeaponId);
+            Assert.Equal((ushort)3001, player.Inventory[0].ItemId);
+        }
+
+        [Fact]
+        public void Desequipar_Guarda_El_Arma_En_El_Primer_Hueco_Libre()
+        {
+            Zone zone = NewZone(slots: 3);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.EquippedWeaponId = 3102;
+            player.Inventory[0] = new InventorySlot(3001, 1);
+            player.Inventory[2] = new InventorySlot(3002, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id));
+
+            zone.Tick();
+
+            Assert.Equal((ushort)0, player.EquippedWeaponId);
+            Assert.Equal(new InventorySlot(3102, 1), player.Inventory[1]);
+            Assert.Equal(1, zone.ItemsUnequipped);
+        }
+
+        [Fact]
+        public void Desequipar_Rechaza_Inventario_Lleno_Y_Sin_Arma()
+        {
+            Zone emptyZone = NewZone(slots: 1);
+            PlayerEntity emptyPlayer = SpawnPlayer(emptyZone);
+            emptyZone.ItemActions!.TryEnqueue(ItemAction.Unequip(emptyPlayer.Id));
+            emptyZone.Tick();
+            Assert.Equal(1, emptyZone.RejectedEquipEmpty);
+
+            Zone fullZone = NewZone(slots: 1);
+            PlayerEntity fullPlayer = SpawnPlayer(fullZone);
+            fullPlayer.EquippedWeaponId = 3101;
+            fullPlayer.Inventory[0] = new InventorySlot(3001, 1);
+            fullZone.ItemActions!.TryEnqueue(ItemAction.Unequip(fullPlayer.Id));
+            fullZone.Tick();
+            Assert.Equal(1, fullZone.RejectedEquipFull);
+            Assert.Equal((ushort)3101, fullPlayer.EquippedWeaponId);
+            Assert.Equal((ushort)3001, fullPlayer.Inventory[0].ItemId);
         }
 
         [Fact]

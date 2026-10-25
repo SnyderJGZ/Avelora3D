@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -27,10 +28,12 @@ namespace Avelora.Server.Simulation
         public const int AttackingTicks = 6;
 
         private readonly CombatSettings _settings;
+        private readonly ItemCatalog? _catalog;
 
-        public CombatSystem(CombatSettings settings)
+        public CombatSystem(CombatSettings settings, ItemCatalog? catalog = null)
         {
             _settings = settings;
+            _catalog = catalog;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -47,6 +50,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Ataques rechazados porque el jugador estaba muerto (I-03).</summary>
         public long RejectedDead { get; private set; }
+
+        /// <summary>Ataques válidos realizados con un arma equipada.</summary>
+        public long AttacksWithWeapon { get; private set; }
 
         /// <summary>Aplica las intenciones del tick y limpia las acciones que ya han caducado.</summary>
         /// <param name="entities">Entidades vivas de la zona.</param>
@@ -102,7 +108,11 @@ namespace Avelora.Server.Simulation
             // Regla 4: la distancia entre centros cabe en alcance + tolerancia.
             float dx = target.Position.X - attacker.Position.X;
             float dy = target.Position.Y - attacker.Position.Y;
-            float range = _settings.EffectiveRange;
+            ItemType? weapon = attacker.EquippedWeaponId != 0
+                ? _catalog?.Find(attacker.EquippedWeaponId)
+                : null;
+            bool hasWeapon = weapon?.IsWeapon == true;
+            float range = (hasWeapon ? weapon!.Range : _settings.Range) + _settings.RangeTolerance;
 
             if ((dx * dx) + (dy * dy) > range * range)
             {
@@ -113,13 +123,17 @@ namespace Avelora.Server.Simulation
             // Regla 5: recarga medida en ticks de la zona y solo desde el último ataque válido.
             long lastAttackTick = attacker.LastAttackTick;
 
-            if (lastAttackTick >= 0 && tick - lastAttackTick < _settings.CooldownTicks)
+            long cooldownTicks = hasWeapon
+                ? Math.Max(1L, (long)Math.Ceiling(weapon!.CooldownSeconds * SimulationConstants.TickRate))
+                : _settings.CooldownTicks;
+            if (lastAttackTick >= 0 && tick - lastAttackTick < cooldownTicks)
             {
                 RejectedCooldown++;
                 return;
             }
 
-            target.Health = Math.Max(0, target.Health - _settings.Damage);
+            int damage = hasWeapon ? weapon!.Damage : _settings.Damage;
+            target.Health = Math.Max(0, target.Health - damage);
 
             if (target.Health == 0)
             {
@@ -139,6 +153,10 @@ namespace Avelora.Server.Simulation
             attacker.Action = EntityAction.Attacking;
             attacker.ActionUntilTick = tick + AttackingTicks;
             AttacksOk++;
+            if (hasWeapon)
+            {
+                AttacksWithWeapon++;
+            }
         }
 
         /// <summary>Devuelve a <see cref="EntityAction.None"/> lo que ya no está atacando.</summary>

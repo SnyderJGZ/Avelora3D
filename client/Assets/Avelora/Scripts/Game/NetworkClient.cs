@@ -80,25 +80,10 @@ namespace Avelora.Client
         [Tooltip("La cámara principal sigue al jugador local (mapas más grandes que la pantalla).")]
         [SerializeField] private bool cameraFollowsPlayer = true;
 
-        // shortcut: copia de playerAttackRange y playerAttackCooldownSeconds de server.json. Si el
-        // servidor los cambia, se envían ataques que rechaza; pasarán al Welcome con las armas (I-04).
-        private const float AttackRange = 1.2f;
-        private const float AttackCooldownSeconds = 0.8f;
-
         // shortcut: copia de playerRespawnSeconds de server.json, solo para la cuenta atrás del aviso;
         // si el servidor la cambia, el aviso se equivoca pero la reaparición la sigue decidiendo él.
         private const float RespawnSeconds = 5f;
 
-        // shortcut: copia de pickupRange de server.json y de items.json (nombres y qué es poción);
-        // si el servidor los cambia, se piden recogidas que rechaza y se ven nombres viejos. Pasarán
-        // al Welcome con el catálogo de objetos (I-05).
-        private const float PickupRange = 1.5f;
-        private const ushort PotionItemId = 3002;
-        private static readonly Dictionary<ushort, string> ItemNames = new Dictionary<ushort, string>
-        {
-            { 3001, "Colmillo de orco" },
-            { 3002, "Poción de vida" },
-        };
         private const float HintSeconds = 1.5f;
         private const float PickRadius = 0.5f;
 
@@ -144,6 +129,15 @@ namespace Avelora.Client
         private Vec2 _lastAuthoritative;
         private int _entityId;
         private ushort[] _inventoryIds = new ushort[0];
+        private ushort _equippedItemId;
+
+        // Catálogo que manda el servidor tras el Welcome (I-05): nombres, tipos, armas, alcance para
+        // recoger y los valores de los puños. Hasta que llega, no se ataca ni se recoge.
+        private readonly Dictionary<ushort, ItemCatalogEntry> _catalog = new Dictionary<ushort, ItemCatalogEntry>();
+        private bool _catalogReceived;
+        private float _pickupRange;
+        private float _fistRange;
+        private float _fistCooldownSeconds;
         private ushort[] _inventoryCounts = new ushort[0];
         private bool _showInventory = true;
         private byte _ownHealthPercent = 100;
@@ -283,6 +277,9 @@ namespace Avelora.Client
             _ownDead = false;
             _inventoryIds = new ushort[0];
             _inventoryCounts = new ushort[0];
+            _equippedItemId = 0;
+            _catalog.Clear();
+            _catalogReceived = false;
             _accumulator = 0;
             _lastReject = null;
             _welcomeReceived = false;
@@ -349,7 +346,7 @@ namespace Avelora.Client
 
             // Muerto (I-03b): ni ataques ni movimiento. Se siguen mandando inputs a cero para que la
             // secuencia avance igual que en el servidor, que los consume sin moverlo.
-            if (!_ownDead)
+            if (!_ownDead && _catalogReceived)
             {
                 HandleCombatInput();
                 HandleItemInput();
@@ -495,7 +492,8 @@ namespace Avelora.Client
             }
 
             Vector2 delta = (Vector2)(target.transform.position - transform.position);
-            if (delta.sqrMagnitude > AttackRange * AttackRange)
+            CurrentWeapon(out float attackRange, out float attackCooldown);
+            if (delta.sqrMagnitude > attackRange * attackRange)
             {
                 ShowHint("fuera de alcance");
                 return;
@@ -504,7 +502,7 @@ namespace Avelora.Client
             byte[] bytes = MessageCodec.EncodeAttack(new AttackMessage(target.EntityId));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             _attacksSent++;
-            _nextAttackAt = Time.unscaledTime + AttackCooldownSeconds;
+            _nextAttackAt = Time.unscaledTime + attackCooldown;
         }
 
         /// <summary>
@@ -521,7 +519,7 @@ namespace Avelora.Client
 
             if (keyboard.eKey.wasPressedThisFrame)
             {
-                int item = PickEntityAt(transform.position, EntityKind.Item, PickupRange);
+                int item = PickEntityAt(transform.position, EntityKind.Item, _pickupRange);
                 if (item == 0)
                 {
                     ShowHint("nada que recoger");
@@ -535,21 +533,98 @@ namespace Avelora.Client
 
             if (keyboard.qKey.wasPressedThisFrame)
             {
-                int slot = Array.IndexOf(_inventoryIds, PotionItemId);
+                int slot = FirstSlotOfKind(ItemKind.Potion);
                 if (slot < 0)
                 {
                     ShowHint("sin pociones");
                 }
-                else if (_ownHealthPercent >= 100)
+                else
                 {
-                    ShowHint("vida llena");
+                    UseSlot(slot);
+                }
+            }
+
+            // 1–9: equipa el arma de ese hueco o bebe la poción; U guarda el arma (I-05b).
+            for (int n = 0; n < 9; n++)
+            {
+                if (keyboard[(Key)((int)Key.Digit1 + n)].wasPressedThisFrame)
+                {
+                    UseSlot(n);
+                }
+            }
+
+            if (keyboard.uKey.wasPressedThisFrame)
+            {
+                if (_equippedItemId == 0)
+                {
+                    ShowHint("sin arma equipada");
                 }
                 else
                 {
-                    byte[] bytes = MessageCodec.EncodeUseItem(new UseItemMessage((byte)slot));
+                    byte[] bytes = MessageCodec.EncodeUnequip(new UnequipMessage());
                     _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
                 }
             }
+        }
+
+        /// <summary>Equipa el arma del hueco o bebe su poción; el servidor valida.</summary>
+        private void UseSlot(int slot)
+        {
+            if (slot >= _inventoryIds.Length || !_catalog.TryGetValue(_inventoryIds[slot], out ItemCatalogEntry item))
+            {
+                ShowHint("hueco vacío");
+                return;
+            }
+
+            byte[] bytes;
+            if (item.Kind == ItemKind.Weapon)
+            {
+                bytes = MessageCodec.EncodeEquip(new EquipMessage((byte)slot));
+            }
+            else if (item.Kind == ItemKind.Potion)
+            {
+                if (_ownHealthPercent >= 100)
+                {
+                    ShowHint("vida llena");
+                    return;
+                }
+
+                bytes = MessageCodec.EncodeUseItem(new UseItemMessage((byte)slot));
+            }
+            else
+            {
+                ShowHint(item.Name + " no se usa");
+                return;
+            }
+
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        private int FirstSlotOfKind(ItemKind kind)
+        {
+            for (int i = 0; i < _inventoryIds.Length; i++)
+            {
+                if (_catalog.TryGetValue(_inventoryIds[i], out ItemCatalogEntry item) && item.Kind == kind)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>Alcance y recarga del arma equipada, o de los puños si no hay (catálogo del servidor).</summary>
+        private void CurrentWeapon(out float range, out float cooldownSeconds)
+        {
+            if (_catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry weapon) && weapon.Kind == ItemKind.Weapon)
+            {
+                range = weapon.Range;
+                cooldownSeconds = weapon.CooldownSeconds;
+                return;
+            }
+
+            range = _fistRange;
+            cooldownSeconds = _fistCooldownSeconds;
         }
 
         private int PickEntityAt(Vector3 world, EntityKind kind, float radius)
@@ -772,6 +847,25 @@ namespace Avelora.Client
                     {
                         _inventoryIds = inventory.ItemIds;
                         _inventoryCounts = inventory.Counts;
+                        _equippedItemId = inventory.EquippedItemId;
+                    }
+
+                    break;
+
+                case MessageType.ItemCatalog:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadItemCatalog(buffer, offset, length, out ItemCatalogMessage catalog))
+                    {
+                        _catalog.Clear();
+                        for (int i = 0; i < catalog.Items.Length; i++)
+                        {
+                            _catalog[catalog.Items[i].Id] = catalog.Items[i];
+                        }
+
+                        _pickupRange = catalog.PickupRange;
+                        _fistRange = catalog.FistRange;
+                        _fistCooldownSeconds = catalog.FistCooldownSeconds;
+                        _catalogReceived = true;
                     }
 
                     break;
@@ -1027,8 +1121,11 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Item)
             {
-                // shortcut: sin arte de objetos todavía; un cuadrado pequeño con el color del tipo.
-                view.SetItemLook(typeId == PotionItemId ? new Color(0.9f, 0.2f, 0.3f, 1f) : new Color(0.95f, 0.9f, 0.75f, 1f));
+                // shortcut: sin arte de objetos todavía; un cuadrado pequeño con el color de su clase.
+                _catalog.TryGetValue(typeId, out ItemCatalogEntry item);
+                view.SetItemLook(item.Kind == ItemKind.Potion ? new Color(0.9f, 0.2f, 0.3f, 1f)
+                    : item.Kind == ItemKind.Weapon ? new Color(0.55f, 0.7f, 0.95f, 1f)
+                    : new Color(0.95f, 0.9f, 0.75f, 1f));
             }
 
             NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId) : null;
@@ -1218,8 +1315,12 @@ namespace Avelora.Client
         /// <summary>Inventario a la derecha (I-04b): una línea por hueco ocupado; I lo oculta.</summary>
         private void DrawInventory()
         {
-            var lines = new System.Text.StringBuilder("Inventario (I) · E recoger · Q poción");
-            int used = 0;
+            var lines = new System.Text.StringBuilder("Inventario (I) · E recoger · Q poción · 1-9 usar · U guardar arma");
+            lines.Append("\n").Append("Arma: ").Append(
+                _catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped)
+                    ? equipped.Name + " (daño " + equipped.Damage + ")"
+                    : "puños");
+            int used = 1;
 
             for (int i = 0; i < _inventoryIds.Length; i++)
             {
@@ -1228,12 +1329,12 @@ namespace Avelora.Client
                     continue;
                 }
 
-                string name = ItemNames.TryGetValue(_inventoryIds[i], out string known) ? known : "Objeto " + _inventoryIds[i];
+                string name = _catalog.TryGetValue(_inventoryIds[i], out ItemCatalogEntry entry) ? entry.Name : "Objeto " + _inventoryIds[i];
                 lines.Append("\n").Append(i + 1).Append(". ").Append(name).Append(" x").Append(_inventoryCounts[i]);
                 used++;
             }
 
-            lines.Append("\n").Append(used).Append('/').Append(_inventoryIds.Length).Append(" huecos");
+            lines.Append("\n").Append(used - 1).Append('/').Append(_inventoryIds.Length).Append(" huecos");
 
             float height = 44f + (18f * (used + 1));
             var box = new Rect(Screen.width - 280f, 10f, 270f, height);

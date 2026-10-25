@@ -149,6 +149,7 @@ namespace Avelora.Server.Diagnostics
 
             Console.WriteLine(
                 "            combate: ataques_ok=" + zone.AttacksOk +
+                " ataques_con_arma=" + zone.AttacksWithWeapon +
                 " ataque_rech_objetivo=" + zone.RejectedAttackTarget +
                 " ataque_rech_distancia=" + zone.RejectedAttackDistance +
                 " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
@@ -175,6 +176,12 @@ namespace Avelora.Server.Diagnostics
                 " usar_rech_lleno=" + zone.RejectedUseFull +
                 " usar_rech_recarga=" + zone.RejectedUseCooldown +
                 " pociones_usadas=" + zone.PotionsUsed +
+                " equipados=" + zone.ItemsEquipped +
+                " desequipados=" + zone.ItemsUnequipped +
+                " equipar_rech_muerto=" + zone.RejectedEquipDead +
+                " equipar_rech_objeto=" + zone.RejectedEquipItem +
+                " equipar_rech_lleno=" + zone.RejectedEquipFull +
+                " equipar_rech_vacio=" + zone.RejectedEquipEmpty +
                 " acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
 
             Console.WriteLine(
@@ -275,6 +282,7 @@ namespace Avelora.Server.Diagnostics
                 zone.RejectedBufferFull + " por búfer lleno");
             Console.WriteLine(
                 "  Combate         : " + zone.AttacksOk + " ataques válidos, " +
+                zone.AttacksWithWeapon + " ataques con arma, " +
                 zone.RejectedAttackTarget + " rechazados por objetivo, " +
                 zone.RejectedAttackDistance + " por distancia, " +
                 zone.RejectedAttackCooldown + " por recarga, " +
@@ -300,6 +308,12 @@ namespace Avelora.Server.Diagnostics
                 ", usar_rech_lleno=" + zone.RejectedUseFull +
                 ", usar_rech_recarga=" + zone.RejectedUseCooldown +
                 ", pociones_usadas=" + zone.PotionsUsed +
+                ", equipados=" + zone.ItemsEquipped +
+                ", desequipados=" + zone.ItemsUnequipped +
+                ", equipar_rech_muerto=" + zone.RejectedEquipDead +
+                ", equipar_rech_objeto=" + zone.RejectedEquipItem +
+                ", equipar_rech_lleno=" + zone.RejectedEquipFull +
+                ", equipar_rech_vacio=" + zone.RejectedEquipEmpty +
                 ", acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +

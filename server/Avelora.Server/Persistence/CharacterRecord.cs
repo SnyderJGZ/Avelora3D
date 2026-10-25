@@ -27,7 +27,8 @@ namespace Avelora.Server.Persistence
             byte[] mapHash,
             DateTime createdUtc,
             DateTime updatedUtc,
-            InventoryItemRecord[]? inventoryItems = null)
+            InventoryItemRecord[]? inventoryItems = null,
+            ushort equippedItemId = 0)
         {
             if (id <= 0)
             {
@@ -66,6 +67,7 @@ namespace Avelora.Server.Persistence
             InventoryItems = inventoryItems == null
                 ? Array.Empty<InventoryItemRecord>()
                 : (InventoryItemRecord[])inventoryItems.Clone();
+            EquippedItemId = equippedItemId;
         }
 
         public int Id { get; }
@@ -96,6 +98,9 @@ namespace Avelora.Server.Persistence
         /// <summary>Contenido de inventario guardado por ranura.</summary>
         public InventoryItemRecord[] InventoryItems { get; }
 
+        /// <summary>Arma equipada; 0 significa combatir con los puños.</summary>
+        public ushort EquippedItemId { get; }
+
         /// <summary>Copia el personaje con una posición, zona y mapa nuevos, dejando el resto igual.</summary>
         public CharacterRecord WithPosition(int zoneId, Vec2 position, byte[] mapHash) =>
             new CharacterRecord(
@@ -111,7 +116,8 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 CreatedUtc,
                 DateTime.UtcNow,
-                InventoryItems);
+                InventoryItems,
+                EquippedItemId);
 
         /// <summary>
         /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
@@ -131,7 +137,8 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 CreatedUtc,
                 DateTime.UtcNow,
-                InventoryItems);
+                InventoryItems,
+                EquippedItemId);
 
         /// <summary>Crea una foto nueva con el inventario completo.</summary>
         public CharacterRecord WithInventory(InventoryItemRecord[] inventoryItems) =>
@@ -148,7 +155,26 @@ namespace Avelora.Server.Persistence
                 MapHash,
                 CreatedUtc,
                 DateTime.UtcNow,
-                inventoryItems);
+                inventoryItems,
+                EquippedItemId);
+
+        /// <summary>Crea una foto nueva con el arma equipada.</summary>
+        public CharacterRecord WithEquippedItem(ushort equippedItemId) =>
+            new CharacterRecord(
+                Id,
+                AccountId,
+                Name,
+                Level,
+                Experience,
+                Health,
+                Mana,
+                ZoneId,
+                Position,
+                MapHash,
+                CreatedUtc,
+                DateTime.UtcNow,
+                InventoryItems,
+                equippedItemId);
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

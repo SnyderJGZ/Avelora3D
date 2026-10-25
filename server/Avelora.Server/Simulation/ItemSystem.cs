@@ -8,7 +8,7 @@ using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
 {
-    /// <summary>Resuelve botín, caducidad, recogida e inventario de pociones (I-04).</summary>
+    /// <summary>Resuelve botín, inventario, pociones y equipo de armas (I-04/I-05).</summary>
     public sealed class ItemSystem
     {
         private readonly ItemCatalog _catalog;
@@ -50,6 +50,12 @@ namespace Avelora.Server.Simulation
         public long RejectedUseFull { get; private set; }
         public long RejectedUseCooldown { get; private set; }
         public long PotionsUsed { get; private set; }
+        public long Equipped { get; private set; }
+        public long Unequipped { get; private set; }
+        public long RejectedEquipDead { get; private set; }
+        public long RejectedEquipItem { get; private set; }
+        public long RejectedEquipFull { get; private set; }
+        public long RejectedEquipEmpty { get; private set; }
         public int GroundItemCount => _groundItemCount;
 
         /// <summary>Procesa caducidades y acciones en el orden en que llegaron.</summary>
@@ -80,9 +86,17 @@ namespace Avelora.Server.Simulation
                 {
                     ResolvePickup(zone, action.PlayerEntityId, action.ItemEntityId);
                 }
-                else
+                else if (action.Kind == ItemActionKind.UseItem)
                 {
                     ResolveUseItem(zone, action.PlayerEntityId, action.Slot, tick);
+                }
+                else if (action.Kind == ItemActionKind.Equip)
+                {
+                    ResolveEquip(zone, action.PlayerEntityId, action.Slot);
+                }
+                else if (action.Kind == ItemActionKind.Unequip)
+                {
+                    ResolveUnequip(zone, action.PlayerEntityId);
                 }
             }
         }
@@ -204,6 +218,69 @@ namespace Avelora.Server.Simulation
 
             player.Inventory[slotIndex] = slot;
             PotionsUsed++;
+            zone.NotifyInventoryChanged(player);
+        }
+
+        private void ResolveEquip(Zone zone, int playerId, byte slotIndex)
+        {
+            if (!zone.Entities.TryGet(playerId, out Entity? playerEntity) ||
+                playerEntity is not PlayerEntity player || player.IsDead || player.Health <= 0)
+            {
+                RejectedEquipDead++;
+                return;
+            }
+
+            if (slotIndex >= player.Inventory.Length ||
+                player.Inventory[slotIndex].ItemId == 0 ||
+                _catalog.Find(player.Inventory[slotIndex].ItemId) is not ItemType weapon ||
+                !weapon.IsWeapon)
+            {
+                RejectedEquipItem++;
+                return;
+            }
+
+            InventorySlot slot = player.Inventory[slotIndex];
+            ushort previousWeaponId = player.EquippedWeaponId;
+            player.EquippedWeaponId = slot.ItemId;
+            player.Inventory[slotIndex] = previousWeaponId == 0
+                ? new InventorySlot(0, 0)
+                : new InventorySlot(previousWeaponId, 1);
+            Equipped++;
+            zone.NotifyInventoryChanged(player);
+        }
+
+        private void ResolveUnequip(Zone zone, int playerId)
+        {
+            if (!zone.Entities.TryGet(playerId, out Entity? playerEntity) || playerEntity is not PlayerEntity player)
+            {
+                return;
+            }
+
+            if (player.EquippedWeaponId == 0)
+            {
+                RejectedEquipEmpty++;
+                return;
+            }
+
+            int freeSlot = -1;
+            for (int i = 0; i < player.Inventory.Length; i++)
+            {
+                if (player.Inventory[i].ItemId == 0)
+                {
+                    freeSlot = i;
+                    break;
+                }
+            }
+
+            if (freeSlot < 0)
+            {
+                RejectedEquipFull++;
+                return;
+            }
+
+            player.Inventory[freeSlot] = new InventorySlot(player.EquippedWeaponId, 1);
+            player.EquippedWeaponId = 0;
+            Unequipped++;
             zone.NotifyInventoryChanged(player);
         }
 

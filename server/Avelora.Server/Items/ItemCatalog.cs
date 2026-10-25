@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -18,7 +19,7 @@ namespace Avelora.Server.Items
         /// <summary>Nombre para informes y depuración.</summary>
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>Tipo de objeto: <c>material</c> o <c>potion</c>.</summary>
+        /// <summary>Tipo de objeto: <c>material</c>, <c>potion</c> o <c>weapon</c>.</summary>
         public string Kind { get; set; } = string.Empty;
 
         /// <summary>Tamaño máximo de pila (1..999).</summary>
@@ -41,11 +42,65 @@ namespace Avelora.Server.Items
         [JsonIgnore]
         public bool HasHeal { get; private set; }
 
+        private int _damage;
+
+        /// <summary>Daño del arma, obligatorio solo para <c>weapon</c>.</summary>
+        public int Damage
+        {
+            get => _damage;
+            set
+            {
+                _damage = value;
+                HasDamage = true;
+            }
+        }
+
+        /// <summary>Indica si se declaró explícitamente <see cref="Damage"/>.</summary>
+        [JsonIgnore]
+        public bool HasDamage { get; private set; }
+
+        private float _range;
+
+        /// <summary>Alcance del arma, obligatorio solo para <c>weapon</c>.</summary>
+        public float Range
+        {
+            get => _range;
+            set
+            {
+                _range = value;
+                HasRange = true;
+            }
+        }
+
+        /// <summary>Indica si se declaró explícitamente <see cref="Range"/>.</summary>
+        [JsonIgnore]
+        public bool HasRange { get; private set; }
+
+        private double _cooldownSeconds;
+
+        /// <summary>Recarga del arma en segundos, obligatoria solo para <c>weapon</c>.</summary>
+        public double CooldownSeconds
+        {
+            get => _cooldownSeconds;
+            set
+            {
+                _cooldownSeconds = value;
+                HasCooldownSeconds = true;
+            }
+        }
+
+        /// <summary>Indica si se declaró explícitamente <see cref="CooldownSeconds"/>.</summary>
+        [JsonIgnore]
+        public bool HasCooldownSeconds { get; private set; }
+
         /// <summary>True si es una poción.</summary>
         public bool IsPotion => string.Equals(Kind, "potion", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>True si es un material.</summary>
         public bool IsMaterial => string.Equals(Kind, "material", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True si es un arma.</summary>
+        public bool IsWeapon => string.Equals(Kind, "weapon", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -137,6 +192,13 @@ namespace Avelora.Server.Items
         {
             Items ??= new List<ItemType>();
 
+            if (Items.Count > 512)
+            {
+                throw new InvalidOperationException("items.json no puede declarar más de 512 objetos para ItemCatalog.");
+            }
+
+            int catalogBytes = 1 + 4 + 4 + 4 + 4 + 2;
+
             for (int i = 0; i < Items.Count; i++)
             {
                 ItemType item = Items[i];
@@ -164,11 +226,30 @@ namespace Avelora.Server.Items
 
                 bool isPotion = item.IsPotion;
                 bool isMaterial = item.IsMaterial;
+                bool isWeapon = item.IsWeapon;
 
-                if (!isPotion && !isMaterial)
+                if (!isPotion && !isMaterial && !isWeapon)
                 {
                     throw new InvalidOperationException(
-                        "items.json: " + where + " tiene kind '" + item.Kind + "'; debe ser 'material' o 'potion'.");
+                        "items.json: " + where + " tiene kind '" + item.Kind +
+                        "'; debe ser 'material', 'potion' o 'weapon'.");
+                }
+
+                int nameBytes = string.IsNullOrWhiteSpace(item.Name)
+                    ? 0
+                    : Encoding.UTF8.GetByteCount(item.Name);
+                if (string.IsNullOrWhiteSpace(item.Name) || nameBytes > 48)
+                {
+                    throw new InvalidOperationException(
+                        "items.json: " + where + " (id " + item.Id + ") debe tener un nombre no vacío de hasta 48 bytes UTF-8.");
+                }
+
+                catalogBytes += 23 + nameBytes;
+                if (catalogBytes > Avelora.Shared.Protocol.ProtocolConstants.MaxMessageSize)
+                {
+                    throw new InvalidOperationException(
+                        "items.json no cabe en un ItemCatalog de " +
+                        Avelora.Shared.Protocol.ProtocolConstants.MaxMessageSize + " bytes.");
                 }
 
                 if (item.MaxStack < 1 || item.MaxStack > 999)
@@ -192,9 +273,46 @@ namespace Avelora.Server.Items
                     if (item.HasHeal)
                     {
                         throw new InvalidOperationException(
-                            "items.json: " + where + " (id " + item.Id + ") es material y tiene heal " + item.Heal +
-                            "; heal está prohibido en materiales (debe ser 0 o no estar).");
+                            "items.json: " + where + " (id " + item.Id + ") no es poción y tiene heal " + item.Heal +
+                            "; heal está prohibido fuera de las pociones.");
                     }
+                }
+
+                if (isWeapon)
+                {
+                    if (item.MaxStack != 1)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") es arma y debe tener maxStack 1.");
+                    }
+
+                    if (!item.HasDamage || item.Damage < 1 || item.Damage > 100000)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") tiene damage " + item.Damage +
+                            "; debe estar entre 1 y 100000.");
+                    }
+
+                    if (!item.HasRange || !(item.Range > 0f) || item.Range > 5f ||
+                        float.IsNaN(item.Range) || float.IsInfinity(item.Range))
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") tiene range inválido; debe ser > 0 y ≤ 5.");
+                    }
+
+                    if (!item.HasCooldownSeconds || !(item.CooldownSeconds >= 0.1d) ||
+                        double.IsNaN(item.CooldownSeconds) || double.IsInfinity(item.CooldownSeconds))
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id +
+                            ") tiene cooldownSeconds inválido; debe ser ≥ 0,1.");
+                    }
+                }
+                else if (item.HasDamage || item.HasRange || item.HasCooldownSeconds)
+                {
+                    throw new InvalidOperationException(
+                        "items.json: " + where + " (id " + item.Id +
+                        ") no es arma y tiene campos de arma, que están prohibidos.");
                 }
             }
         }

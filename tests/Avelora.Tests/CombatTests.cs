@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -25,7 +26,8 @@ namespace Avelora.Tests
             int damage = Damage,
             float range = Range,
             float tolerance = Tolerance,
-            double cooldownSeconds = CooldownSeconds)
+            double cooldownSeconds = CooldownSeconds,
+            ItemCatalog? items = null)
         {
             return new Zone(
                 1,
@@ -40,8 +42,18 @@ namespace Avelora.Tests
                 npcs,
                 seed,
                 new AttackQueue(256),
-                new CombatSettings(damage, range, tolerance, cooldownSeconds));
+                new CombatSettings(damage, range, tolerance, cooldownSeconds),
+                items: items);
         }
+
+        private static ItemCatalog WeaponCatalog() => new ItemCatalog
+        {
+            Items = new List<ItemType>
+            {
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
+            },
+        };
 
         private static NpcEntity AddNpc(Zone zone, int id, Vec2 position, int maxHealth = 30, long respawnTicks = 200)
         {
@@ -223,6 +235,88 @@ namespace Avelora.Tests
 
             Assert.Equal(2, zone.AttacksOk);
             Assert.Equal(980, npc.Health);
+        }
+
+        [Fact]
+        public void Espada_Hace_14_Da_Alcance_1_2_Mas_Tolerancia_Y_Recarga_16_Ticks()
+        {
+            Zone zone = NewZone(range: 1f, tolerance: 0.8f, items: WeaponCatalog());
+            PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            attacker.EquippedWeaponId = 3101;
+            NpcEntity npc = AddNpc(zone, 100, new Vec2(11f, 10f), maxHealth: 1000);
+
+            Attack(zone, attacker, npc);
+            zone.Tick();
+            Assert.Equal(986, npc.Health);
+            Assert.Equal(1, zone.AttacksWithWeapon);
+
+            for (int tick = 1; tick <= 15; tick++)
+            {
+                Attack(zone, attacker, npc);
+                zone.Tick();
+            }
+
+            Assert.Equal(15, zone.RejectedAttackCooldown);
+            Attack(zone, attacker, npc);
+            zone.Tick();
+            Assert.Equal(972, npc.Health);
+            Assert.Equal(2, zone.AttacksWithWeapon);
+        }
+
+        [Fact]
+        public void Hacha_Hace_22_Y_Recarga_24_Ticks()
+        {
+            Zone zone = NewZone(range: 1f, tolerance: 0.7f, items: WeaponCatalog());
+            PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            attacker.EquippedWeaponId = 3102;
+            NpcEntity npc = AddNpc(zone, 100, new Vec2(11f, 10f), maxHealth: 1000);
+
+            Attack(zone, attacker, npc);
+            zone.Tick();
+            Assert.Equal(978, npc.Health);
+
+            for (int tick = 1; tick <= 23; tick++)
+            {
+                Attack(zone, attacker, npc);
+                zone.Tick();
+            }
+
+            Assert.Equal(23, zone.RejectedAttackCooldown);
+            Attack(zone, attacker, npc);
+            zone.Tick();
+            Assert.Equal(956, npc.Health);
+            Assert.Equal(2, zone.AttacksWithWeapon);
+        }
+
+        [Theory]
+        [InlineData(3101, 0.8f)]
+        [InlineData(3102, 0.7f)]
+        public void El_Borde_Exacto_De_Cada_Arma_Mas_Tolerancia_Se_Acepta(ushort weaponId, float tolerance)
+        {
+            Zone zone = NewZone(range: 0.5f, tolerance: tolerance, items: WeaponCatalog());
+            PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            attacker.EquippedWeaponId = weaponId;
+            NpcEntity npc = AddNpc(zone, 100, new Vec2(12f, 10f), maxHealth: 1000);
+
+            Attack(zone, attacker, npc);
+            zone.Tick();
+
+            Assert.Equal(1, zone.AttacksOk);
+            Assert.Equal(0, zone.RejectedAttackDistance);
+        }
+
+        [Fact]
+        public void Jugador_Sin_Arma_Sigue_Usando_Las_Reglas_De_Punos()
+        {
+            Zone zone = NewZone(damage: 10, range: 1.2f, tolerance: 0.5f, cooldownSeconds: 0.8d, items: WeaponCatalog());
+            PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            NpcEntity npc = AddNpc(zone, 100, new Vec2(11f, 10f), maxHealth: 1000);
+
+            Attack(zone, attacker, npc);
+            zone.Tick();
+
+            Assert.Equal(990, npc.Health);
+            Assert.Equal(0, zone.AttacksWithWeapon);
         }
 
         [Fact]

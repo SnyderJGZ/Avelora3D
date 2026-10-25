@@ -263,6 +263,85 @@ namespace Avelora.Shared.Protocol
         public byte Slot { get; }
     }
 
+    /// <summary>Intención de equipar el arma que ocupa un hueco (I-05).</summary>
+    public readonly struct EquipMessage
+    {
+        public EquipMessage(byte slot) => Slot = slot;
+
+        /// <summary>Hueco del inventario que contiene el arma.</summary>
+        public byte Slot { get; }
+    }
+
+    /// <summary>Intención de guardar el arma equipada en el inventario (I-05).</summary>
+    public readonly struct UnequipMessage
+    {
+    }
+
+    /// <summary>Tipos de objeto anunciados por el servidor.</summary>
+    public enum ItemKind : byte
+    {
+        Material = 0,
+        Potion = 1,
+        Weapon = 2,
+    }
+
+    /// <summary>Datos de un tipo de objeto del catálogo del servidor.</summary>
+    public readonly struct ItemCatalogEntry
+    {
+        public ItemCatalogEntry(
+            ushort id,
+            ItemKind kind,
+            ushort maxStack,
+            uint heal,
+            uint damage,
+            float range,
+            float cooldownSeconds,
+            string name)
+        {
+            Id = id;
+            Kind = kind;
+            MaxStack = maxStack;
+            Heal = heal;
+            Damage = damage;
+            Range = range;
+            CooldownSeconds = cooldownSeconds;
+            Name = name ?? string.Empty;
+        }
+
+        public ushort Id { get; }
+        public ItemKind Kind { get; }
+        public ushort MaxStack { get; }
+        public uint Heal { get; }
+        public uint Damage { get; }
+        public float Range { get; }
+        public float CooldownSeconds { get; }
+        public string Name { get; }
+    }
+
+    /// <summary>Catálogo completo de objetos y reglas de puños que envía el servidor (I-05).</summary>
+    public readonly struct ItemCatalogMessage
+    {
+        public ItemCatalogMessage(
+            float pickupRange,
+            uint fistDamage,
+            float fistRange,
+            float fistCooldownSeconds,
+            ItemCatalogEntry[] items)
+        {
+            PickupRange = pickupRange;
+            FistDamage = fistDamage;
+            FistRange = fistRange;
+            FistCooldownSeconds = fistCooldownSeconds;
+            Items = items ?? Array.Empty<ItemCatalogEntry>();
+        }
+
+        public float PickupRange { get; }
+        public uint FistDamage { get; }
+        public float FistRange { get; }
+        public float FistCooldownSeconds { get; }
+        public ItemCatalogEntry[] Items { get; }
+    }
+
     /// <summary>Respuesta afirmativa al saludo: identidad, punto de aparición y reglas del servidor.</summary>
     /// <remarks>
     /// Viajan la velocidad y el tamaño de la caja de colisión porque las impone el servidor: el
@@ -470,16 +549,17 @@ namespace Avelora.Shared.Protocol
         public EntityState[] Entities { get; }
     }
 
-    /// <summary>Inventario completo del jugador (I-04). Se manda tras el <see cref="WelcomeMessage"/> y
+    /// <summary>Inventario completo del jugador (I-04/I-05). Se manda tras el <see cref="WelcomeMessage"/> y
     /// tras cada cambio (recoger o usar). Lleva el número de huecos y, por cada uno, el <c>itemId</c>
     /// (0 = vacío) y la cantidad.</summary>
     public readonly struct InventoryMessage
     {
-        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts)
+        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort equippedItemId = 0)
         {
             SlotCount = slotCount;
             ItemIds = itemIds ?? Array.Empty<ushort>();
             Counts = counts ?? Array.Empty<ushort>();
+            EquippedItemId = equippedItemId;
         }
 
         /// <summary>Número de huecos del inventario (≤ 60).</summary>
@@ -490,5 +570,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Cantidad por hueco. Debe ser 0 si <see cref="ItemIds"/> es 0, y > 0 si no lo es.</summary>
         public ushort[] Counts { get; }
+
+        /// <summary>Arma equipada; 0 significa que el jugador combate con los puños.</summary>
+        public ushort EquippedItemId { get; }
     }
 }

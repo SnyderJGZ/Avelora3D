@@ -30,8 +30,11 @@ namespace Avelora.Shared.Protocol
         private const int AttackSize = 1 + 4;
         private const int PickUpSize = 1 + 4;
         private const int UseItemSize = 1 + 1;
+        private const int EquipSize = 1 + 1;
+        private const int UnequipSize = 1;
         private const int RejectSize = 1 + 1;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
+        private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
 
         private const int WelcomeSize =
@@ -466,6 +469,58 @@ namespace Avelora.Shared.Protocol
             }
         }
 
+        /// <summary>Codifica Equip: tipo (1) + hueco (1) = 2 bytes.</summary>
+        public static byte[] EncodeEquip(in EquipMessage message)
+        {
+            var buffer = new byte[EquipSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Equip);
+            writer.WriteByte(message.Slot);
+            return buffer;
+        }
+
+        /// <summary>Lee Equip; exige exactamente dos bytes.</summary>
+        public static bool TryReadEquip(byte[] buffer, int offset, int length, out EquipMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.Equip, EquipSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                message = new EquipMessage(reader.ReadByte());
+                return reader.Remaining == 0;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica Unequip, que solo lleva su byte de tipo.</summary>
+        public static byte[] EncodeUnequip(in UnequipMessage message)
+        {
+            var buffer = new byte[UnequipSize];
+            buffer[0] = (byte)MessageType.Unequip;
+            return buffer;
+        }
+
+        /// <summary>Lee Unequip; exige exactamente un byte.</summary>
+        public static bool TryReadUnequip(byte[] buffer, int offset, int length, out UnequipMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.Unequip, UnequipSize))
+            {
+                return false;
+            }
+
+            message = new UnequipMessage();
+            return true;
+        }
+
         // ---------------------------------------------------------------- servidor → cliente
         /// <summary>Codifica la aceptación del saludo: 69 bytes.</summary>
         public static byte[] EncodeWelcome(in WelcomeMessage message)
@@ -718,7 +773,7 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica un inventario: tipo (1) + slotCount (1) + slotCount * (itemId(2) + count(2)).
+        /// Codifica un inventario: tipo (1) + slotCount (1) + 4 bytes por hueco + arma equipada (2).
         /// </summary>
         public static byte[] EncodeInventory(in InventoryMessage message)
         {
@@ -739,7 +794,7 @@ namespace Avelora.Shared.Protocol
                 }
             }
 
-            int size = 1 + 1 + (message.SlotCount * 4);
+            int size = 1 + 1 + (message.SlotCount * 4) + 2;
             var buffer = new byte[size];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.Inventory);
@@ -751,18 +806,20 @@ namespace Avelora.Shared.Protocol
                 writer.WriteUInt16(message.Counts[i]);
             }
 
+            writer.WriteUInt16(message.EquippedItemId);
+
             return buffer;
         }
 
         /// <summary>
-        /// Lee un inventario. Valida longitud exacta, slotCount ≤ 60, y coherencia itemId/count.
+        /// Lee un inventario. Valida longitud exacta, slotCount ≤ 60 y coherencia itemId/count.
         /// </summary>
         public static bool TryReadInventory(byte[] buffer, int offset, int length, out InventoryMessage message)
         {
             message = default;
 
             if (buffer is null || offset < 0 || offset > buffer.Length ||
-                length < 2 || length > ProtocolConstants.MaxMessageSize || length > buffer.Length - offset)
+                length < 4 || length > ProtocolConstants.MaxMessageSize || length > buffer.Length - offset)
             {
                 return false;
             }
@@ -782,7 +839,7 @@ namespace Avelora.Shared.Protocol
                     return false;
                 }
 
-                int expectedSize = 1 + 1 + (slotCount * 4);
+                int expectedSize = 1 + 1 + (slotCount * 4) + 2;
                 if (length != expectedSize)
                 {
                     return false;
@@ -806,15 +863,143 @@ namespace Avelora.Shared.Protocol
                     counts[i] = count;
                 }
 
+                ushort equippedItemId = reader.ReadUInt16();
+
                 if (reader.Remaining != 0)
                 {
                     return false;
                 }
 
-                message = new InventoryMessage(slotCount, itemIds, counts);
+                message = new InventoryMessage(slotCount, itemIds, counts, equippedItemId);
                 return true;
             }
             catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Codifica el catálogo: cabecera fija de 19 bytes y, por objeto, 21 bytes más el nombre
+        /// UTF-8 (con su prefijo de longitud de dos bytes).
+        /// </summary>
+        public static byte[] EncodeItemCatalog(in ItemCatalogMessage message)
+        {
+            ItemCatalogEntry[] items = message.Items ?? Array.Empty<ItemCatalogEntry>();
+            if (items.Length > 512)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "El catálogo no puede tener más de 512 objetos.");
+            }
+
+            int size = ItemCatalogHeaderSize;
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (items[i].Kind > ItemKind.Weapon)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "El catálogo contiene un tipo de objeto desconocido.");
+                }
+
+                int nameBytes = Encoding.UTF8.GetByteCount(items[i].Name ?? string.Empty);
+                if (nameBytes > 48)
+                {
+                    throw new ArgumentException("El nombre del objeto supera los 48 bytes UTF-8.", nameof(message));
+                }
+
+                size += 23 + nameBytes;
+            }
+
+            if (size > ProtocolConstants.MaxMessageSize)
+            {
+                throw new ArgumentException(
+                    "El catálogo ocupa " + size + " bytes y el tope es " + ProtocolConstants.MaxMessageSize + ".",
+                    nameof(message));
+            }
+
+            var buffer = new byte[size];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.ItemCatalog);
+            writer.WriteSingle(message.PickupRange);
+            writer.WriteUInt32(message.FistDamage);
+            writer.WriteSingle(message.FistRange);
+            writer.WriteSingle(message.FistCooldownSeconds);
+            writer.WriteUInt16((ushort)items.Length);
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                ItemCatalogEntry item = items[i];
+                writer.WriteUInt16(item.Id);
+                writer.WriteByte((byte)item.Kind);
+                writer.WriteUInt16(item.MaxStack);
+                writer.WriteUInt32(item.Heal);
+                writer.WriteUInt32(item.Damage);
+                writer.WriteSingle(item.Range);
+                writer.WriteSingle(item.CooldownSeconds);
+                writer.WriteString(item.Name, 48);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee el catálogo validando tipo, cantidad, tamaño y longitud exacta.</summary>
+        public static bool TryReadItemCatalog(
+            byte[] buffer,
+            int offset,
+            int length,
+            out ItemCatalogMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.ItemCatalog) || length < ItemCatalogHeaderSize)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                float pickupRange = reader.ReadSingle();
+                uint fistDamage = reader.ReadUInt32();
+                float fistRange = reader.ReadSingle();
+                float fistCooldownSeconds = reader.ReadSingle();
+                int count = reader.ReadUInt16();
+                if (count > 512)
+                {
+                    return false;
+                }
+
+                var items = count == 0 ? Array.Empty<ItemCatalogEntry>() : new ItemCatalogEntry[count];
+                for (int i = 0; i < count; i++)
+                {
+                    ushort id = reader.ReadUInt16();
+                    byte rawKind = reader.ReadByte();
+                    if (rawKind > (byte)ItemKind.Weapon)
+                    {
+                        return false;
+                    }
+
+                    ushort maxStack = reader.ReadUInt16();
+                    uint heal = reader.ReadUInt32();
+                    uint damage = reader.ReadUInt32();
+                    float range = reader.ReadSingle();
+                    float cooldownSeconds = reader.ReadSingle();
+                    string name = reader.ReadString(48);
+                    items[i] = new ItemCatalogEntry(
+                        id, (ItemKind)rawKind, maxStack, heal, damage, range, cooldownSeconds, name);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ItemCatalogMessage(
+                    pickupRange, fistDamage, fistRange, fistCooldownSeconds, items);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+            catch (DecoderFallbackException)
             {
                 return false;
             }

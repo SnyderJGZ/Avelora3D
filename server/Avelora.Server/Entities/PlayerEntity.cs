@@ -44,6 +44,9 @@ namespace Avelora.Server.Entities
         /// <summary>Huecos de inventario, modificados solo por el hilo de simulación.</summary>
         public InventorySlot[] Inventory { get; }
 
+        /// <summary>Identificador del arma equipada; 0 significa combatir con los puños.</summary>
+        public ushort EquippedWeaponId { get; set; }
+
         /// <summary>Tick del último uso válido de poción; -1 si todavía no ha usado ninguna.</summary>
         public long LastPotionTick { get; set; } = -1;
 

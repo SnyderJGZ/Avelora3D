@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; servidor de I-04 implementado (cliente I-04b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 e I-05 de servidor implementadas (I-05b de cliente pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -13,9 +13,11 @@ calcular igual (movimiento y colisión).
 > esos enemigos tienen vida, reciben los ataques de los jugadores, mueren y reaparecen. Desde I-03
 > persiguen y golpean al jugador, y el jugador tiene vida, muerte y reaparición. Desde I-03c
 > (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67 entidades.
-> Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones.
+> Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones;
+> desde I-05 (**protocolo v8**) hay armas, equipo persistente y catálogo de objetos enviado al cliente.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
-> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6) e [I-04](#botín-e-inventario-i-04).
+> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04) e
+> [I-05](#armas-y-equipo-i-05-protocolo-v8).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -24,7 +26,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **383/383 en verde** |
+| `dotnet test Avelora.slnx` | **421/421 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -332,19 +334,24 @@ pueden discrepar** del formato.
 | `Snapshot` | 12 | S → C | 11 B + 15 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), kind (u8), vida (u8), acción (u8), TypeId (u16) |
 | `PickUp` | 4 | C → S | 5 B | id de entidad del objeto (i32) |
 | `UseItem` | 5 | C → S | 2 B | índice del hueco (u8) |
-| `Inventory` | 14 | S → C | 2 B + 4 B/hueco | número de huecos (u8), luego itemId y cantidad (u16 cada uno; 0/0 = vacío) |
+| `Inventory` | 14 | S → C | 4 B + 4 B/hueco | número de huecos (u8), itemId y cantidad (u16 cada uno; 0/0 = vacío), arma equipada (u16; 0 = puños) |
+| `Equip` | 6 | C → S | 2 B | hueco que contiene el arma (u8) |
+| `Unequip` | 7 | C → S | 1 B | sin carga útil |
+| `ItemCatalog` | 15 | S → C | 19 B + 23 B/objeto + nombre | reglas de puños y recogida, más datos de cada objeto (nombre UTF-8 de hasta 48 B) |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 
 Canales:
 
-- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem` e `Inventory`.
+- **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
+  `Unequip`, `ItemCatalog` e `Inventory`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
 > El **protocolo v5** (I-02) añade `Attack` y dos bytes por entidad en el snapshot (`HealthPercent` y
 > `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
 > I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
-> `PickUp`, `UseItem` e `Inventory`.
+> `PickUp`, `UseItem` e `Inventory`; I-05 sube a **v8** por `Equip`, `Unequip`, `ItemCatalog` y el campo
+> `equippedItemId` al final de `Inventory`.
 
 ### Handshake
 
@@ -1034,9 +1041,10 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate y botín | ⏳ I-01, I-02, I-03 e I-04 de servidor hechas; pendiente I-04b de cliente |
+| **I** | Enemigos, combate, botín y equipo | ⏳ I-01 a I-05 de servidor hechas; pendientes los clientes I-04b/I-05b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
+| **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1178,13 +1186,14 @@ causas, las dos en `ClientPrediction.Reconcile`:
 ### Botín e inventario (I-04)
 
 El cliente solo envía `PickUp(entityId)` y `UseItem(slot)`: el servidor valida la vida, la distancia,
-el tipo de objeto, el espacio y la recarga. El protocolo es **v7**; `EntityKind.Item = 2` identifica
+el tipo de objeto, el espacio y la recarga. El protocolo es **v8** (I-05); `EntityKind.Item = 2` identifica
 los objetos del suelo y su `TypeId` es el `itemId`. Sus snapshots llevan vida 100, acción `None` y
 dirección `(0,0)`. `PickUp` y `UseItem` son de cliente a servidor; `Inventory` devuelve todos los
-huecos tras el `Welcome` y después de cada cambio (contenido: 81 B con 20 huecos; con el byte de tipo
-del mensaje, 82 B en el cable).
+huecos después del catálogo, tras el `Welcome` y después de cada cambio (84 B en el cable con 20 huecos,
+incluido `equippedItemId`).
 
-`server/Avelora.Server/items.json` declara los objetos. `kind` solo puede ser `material` o `potion`;
+`server/Avelora.Server/items.json` declara los objetos. `kind` admite `material`, `potion` y, desde
+I-05, `weapon`;
 `id` es único (1–65535), `maxStack` va de 1 a 999; `heal` (1–100000) es obligatorio en pociones y
 está prohibido en materiales. El arranque valida estos datos y las referencias de botín:
 
@@ -1217,8 +1226,8 @@ objetos se resuelven después del combate y antes de `NpcSystem`; la simulación
 propietario del mundo, mientras la red solo encola.
 
 **Persistencia:** `inventory_items` guarda `(character_id, slot, item_id, count)` con borrado en
-cascada. El esquema SQLite v1 migra a v2 dentro de una transacción sin perder personajes; otras
-versiones desconocidas impiden el arranque. Guardar el personaje reescribe también sus filas de
+cascada. I-04 introdujo la migración SQLite v1→v2; I-05 lleva el esquema a v3 para guardar el arma
+equipada. Guardar el personaje reescribe también sus filas de
 inventario en la misma transacción. Al cargar se descartan y registran filas de objetos eliminados,
 ranuras fuera de rango o cantidades no válidas, sin impedir el login.
 
@@ -1248,6 +1257,56 @@ objeto inexistente/ya recogido y ninguno por jugador muerto, distancia o inventa
 objeto y 1 por recarga. Los bots enviaron 423 peticiones de recoger y 32 de poción. El servidor envió
 **35 242 538 B (35,2 MB)**, **5,5 MB más (+18,7 %)** que J-01 (29,7 MB); no apareció ninguna línea
 `[corrección]` que requiriera análisis individual. El p99 subió **0,022 ms** respecto a J-01 (0,047 ms).
+
+### Armas y equipo (I-05, protocolo v8)
+
+`items.json` admite ahora `kind: "weapon"`. Las armas tienen un nombre no vacío de hasta **48 bytes
+UTF-8**, `maxStack: 1`, `damage` de 1 a 100000, `range` mayor que 0 y como máximo 5 tiles, y
+`cooldownSeconds` de al menos 0,1 s. Los tres campos de combate son obligatorios y están prohibidos
+en materiales y pociones. El catálogo incluye la espada corta (3101: daño 14, alcance 1,2, recarga
+0,8 s) y el hacha de orco (3102: daño 22, alcance 1,3, recarga 1,2 s). El orco 2001 suelta la espada
+con probabilidad 0,05; el 2002 suelta el hacha con probabilidad 0,15; ambos montos son una unidad.
+
+El jugador tiene un único hueco de equipo, `EquippedWeaponId` (0 = puños). `Equip(slot)` solo se
+acepta si está vivo y el hueco contiene un arma; equipa la nueva y devuelve la anterior a ese mismo
+hueco, sin requerir espacio libre. `Unequip` guarda el arma en el primer hueco vacío; si el inventario
+está lleno o no había arma se rechaza. Ambas intenciones usan la cola acotada de acciones de objeto y
+el servidor devuelve el `Inventory` completo tras un cambio válido.
+
+El combate usa daño, alcance y recarga del arma equipada. El servidor suma `attackRangeTolerance` al
+alcance igual que con los puños, y convierte la recarga en `ceil(cooldownSeconds × TickRate)` ticks:
+16 para la espada y 24 para el hacha. Sin arma siguen aplicándose `playerAttackDamage`,
+`playerAttackRange` y `playerAttackCooldownSeconds`. La autoridad de daño, alcance, recarga y equipo
+permanece en el servidor.
+
+Tras `Welcome`, el servidor entrega una sola vez `ItemCatalog` y luego `Inventory`, ambos por el canal
+fiable y ordenado. El catálogo incluye `pickupRange`, daño/alcance/recarga de los puños y todos los
+objetos: id, tipo, pila máxima, curación o estadísticas de arma y nombre. `Inventory` añade al final
+`equippedItemId` (u16). `Equip` (byte de ranura) y `Unequip` (sin carga útil) usan los bytes 6 y 7 de
+cliente a servidor; `ItemCatalog` usa el 15 de servidor a cliente. El catálogo admite como máximo 512
+objetos y cada mensaje respeta el tope de 1400 bytes.
+
+La base sube a **esquema v3**. V2→v3 añade `characters.equipped_item_id INTEGER NOT NULL DEFAULT 0` en
+una transacción; v1→v3 aplica primero la migración de inventario v1→v2 y después la v2→v3, cada una
+transaccionalmente. El arma se guarda junto a inventario/vida y también viaja en la foto de
+`TryGetLatest`, para que una reconexión inmediata conserve el equipo. Si el id guardado no existe o
+no es un arma, se registra el aviso y se carga como 0.
+
+El informe periódico y el resumen final muestran `equipados`, `desequipados`,
+`equipar_rech_muerto`, `equipar_rech_objeto`, `equipar_rech_lleno`, `equipar_rech_vacio` y
+`ataques_con_arma`. Los bots `fight` leen el catálogo, equipan el arma disponible de mayor daño y
+ajustan alcance y recarga al arma equipada (o a los puños); el resumen de bots también muestra
+`equipados` confirmados por el servidor.
+
+**Verificación y carga I-05:**
+`dotnet build Avelora.slnx -v q --nologo` terminó con **0 errores y 0 advertencias**;
+`dotnet test Avelora.slnx` pasó **421/421**. En la pasada de carga de 50 bots durante 120 s
+(`-LogCorrections`, servidor 160 s), se conectaron **50/50**; el tick p99 fue **0,055 ms** (I-04:
+0,069 ms), el peor tick **6,920 ms** y hubo **0** ticks sobre 50 ms. Hubo **0 correcciones** y
+ninguna línea `[corrección]` que analizar. Se confirmaron **13 equipados**, se hicieron **156 ataques
+con arma** y no hubo rechazos de equipar; los PNJ murieron/reaparecieron **252/252** veces y los
+jugadores murieron/reaparecieron **9/8** veces. El servidor envió **27 633 309 B (27,6 MB)**,
+**7 609 229 B (21,6 %) menos** que los 35 242 538 B (35,2 MB) de I-04.
 
 ---
 
@@ -1280,7 +1339,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 ## Próximo paso
 
 La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
-la desconexión. El backend de **I-04** añade ahora botín, inventario y pociones con persistencia v2.
-El siguiente trabajo de este bloque es **I-04b**, conectar protocolo v7, recoger objetos y mostrar el
-inventario en el cliente de Unity; también siguen pendientes los trabajos de seguridad de H que no
-forman parte de esta tarea.
+la desconexión. El backend de **I-04/I-05** añade botín, inventario, pociones, armas y equipo con
+persistencia v3. Los siguientes trabajos de este bloque son **I-04b/I-05b**, conectar protocolo v8,
+recoger objetos y mostrar inventario y equipo en el cliente de Unity; también siguen pendientes los
+trabajos de seguridad de H que no forman parte de esta tarea.
