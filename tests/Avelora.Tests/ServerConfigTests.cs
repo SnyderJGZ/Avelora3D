@@ -296,12 +296,16 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { PotionCooldownSeconds = 0.09 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PotionCooldownSeconds = double.PositiveInfinity }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { MaxQueuedItemActions = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LevelsPath = " " }.Validate);
 
             string configPath = Path_("config/server.json");
             var config = new ServerConfig { ItemsPath = "items/items.json" };
             Assert.Equal(Path.GetFullPath(Path.Combine(_folder, "config", "items", "items.json")),
                 config.ResolveItemsPath(configPath));
             Assert.Equal(string.Empty, new ServerConfig { ItemsPath = " " }.ResolveItemsPath(configPath));
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(_folder, "config", "levels.json")),
+                new ServerConfig().ResolveLevelsPath(configPath));
         }
 
         [Fact]

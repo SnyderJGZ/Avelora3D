@@ -3,6 +3,7 @@ using System.Linq;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Xunit;
@@ -36,6 +37,7 @@ namespace Avelora.Tests
                         HalfWidth = 0.35f,
                         HalfHeight = 0.35f,
                         MaxHealth = 30,
+                        Experience = 20,
                         RespawnSeconds = 10,
                         AggroRadius = 0,
                         LeashRadius = 8,
@@ -67,7 +69,8 @@ namespace Avelora.Tests
             int maxGroundItems = 500,
             int slots = 4,
             long despawnTicks = 10,
-            long cooldownTicks = 2)
+            long cooldownTicks = 2,
+            LevelTable? levels = null)
         {
             return new Zone(
                 1,
@@ -88,7 +91,8 @@ namespace Avelora.Tests
                 groundItemTicks: despawnTicks,
                 pickupRange: 1.5f,
                 pickupRangeTolerance: 0.5f,
-                potionCooldownTicks: cooldownTicks);
+                potionCooldownTicks: cooldownTicks,
+                levels: levels);
         }
 
         private static PlayerEntity SpawnPlayer(Zone zone, float x = 5, float y = 5) =>
@@ -266,6 +270,28 @@ namespace Avelora.Tests
             Assert.Equal(100, player.Health);
             Assert.Equal(new InventorySlot(0, 0), player.Inventory[1]);
             Assert.Equal(1, zone.PotionsUsed);
+        }
+
+        [Fact]
+        public void Pocion_En_Nivel_Alto_No_Supera_La_Vida_Maxima_Crecida()
+        {
+            var levels = new LevelTable
+            {
+                HealthPerLevel = 15,
+                DamagePerLevel = 1,
+                ExperienceToNext = new[] { 100, 150 },
+            };
+            Zone zone = NewZone(slots: 1, levels: levels);
+            PlayerEntity player = zone.SpawnPlayer(
+                1, new Vec2(5f, 5f), new Vec2(0.4f, 0.4f), 8, level: 3);
+            player.Health = 120;
+            player.Inventory[0] = new InventorySlot(3002, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.UseItem(player.Id, 0));
+
+            zone.Tick();
+
+            Assert.Equal(130, player.MaxHealth);
+            Assert.Equal(130, player.Health);
         }
 
         [Fact]

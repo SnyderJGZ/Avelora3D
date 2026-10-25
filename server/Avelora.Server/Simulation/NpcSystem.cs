@@ -292,7 +292,8 @@ namespace Avelora.Server.Simulation
                 state.Type.LeashRadius,
                 state.Type.AttackDamage,
                 state.Type.AttackRange,
-                state.Type.AttackCooldownTicks)
+                state.Type.AttackCooldownTicks,
+                state.Type.Experience)
             {
                 MapId = _zoneId,
                 Position = state.Spawner.Position,

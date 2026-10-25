@@ -95,7 +95,7 @@ namespace Avelora.Server.Simulation
         private void Respawn(PlayerEntity player)
         {
             player.Position = _settings.Spawn;
-            player.Health = _settings.MaxHealth;
+            player.Health = player.MaxHealth;
             player.Action = EntityAction.None;
             player.DirectionX = 0;
             player.DirectionY = 0;

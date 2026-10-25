@@ -6,6 +6,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Metrics;
 using Avelora.Server.Net;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
@@ -35,7 +36,8 @@ namespace Avelora.Server.Diagnostics
             int port,
             string? databasePath,
             string serverKeyFingerprint,
-            Avelora.Server.Npcs.NpcCatalog? npcs = null)
+            Avelora.Server.Npcs.NpcCatalog? npcs = null,
+            LevelTable? levels = null)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -90,6 +92,10 @@ namespace Avelora.Server.Diagnostics
                 (long)Math.Ceiling(config.PlayerRespawnSeconds * SimulationConstants.TickRate) +
                 " ticks), regeneración " + Invariant(config.PlayerRegenPerSecond, "0.##") + "/s tras " +
                 Invariant(config.PlayerRegenDelaySeconds, "0.#") + " s sin daño");
+            LevelTable levelTable = levels ?? LevelTable.Default;
+            Console.WriteLine(
+                "  Niveles       : máximo " + levelTable.MaxLevel + ", vida/nivel +" +
+                levelTable.HealthPerLevel + ", daño/nivel +" + levelTable.DamagePerLevel);
             Console.WriteLine(
                 "  Objetos       : huecos " + config.InventorySlots +
                 ", catálogo " + (string.IsNullOrWhiteSpace(config.ItemsPath) ? "desactivado" : config.ItemsPath) +
@@ -158,6 +164,8 @@ namespace Avelora.Server.Diagnostics
                 " npc_golpes=" + zone.NpcHits +
                 " npc_muertes=" + zone.NpcDeaths +
                 " npc_reapariciones=" + zone.NpcRespawns +
+                " experiencia_otorgada=" + zone.ExperienceGranted +
+                " subidas_nivel=" + zone.LevelUps +
                 " jugador_muertes=" + zone.PlayerDeaths +
                 " jugador_reapariciones=" + zone.PlayerRespawns);
 
@@ -289,7 +297,9 @@ namespace Avelora.Server.Diagnostics
                 zone.RejectedAttackDead + " por jugador muerto, " +
                 (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
                 zone.NpcHits + " golpes de PNJ, " +
-                zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ");
+                zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ, " +
+                "experiencia_otorgada=" + zone.ExperienceGranted +
+                ", subidas_nivel=" + zone.LevelUps);
             Console.WriteLine(
                 "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
                 zone.PlayerRespawns + " reapariciones");

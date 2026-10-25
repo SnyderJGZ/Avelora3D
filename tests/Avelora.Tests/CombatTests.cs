@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
@@ -27,7 +28,8 @@ namespace Avelora.Tests
             float range = Range,
             float tolerance = Tolerance,
             double cooldownSeconds = CooldownSeconds,
-            ItemCatalog? items = null)
+            ItemCatalog? items = null,
+            LevelTable? levels = null)
         {
             return new Zone(
                 1,
@@ -43,7 +45,8 @@ namespace Avelora.Tests
                 seed,
                 new AttackQueue(256),
                 new CombatSettings(damage, range, tolerance, cooldownSeconds),
-                items: items);
+                items: items,
+                levels: levels);
         }
 
         private static ItemCatalog WeaponCatalog() => new ItemCatalog
@@ -90,6 +93,7 @@ namespace Avelora.Tests
                         HalfWidth = 0.35f,
                         HalfHeight = 0.35f,
                         MaxHealth = maxHealth,
+                        Experience = 20,
                         RespawnSeconds = respawnSeconds,
                         AggroRadius = 0f,
                         LeashRadius = 8f,
@@ -286,6 +290,99 @@ namespace Avelora.Tests
             zone.Tick();
             Assert.Equal(956, npc.Health);
             Assert.Equal(2, zone.AttacksWithWeapon);
+        }
+
+        [Fact]
+        public void Nivel_Tres_Suma_Dos_De_Dano_Tanto_A_La_Espada_Como_A_Los_Punos()
+        {
+            var levels = new LevelTable
+            {
+                HealthPerLevel = 15,
+                DamagePerLevel = 1,
+                ExperienceToNext = new[] { 100, 150 },
+            };
+
+            Zone armedZone = NewZone(
+                range: 1f,
+                tolerance: 0.8f,
+                items: WeaponCatalog(),
+                levels: levels);
+            PlayerEntity armed = armedZone.SpawnPlayer(
+                1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8, level: 3);
+            armed.EquippedWeaponId = 3101;
+            NpcEntity swordTarget = AddNpc(armedZone, 100, new Vec2(11f, 10f), maxHealth: 1000);
+            Attack(armedZone, armed, swordTarget);
+            armedZone.Tick();
+            Assert.Equal(984, swordTarget.Health);
+
+            Zone fistsZone = NewZone(levels: levels);
+            PlayerEntity fists = fistsZone.SpawnPlayer(
+                1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8, level: 3);
+            NpcEntity fistTarget = AddNpc(fistsZone, 100, new Vec2(11f, 10f), maxHealth: 1000);
+            Attack(fistsZone, fists, fistTarget);
+            fistsZone.Tick();
+            Assert.Equal(988, fistTarget.Health);
+        }
+
+        [Fact]
+        public void Solo_El_Jugador_Que_Da_El_Golpe_Mortal_Recibe_Experiencia()
+        {
+            Zone zone = NewZone(Catalog(maxHealth: 20));
+            PlayerEntity first = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            PlayerEntity killer = zone.SpawnPlayer(2, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            NpcEntity npc = OnlyNpc(zone);
+
+            Attack(zone, first, npc);
+            Attack(zone, killer, npc);
+            zone.Tick();
+
+            Assert.Equal(0, first.Experience);
+            Assert.Equal(20, killer.Experience);
+            Assert.Equal(20, zone.ExperienceGranted);
+            Assert.Equal(0, zone.LevelUps);
+        }
+
+        [Fact]
+        public void Muertes_De_Jugadores_Distintos_En_Un_Tick_Publican_Un_Cambio_Por_Jugador()
+        {
+            Zone zone = NewZone(Catalog(count: 2, maxHealth: 10));
+            PlayerEntity first = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            PlayerEntity second = zone.SpawnPlayer(2, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            NpcEntity? firstNpc = null;
+            NpcEntity? secondNpc = null;
+
+            for (int i = 0; i < zone.Entities.Count; i++)
+            {
+                if (zone.Entities[i] is NpcEntity npc)
+                {
+                    if (firstNpc == null)
+                    {
+                        firstNpc = npc;
+                    }
+                    else
+                    {
+                        secondNpc = npc;
+                    }
+                }
+            }
+
+            int firstMessages = 0;
+            int secondMessages = 0;
+            zone.ProgressChanged += player =>
+            {
+                if (player.Id == first.Id) firstMessages++;
+                if (player.Id == second.Id) secondMessages++;
+            };
+            Attack(zone, first, firstNpc!);
+            Attack(zone, second, secondNpc!);
+
+            zone.Tick();
+
+            Assert.Equal(20, first.Experience);
+            Assert.Equal(20, second.Experience);
+            Assert.Equal(40, zone.ExperienceGranted);
+            Assert.Equal(1, firstMessages);
+            Assert.Equal(1, secondMessages);
         }
 
         [Theory]

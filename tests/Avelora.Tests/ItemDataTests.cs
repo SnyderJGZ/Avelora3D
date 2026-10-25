@@ -73,6 +73,7 @@ namespace Avelora.Tests
                     HalfWidth = 0.35f,
                     HalfHeight = 0.35f,
                     MaxHealth = 30,
+                    Experience = 20,
                     RespawnSeconds = 10,
                     AggroRadius = 0,
                     LeashRadius = 8,

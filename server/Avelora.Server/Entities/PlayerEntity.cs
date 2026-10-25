@@ -50,6 +50,15 @@ namespace Avelora.Server.Entities
         /// <summary>Tick del último uso válido de poción; -1 si todavía no ha usado ninguna.</summary>
         public long LastPotionTick { get; set; } = -1;
 
+        /// <summary>Nivel persistente del personaje (I-06).</summary>
+        public int Level { get; set; } = 1;
+
+        /// <summary>Experiencia acumulada dentro del nivel actual (I-06).</summary>
+        public int Experience { get; set; }
+
+        /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
+        internal bool ProgressChanged { get; set; }
+
         /// <summary>
         /// Tick del último ataque <b>válido</b> (I-02); <c>-1</c> si aún no ha atacado. La recarga
         /// se mide contra este valor, siempre en ticks de la zona.

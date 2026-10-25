@@ -6,6 +6,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Net;
+using Avelora.Server.Npcs;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
@@ -23,7 +24,7 @@ namespace Avelora.Tests
         private static string MapPath =>
             Path.Combine(AppContext.BaseDirectory, "maps", "avelora-etapa-a.avmap");
 
-        private static Zone NewZone(ServerConfig config, bool withItems = false)
+        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
             var items = withItems
@@ -48,7 +49,7 @@ namespace Avelora.Tests
                 config.MaxIntentsPerTick,
                 config.MaxIntentsPerPlayerPerTick,
                 new InterestSettings(config.InterestRadius, config.InterestCellSize, config.InterestHysteresis),
-                npcs: null,
+                npcs: npcs,
                 npcSeed: 12345,
                 attacks: new AttackQueue(config.MaxQueuedAttacks),
                 combat: new CombatSettings(
@@ -71,11 +72,15 @@ namespace Avelora.Tests
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
 
-            public Harness(Action<ServerConfig>? configure = null, Func<long>? clock = null, bool withItems = false)
+            public Harness(
+                Action<ServerConfig>? configure = null,
+                Func<long>? clock = null,
+                bool withItems = false,
+                NpcCatalog? npcs = null)
             {
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
-                Zone = NewZone(Config, withItems);
+                Zone = NewZone(Config, withItems, npcs);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
                 Server = new NetworkServer(Zone, Config, Transport, MapHash, clock: clock);
@@ -157,7 +162,7 @@ namespace Avelora.Tests
             harness.Pump();
 
             Assert.Equal(1, harness.Zone.Entities.Count);
-            Assert.Equal(3, harness.Transport.Sent.Count);
+            Assert.Equal(4, harness.Transport.Sent.Count);
 
             SentMessage sent = harness.Transport.Sent[0];
             Assert.Equal(1, sent.ConnectionId);
@@ -188,7 +193,70 @@ namespace Avelora.Tests
                 out InventoryMessage inventory));
             Assert.Equal((byte)20, inventory.SlotCount);
             Assert.All(inventory.ItemIds, id => Assert.Equal((ushort)0, id));
+            Assert.True(MessageCodec.TryReadProgress(
+                harness.Transport.Sent[3].Data,
+                0,
+                harness.Transport.Sent[3].Data.Length,
+                out ProgressMessage progress));
+            Assert.Equal((byte)1, progress.Level);
+            Assert.Equal(0u, progress.Experience);
+            Assert.Equal(100u, progress.ExperienceToNext);
+            Assert.Equal(100u, progress.MaxHealth);
             Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void Tras_Una_Muerte_Que_Da_Experiencia_Se_Envia_Progress_Nuevo()
+        {
+            var npcs = new NpcCatalog
+            {
+                Types = new List<NpcType>
+                {
+                    new NpcType
+                    {
+                        Id = 2001,
+                        Name = "Orco",
+                        Speed = 2f,
+                        HalfWidth = 0.35f,
+                        HalfHeight = 0.35f,
+                        MaxHealth = 10,
+                        Experience = 20,
+                        RespawnSeconds = 10f,
+                        AggroRadius = 0f,
+                        LeashRadius = 8f,
+                        AttackDamage = 1,
+                        AttackRange = 1f,
+                        AttackCooldownSeconds = 1.5f,
+                    },
+                },
+                Spawners = new List<NpcSpawner>
+                {
+                    new NpcSpawner { TypeId = 2001, X = -1.5f, Y = -1.5f, Count = 1, WanderRadius = 1f },
+                },
+            };
+
+            using var harness = new Harness(npcs: npcs);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(
+                harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(
+                new AttackMessage(harness.Zone.Entities[0].Id == player.Id
+                    ? harness.Zone.Entities[1].Id
+                    : harness.Zone.Entities[0].Id)));
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage progressSent = Assert.Single(harness.Transport.Sent,
+                sent => MessageCodec.TryReadProgress(sent.Data, 0, sent.Data.Length, out _));
+            Assert.True(MessageCodec.TryReadProgress(
+                progressSent.Data, 0, progressSent.Data.Length, out ProgressMessage progress));
+            Assert.Equal(20u, progress.Experience);
+            Assert.Equal(100u, progress.ExperienceToNext);
+            Assert.Equal(1, harness.Zone.NpcDeaths);
         }
 
         [Fact]

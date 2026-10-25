@@ -21,9 +21,10 @@ namespace Avelora.Shared.Protocol
         /// <c>EntityState</c> gana vida y acción (2 bytes más). I-03c a 6 porque <c>EntityState</c> gana
         /// el tipo de PNJ (2 bytes más) para que el cliente distinga un enemigo de otro. I-04 a 7
         /// porque aparecen <c>PickUp</c>, <c>UseItem</c>, <c>Inventory</c> y <c>EntityKind.Item</c>;
-        /// I-05 a 8 porque se añaden <c>Equip</c>, <c>Unequip</c>, <c>ItemCatalog</c> y el arma equipada.
+        /// I-05 a 8 porque se añaden <c>Equip</c>, <c>Unequip</c>, <c>ItemCatalog</c> y el arma equipada;
+        /// I-06 a 9 por el mensaje <c>Progress</c>.
         /// </summary>
-        public const ushort Version = 8;
+        public const ushort Version = 9;
 
         /// <summary>
         /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias

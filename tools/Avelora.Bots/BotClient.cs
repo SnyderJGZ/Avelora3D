@@ -224,6 +224,10 @@ namespace Avelora.Bots
         private long _sentPickups;
         private long _sentPotions;
         private long _equipped;
+        private byte _level = 1;
+        private bool _hasProgress;
+        private long _levelUps;
+        private byte _maxLevelReached = 1;
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -406,6 +410,15 @@ namespace Avelora.Bots
 
         /// <summary>Armas que el servidor confirmó como equipadas durante la sesión.</summary>
         public long Equipped => Interlocked.Read(ref _equipped);
+
+        /// <summary>Nivel que el servidor confirmó en el último mensaje Progress.</summary>
+        public byte Level => _level;
+
+        /// <summary>Subidas de nivel confirmadas durante la sesión.</summary>
+        public long LevelUps => Interlocked.Read(ref _levelUps);
+
+        /// <summary>Nivel máximo confirmado por el servidor.</summary>
+        public byte MaxLevelReached => _maxLevelReached;
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
@@ -896,6 +909,8 @@ namespace Avelora.Bots
             _fistRange = AttackRange;
             _fistCooldownSeconds = _attackCooldownMs / 1000f;
             _itemDecisionPending = false;
+            _level = 1;
+            _hasProgress = false;
         }
 
         private void DiscardTransport()
@@ -1405,6 +1420,23 @@ namespace Avelora.Bots
                 if (_behavior == BotBehavior.Fight)
                 {
                     TryEquipBetterWeapon();
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadProgress(buffer, offset, length, out ProgressMessage progress))
+            {
+                if (_hasProgress && progress.Level > _level)
+                {
+                    Interlocked.Add(ref _levelUps, progress.Level - _level);
+                }
+
+                _level = progress.Level;
+                _hasProgress = true;
+                if (progress.Level > _maxLevelReached)
+                {
+                    _maxLevelReached = progress.Level;
                 }
 
                 return;

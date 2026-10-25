@@ -55,6 +55,7 @@ namespace Avelora.Tests
                     HalfWidth = 0.35f,
                     HalfHeight = 0.35f,
                     MaxHealth = 30,
+                    Experience = 20,
                     RespawnSeconds = 10f,
                     AggroRadius = 0f,
                     LeashRadius = 8f,
@@ -95,7 +96,7 @@ namespace Avelora.Tests
         {
             string path = WriteTempJson(@"{
   ""types"": [
-    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""respawnSeconds"": 10, ""aggroRadius"": 4.0, ""leashRadius"": 8.0, ""attackDamage"": 8, ""attackRange"": 1.0, ""attackCooldownSeconds"": 1.5 }
+    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""experience"": 20, ""respawnSeconds"": 10, ""aggroRadius"": 4.0, ""leashRadius"": 8.0, ""attackDamage"": 8, ""attackRange"": 1.0, ""attackCooldownSeconds"": 1.5 }
   ],
   ""spawners"": [
     { ""typeId"": 2001, ""x"": 3.5, ""y"": 1.5, ""count"": 3, ""wanderRadius"": 3.0 },
@@ -117,6 +118,40 @@ namespace Avelora.Tests
                 Assert.Equal(200L, catalog.FindType(2001)!.RespawnTicks);
 
                 catalog.Validate(MapFile.Load(MapPath));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Theory]
+        [InlineData("\"experience\": 0", true)]
+        [InlineData("\"experience\": -1", true)]
+        [InlineData("\"experience\": 1000001", true)]
+        [InlineData("", false)]
+        public void Experience_De_Pnj_Ausente_O_Fuera_De_Rango_No_Valida(string experienceField, bool includeField)
+        {
+            string experience = includeField ? ", " + experienceField : string.Empty;
+            string path = WriteTempJson("""
+                { "types": [
+                  { "id": 2001, "name": "Orco", "speed": 2, "halfWidth": 0.35, "halfHeight": 0.35,
+                    "maxHealth": 30EXPERIENCE_FIELD, "respawnSeconds": 10, "aggroRadius": 0,
+                    "leashRadius": 8, "attackDamage": 8, "attackRange": 1, "attackCooldownSeconds": 1.5 }
+                ], "spawners": [] }
+                """.Replace("EXPERIENCE_FIELD", experience));
+
+            try
+            {
+                NpcCatalog catalog = NpcCatalog.Load(path);
+                if (experienceField == "\"experience\": 0")
+                {
+                    catalog.Validate(MapCollisionGrid.AllWalkable(20, 20));
+                }
+                else
+                {
+                    Assert.Throws<InvalidOperationException>(() => catalog.Validate(MapCollisionGrid.AllWalkable(20, 20)));
+                }
             }
             finally
             {

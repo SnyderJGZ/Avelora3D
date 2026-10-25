@@ -1,0 +1,5 @@
+{
+  "healthPerLevel": 15,
+  "damagePerLevel": 1,
+  "experienceToNext": [100, 150, 225, 340, 500, 750, 1100, 1650, 2500]
+}

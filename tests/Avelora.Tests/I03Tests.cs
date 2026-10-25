@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
@@ -46,6 +47,7 @@ namespace Avelora.Tests
                 HalfWidth = 0.35f,
                 HalfHeight = 0.35f,
                 MaxHealth = maxHealth,
+                Experience = 20,
                 RespawnSeconds = 10f,
                 AggroRadius = aggroRadius,
                 LeashRadius = leashRadius,
@@ -84,7 +86,8 @@ namespace Avelora.Tests
             int combatDamage = 10,
             float combatRange = 5f,
             float combatTolerance = 0.5f,
-            double combatCooldownSeconds = 0.8d) =>
+            double combatCooldownSeconds = 0.8d,
+            LevelTable? levels = null) =>
             new Zone(
                 1,
                 map ?? MapCollisionGrid.AllWalkable(40, 40),
@@ -99,7 +102,37 @@ namespace Avelora.Tests
                 seed,
                 new AttackQueue(256),
                 new CombatSettings(combatDamage, combatRange, combatTolerance, combatCooldownSeconds),
-                vitals);
+                vitals,
+                levels: levels);
+
+        [Fact]
+        public void Reaparicion_Y_Regeneracion_Respetan_La_Vida_Maxima_Del_Nivel()
+        {
+            var levels = new LevelTable
+            {
+                HealthPerLevel = 15,
+                DamagePerLevel = 1,
+                ExperienceToNext = new[] { 100, 150 },
+            };
+            Zone zone = NewZone(
+                vitals: Vitals(maxHealth: 100, respawnSeconds: 0.5d, regenPerSecond: 20d),
+                levels: levels);
+            PlayerEntity player = zone.SpawnPlayer(
+                1, new Vec2(1f, 1f), new Vec2(0.4f, 0.4f), 8, level: 3);
+            player.Health = 0;
+
+            zone.Tick();
+            Tick(zone, 10);
+
+            Assert.Equal(130, player.MaxHealth);
+            Assert.Equal(130, player.Health);
+            Assert.False(player.IsDead);
+
+            player.Health = 129;
+            player.LastDamageTick = -1;
+            zone.Tick();
+            Assert.Equal(130, player.Health);
+        }
 
         private static NpcEntity OnlyNpc(Zone zone)
         {

@@ -11,6 +11,7 @@
   "persistenceEnabled": true,
   "databasePath": "data/avelora.db",
   "itemsPath": "items.json",
+  "levelsPath": "levels.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "maxGroundItems": 500,

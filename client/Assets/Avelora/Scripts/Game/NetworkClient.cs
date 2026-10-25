@@ -131,6 +131,12 @@ namespace Avelora.Client
         private ushort[] _inventoryIds = new ushort[0];
         private ushort _equippedItemId;
 
+        // Progreso que manda el servidor (I-06): nivel, experiencia y vida máxima del nivel.
+        private byte _level;
+        private uint _experience;
+        private uint _experienceToNext;
+        private uint _maxHealth;
+
         // Catálogo que manda el servidor tras el Welcome (I-05): nombres, tipos, armas, alcance para
         // recoger y los valores de los puños. Hasta que llega, no se ataca ni se recoge.
         private readonly Dictionary<ushort, ItemCatalogEntry> _catalog = new Dictionary<ushort, ItemCatalogEntry>();
@@ -852,6 +858,23 @@ namespace Avelora.Client
 
                     break;
 
+                case MessageType.Progress:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadProgress(buffer, offset, length, out ProgressMessage progress))
+                    {
+                        if (_level != 0 && progress.Level > _level)
+                        {
+                            ShowHint("¡Subes al nivel " + progress.Level + "!");
+                        }
+
+                        _level = progress.Level;
+                        _experience = progress.Experience;
+                        _experienceToNext = progress.ExperienceToNext;
+                        _maxHealth = progress.MaxHealth;
+                    }
+
+                    break;
+
                 case MessageType.ItemCatalog:
                     if (_welcomeReceived &&
                         MessageCodec.TryReadItemCatalog(buffer, offset, length, out ItemCatalogMessage catalog))
@@ -1345,7 +1368,7 @@ namespace Avelora.Client
         /// <summary>Barra de vida propia abajo al centro y aviso de muerte con cuenta atrás (I-03b).</summary>
         private void DrawOwnHealth()
         {
-            const float width = 240f;
+            const float width = 300f;
             const float height = 16f;
             var back = new Rect((Screen.width - width) / 2f, Screen.height - 40f, width, height);
 
@@ -1354,8 +1377,23 @@ namespace Avelora.Client
             GUI.DrawTexture(back, Texture2D.whiteTexture);
             GUI.color = new Color(0.8f, 0.15f, 0.15f, 1f);
             GUI.DrawTexture(new Rect(back.x, back.y, width * _ownHealthPercent / 100f, height), Texture2D.whiteTexture);
+            // Barra de experiencia (I-06) justo debajo; llena en el nivel máximo.
+            var xp = new Rect(back.x, back.y + height + 3f, width, 6f);
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+            GUI.DrawTexture(xp, Texture2D.whiteTexture);
+            GUI.color = new Color(0.95f, 0.8f, 0.2f, 1f);
+            float xpFill = _experienceToNext == 0 ? 1f : (float)_experience / _experienceToNext;
+            GUI.DrawTexture(new Rect(xp.x, xp.y, width * xpFill, xp.height), Texture2D.whiteTexture);
             GUI.color = previous;
-            GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), "Vida " + _ownHealthPercent + " %", _overlayStyle);
+
+            // El snapshot solo trae el porcentaje; la vida absoluta es aproximada.
+            string health = _maxHealth > 0
+                ? "Vida " + Mathf.RoundToInt(_maxHealth * _ownHealthPercent / 100f) + "/" + _maxHealth
+                : "Vida " + _ownHealthPercent + " %";
+            string level = _level > 0
+                ? "Nv " + _level + " · " + (_experienceToNext == 0 ? "máx." : _experience + "/" + _experienceToNext + " XP") + " · "
+                : string.Empty;
+            GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), level + health, _overlayStyle);
 
             if (_showInventory)
             {

@@ -33,7 +33,8 @@ namespace Avelora.Server.Entities
             float leashRadius = 40f,
             int attackDamage = 1,
             float attackRange = 1f,
-            long attackCooldownTicks = 30)
+            long attackCooldownTicks = 30,
+            int experienceReward = 0)
             : base(id, EntityKind.Npc)
         {
             if (maxHealth < 1)
@@ -74,6 +75,11 @@ namespace Avelora.Server.Entities
                     "La recarga debe ser >= 1 tick.");
             }
 
+            if (experienceReward < 0 || experienceReward > 1_000_000)
+            {
+                throw new ArgumentOutOfRangeException(nameof(experienceReward));
+            }
+
             TypeId = typeId;
             Speed = speed;
             Home = home;
@@ -87,6 +93,7 @@ namespace Avelora.Server.Entities
             AttackDamage = attackDamage;
             AttackRange = attackRange;
             AttackCooldownTicks = attackCooldownTicks;
+            ExperienceReward = experienceReward;
             Health = maxHealth;
         }
 
@@ -116,6 +123,12 @@ namespace Avelora.Server.Entities
 
         /// <summary>Ticks mínimos entre dos golpes del PNJ.</summary>
         public long AttackCooldownTicks { get; }
+
+        /// <summary>Experiencia que otorga al morir.</summary>
+        public int ExperienceReward { get; }
+
+        /// <summary>Id del jugador que dio el golpe mortal, o -1 si no murió por combate de jugador.</summary>
+        public int KillerPlayerId { get; internal set; } = -1;
 
         /// <summary>Estado actual de la IA (I-03).</summary>
         public NpcAiState AiState { get; set; } = NpcAiState.Wander;

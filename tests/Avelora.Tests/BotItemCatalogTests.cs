@@ -34,6 +34,9 @@ namespace Avelora.Tests
             Assert.True(transport.EquipSent);
             Assert.True(transport.AttackSent, "El bot debe usar el alcance del hacha equipada, no el de los puños.");
             Assert.Equal(1, bot.Equipped);
+            Assert.Equal((byte)3, bot.Level);
+            Assert.Equal(2, bot.LevelUps);
+            Assert.Equal((byte)3, bot.MaxLevelReached);
         }
 
         private sealed class CatalogTransport : IClientTransport
@@ -110,12 +113,14 @@ namespace Avelora.Tests
                         })));
                     _incoming.Enqueue(MessageCodec.EncodeInventory(
                         new InventoryMessage(1, new ushort[] { 3102 }, new ushort[] { 1 })));
+                    _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(1, 0, 100, 100)));
                 }
                 else if (data[0] == (byte)MessageType.Equip)
                 {
                     EquipSent = MessageCodec.TryReadEquip(data, 0, length, out EquipMessage equip) && equip.Slot == 0;
                     _incoming.Enqueue(MessageCodec.EncodeInventory(
                         new InventoryMessage(1, new ushort[] { 0 }, new ushort[] { 0 }, 3102)));
+                    _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(3, 0, 0, 130)));
                     _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(
                         1,
                         0,

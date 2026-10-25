@@ -203,6 +203,7 @@ namespace Avelora.Server.Net
             _transport.Disconnected += OnDisconnected;
             _transport.Received += OnReceived;
             _zone.InventoryChanged += OnInventoryChanged;
+            _zone.ProgressChanged += OnProgressChanged;
         }
 
         /// <summary>Puerto UDP efectivo.</summary>
@@ -1077,7 +1078,9 @@ namespace Avelora.Server.Net
                 spawn,
                 _config.PlayerHalfSize,
                 _config.InputBufferCapacity,
-                character?.Health ?? 0);
+                character?.Health ?? 0,
+                character?.Level ?? 1,
+                character?.Experience ?? 0);
 
             if (character != null)
             {
@@ -1123,6 +1126,7 @@ namespace Avelora.Server.Net
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeItemCatalog(), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
         private void RemovePlayer(int connectionId) => RemoveSession(connectionId, null);
@@ -1198,7 +1202,7 @@ namespace Avelora.Server.Net
 
             if (player.IsDead)
             {
-                health = _config.PlayerMaxHealth;
+                health = player.MaxHealth;
                 position = _config.Spawn;
             }
             else
@@ -1220,7 +1224,8 @@ namespace Avelora.Server.Net
             session.Character = session.Character
                 .WithState(zone.Id, position, _mapHash, health)
                 .WithInventory(inventory.ToArray())
-                .WithEquippedItem(player.EquippedWeaponId);
+                .WithEquippedItem(player.EquippedWeaponId)
+                .WithProgress(player.Level, player.Experience);
             _saves.Enqueue(session.Character);
         }
 
@@ -1231,6 +1236,29 @@ namespace Avelora.Server.Net
             {
                 Enqueue(player.ConnectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             }
+        }
+
+        private void OnProgressChanged(PlayerEntity player)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
+                session.EntityId == player.Id)
+            {
+                Enqueue(
+                    player.ConnectionId,
+                    EncodeProgress(player),
+                    DeliveryMode.ReliableOrdered,
+                    disconnectAfter: false);
+            }
+        }
+
+        private byte[] EncodeProgress(PlayerEntity player)
+        {
+            int threshold = _zone.Levels.GetExperienceToNext(player.Level);
+            return MessageCodec.EncodeProgress(new ProgressMessage(
+                checked((byte)player.Level),
+                checked((uint)player.Experience),
+                checked((uint)threshold),
+                checked((uint)player.MaxHealth)));
         }
 
         private byte[] EncodeItemCatalog()

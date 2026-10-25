@@ -33,6 +33,7 @@ namespace Avelora.Shared.Protocol
         private const int EquipSize = 1 + 1;
         private const int UnequipSize = 1;
         private const int RejectSize = 1 + 1;
+        private const int ProgressSize = 1 + 1 + 4 + 4 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
@@ -1000,6 +1001,59 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
             catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica el progreso: tipo, nivel y tres enteros uint32 (14 bytes).</summary>
+        public static byte[] EncodeProgress(in ProgressMessage message)
+        {
+            if (message.Level < 1 || message.MaxHealth == 0 ||
+                (message.ExperienceToNext == 0 && message.Experience != 0) ||
+                (message.ExperienceToNext != 0 && message.Experience >= message.ExperienceToNext))
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "El progreso contiene valores incoherentes.");
+            }
+
+            var buffer = new byte[ProgressSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Progress);
+            writer.WriteByte(message.Level);
+            writer.WriteUInt32(message.Experience);
+            writer.WriteUInt32(message.ExperienceToNext);
+            writer.WriteUInt32(message.MaxHealth);
+            return buffer;
+        }
+
+        /// <summary>Lee Progress y exige su longitud exacta.</summary>
+        public static bool TryReadProgress(byte[] buffer, int offset, int length, out ProgressMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.Progress, ProgressSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte level = reader.ReadByte();
+                uint experience = reader.ReadUInt32();
+                uint experienceToNext = reader.ReadUInt32();
+                uint maxHealth = reader.ReadUInt32();
+                if (level < 1 || maxHealth == 0 ||
+                    (experienceToNext == 0 && experience != 0) ||
+                    (experienceToNext != 0 && experience >= experienceToNext) ||
+                    reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ProgressMessage(level, experience, experienceToNext, maxHealth);
+                return true;
+            }
+            catch (ProtocolException)
             {
                 return false;
             }

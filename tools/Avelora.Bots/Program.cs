@@ -231,6 +231,8 @@ namespace Avelora.Bots
             long sentPickups = 0;
             long sentPotions = 0;
             long equipped = 0;
+            long levelUps = 0;
+            byte maxLevelReached = 1;
             var welcomeTimes = new List<long>(bots.Count);
             var rejects = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
@@ -268,6 +270,11 @@ namespace Avelora.Bots
                 sentPickups += bot.SentPickups;
                 sentPotions += bot.SentPotions;
                 equipped += bot.Equipped;
+                levelUps += bot.LevelUps;
+                if (bot.MaxLevelReached > maxLevelReached)
+                {
+                    maxLevelReached = bot.MaxLevelReached;
+                }
 
                 if (bot.EntityId > 0)
                 {
@@ -307,6 +314,9 @@ namespace Avelora.Bots
                     " saltos=" + bot.Snaps +
                     " muertes_propias=" + bot.OwnDeaths +
                     " reapariciones=" + bot.OwnRespawns +
+                    " nivel=" + bot.Level +
+                    " subidas_nivel=" + bot.LevelUps +
+                    " nivel_max=" + bot.MaxLevelReached +
                     " snapshots=" + bot.Snapshots);
 
                 if (options.Behavior == BotBehavior.Fight)
@@ -366,7 +376,8 @@ namespace Avelora.Bots
                 Console.WriteLine(
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
                     deathsSeen + " muertes vistas, " + sentPickups + " recogidas, " +
-                    sentPotions + " pociones usadas, " + equipped + " equipados");
+                    sentPotions + " pociones usadas, " + equipped + " equipados, " +
+                    "subidas_nivel=" + levelUps + ", nivel_max=" + maxLevelReached);
             }
 
             if (abusive)

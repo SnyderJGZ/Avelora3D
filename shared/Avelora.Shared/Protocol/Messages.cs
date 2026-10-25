@@ -574,4 +574,21 @@ namespace Avelora.Shared.Protocol
         /// <summary>Arma equipada; 0 significa que el jugador combate con los puños.</summary>
         public ushort EquippedItemId { get; }
     }
+
+    /// <summary>Progreso del personaje (I-06), enviado de forma fiable y ordenada.</summary>
+    public readonly struct ProgressMessage
+    {
+        public ProgressMessage(byte level, uint experience, uint experienceToNext, uint maxHealth)
+        {
+            Level = level;
+            Experience = experience;
+            ExperienceToNext = experienceToNext;
+            MaxHealth = maxHealth;
+        }
+
+        public byte Level { get; }
+        public uint Experience { get; }
+        public uint ExperienceToNext { get; }
+        public uint MaxHealth { get; }
+    }
 }

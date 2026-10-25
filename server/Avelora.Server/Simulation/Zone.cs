@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -42,6 +43,8 @@ namespace Avelora.Server.Simulation
         private readonly List<ItemAction> _itemInbox = new List<ItemAction>(64);
         private readonly System.Random _random;
         private readonly NpcCatalog? _npcCatalog;
+        private readonly LevelTable _levels;
+        private readonly int _basePlayerMaxHealth;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
@@ -78,7 +81,8 @@ namespace Avelora.Server.Simulation
             long groundItemTicks = 1200,
             float pickupRange = 1.5f,
             float pickupRangeTolerance = 0.5f,
-            long potionCooldownTicks = 20)
+            long potionCooldownTicks = 20,
+            LevelTable? levels = null)
         {
             if (map is null)
             {
@@ -134,12 +138,14 @@ namespace Avelora.Server.Simulation
             ItemActions = itemActions;
             _npcCatalog = npcs;
             _itemCatalog = items;
+            _levels = levels ?? LevelTable.Default;
+            _basePlayerMaxHealth = playerVitals?.MaxHealth ?? PlayerEntity.DefaultMaxHealth;
             _random = new System.Random(npcSeed);
             _movement = movement;
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value, items);
+                _combat = new CombatSystem(combat.Value, items, _levels);
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -220,8 +226,17 @@ namespace Avelora.Server.Simulation
         /// <summary>Catálogo de objetos anunciado por red y consultado por el combate.</summary>
         public ItemCatalog? Items => _itemCatalog;
 
+        /// <summary>Tabla de experiencia y fórmulas de nivel de la zona.</summary>
+        public LevelTable Levels => _levels;
+
+        /// <summary>Vida máxima base, antes de aplicar el bonus por nivel.</summary>
+        public int BasePlayerMaxHealth => _basePlayerMaxHealth;
+
         /// <summary>Notificación de cambios para enviar el inventario completo por la red.</summary>
         public event Action<PlayerEntity>? InventoryChanged;
+
+        /// <summary>Progreso que cambió al resolver el combate del tick.</summary>
+        public event Action<PlayerEntity>? ProgressChanged;
 
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
@@ -278,6 +293,12 @@ namespace Avelora.Server.Simulation
         /// <summary>Enemigos que han reaparecido desde el arranque (I-02).</summary>
         public long NpcRespawns => _npcs?.Respawns ?? 0;
 
+        /// <summary>Experiencia otorgada por muertes desde el arranque.</summary>
+        public long ExperienceGranted { get; private set; }
+
+        /// <summary>Niveles subidos por los jugadores desde el arranque.</summary>
+        public long LevelUps { get; private set; }
+
         /// <summary>Golpes de enemigos a jugadores desde el arranque (I-03).</summary>
         public long NpcHits => _npcs?.Hits ?? 0;
 
@@ -322,7 +343,9 @@ namespace Avelora.Server.Simulation
             Vec2 position,
             Vec2 halfSize,
             int inputBufferCapacity,
-            int initialHealth = 0)
+            int initialHealth = 0,
+            int level = 1,
+            int experience = 0)
         {
             // Invariante de la zona: una entidad nunca aparece solapando una pared. Step rechaza
             // cualquier movimiento hacia una posición no caminable, así que nacer atrapado no
@@ -334,7 +357,7 @@ namespace Avelora.Server.Simulation
                     "No se puede crear una entidad en " + position + ": su caja se solapa con una pared.");
             }
 
-            int maxHealth = _vitals?.Settings.MaxHealth ?? PlayerEntity.DefaultMaxHealth;
+            int maxHealth = _levels.GetMaxHealth(_basePlayerMaxHealth, level);
             int health = initialHealth > 0 ? Math.Min(initialHealth, maxHealth) : maxHealth;
 
             if (health < 1)
@@ -347,6 +370,8 @@ namespace Avelora.Server.Simulation
                 MapId = Id,
                 Position = position,
                 HalfSize = halfSize,
+                Level = level,
+                Experience = level == _levels.MaxLevel ? 0 : experience,
                 MaxHealth = maxHealth,
                 Health = health,
             };
@@ -431,6 +456,8 @@ namespace Avelora.Server.Simulation
             {
                 _npcs.Tick(Entities, _deadNpcs);
 
+                PublishProgressChanges();
+
                 // Los cadáveres que ya cumplieron su animación salen aquí, con el almacén y la
                 // grilla todavía en el hilo de simulación y antes de reindexar.
                 for (int i = 0; i < _deadNpcs.Count; i++)
@@ -464,6 +491,26 @@ namespace Avelora.Server.Simulation
         private void OnNpcDied(NpcEntity npc, long tick)
         {
             _items?.DropLoot(this, npc, tick);
+
+            if (npc.ExperienceReward > 0 && npc.KillerPlayerId > 0 &&
+                Entities.TryGet(npc.KillerPlayerId, out Entity? entity) && entity is PlayerEntity killer &&
+                killer.Level < _levels.MaxLevel)
+            {
+                ExperienceGranted += npc.ExperienceReward;
+                LevelUps += _levels.AddExperience(killer, npc.ExperienceReward, _basePlayerMaxHealth);
+            }
+        }
+
+        private void PublishProgressChanges()
+        {
+            for (int i = 0; i < Entities.Count; i++)
+            {
+                if (Entities[i] is PlayerEntity player && player.ProgressChanged)
+                {
+                    player.ProgressChanged = false;
+                    ProgressChanged?.Invoke(player);
+                }
+            }
         }
 
         /// <summary>

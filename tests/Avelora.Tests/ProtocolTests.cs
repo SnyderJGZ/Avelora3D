@@ -817,5 +817,22 @@ namespace Avelora.Tests
             Assert.Throws<ArgumentException>(
                 () => MessageCodec.EncodeHello(new HelloMessage(1, 20, new byte[3], 1u)));
         }
+
+        [Fact]
+        public void Progress_Va_Y_Vuelve_Igual_Y_Rechaza_Longitudes_Erroneas()
+        {
+            var original = new ProgressMessage(4, 275, 340, 145);
+            byte[] bytes = MessageCodec.EncodeProgress(original);
+
+            Assert.Equal(14, bytes.Length);
+            Assert.Equal((byte)MessageType.Progress, bytes[0]);
+            Assert.True(MessageCodec.TryReadProgress(bytes, 0, bytes.Length, out ProgressMessage decoded));
+            Assert.Equal(original.Level, decoded.Level);
+            Assert.Equal(original.Experience, decoded.Experience);
+            Assert.Equal(original.ExperienceToNext, decoded.ExperienceToNext);
+            Assert.Equal(original.MaxHealth, decoded.MaxHealth);
+            Assert.False(MessageCodec.TryReadProgress(bytes, 0, bytes.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadProgress(bytes, 0, bytes.Length + 1, out _));
+        }
     }
 }

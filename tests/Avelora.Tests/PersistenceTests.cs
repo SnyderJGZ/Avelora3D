@@ -180,6 +180,76 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Al_Cargar_Se_Corrigen_Level_Y_Experience_Invalidos_Sin_Cambiar_El_Esquema()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            AccountLoginResult login = repository.Login("cuenta", "secreto1", "invita", "invita");
+            byte[] mapHash = NewHash(4);
+            Vec2 spawn = new Vec2(1.5f, 1.5f);
+
+            CharacterRecord character = repository.GetOrCreateCharacter(
+                login.AccountId, "personaje", 1, spawn, mapHash)!;
+
+            void SetProgress(long level, long experience)
+            {
+                using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+                connection.Open();
+                using SqliteCommand update = connection.CreateCommand();
+                update.CommandText = "UPDATE characters SET level=@level, experience=@experience WHERE id=@id;";
+                update.Parameters.AddWithValue("@level", level);
+                update.Parameters.AddWithValue("@experience", experience);
+                update.Parameters.AddWithValue("@id", character.Id);
+                update.ExecuteNonQuery();
+            }
+
+            CharacterRecord Load() => repository.GetOrCreateCharacter(
+                login.AccountId, "personaje", 1, spawn, mapHash)!;
+
+            SetProgress(-1, 10);
+            CharacterRecord corrected = Load();
+            Assert.Equal(1, corrected.Level);
+            Assert.Equal(10, corrected.Experience);
+
+            SetProgress(long.MaxValue, 10000);
+            corrected = Load();
+            Assert.Equal(10, corrected.Level);
+            Assert.Equal(0, corrected.Experience);
+
+            SetProgress(1, -3);
+            corrected = Load();
+            Assert.Equal(1, corrected.Level);
+            Assert.Equal(0, corrected.Experience);
+
+            SetProgress(1, long.MaxValue);
+            Assert.Equal(99, Load().Experience);
+
+            SetProgress(10, 1);
+            Assert.Equal(0, Load().Experience);
+            Assert.Equal(SqlitePlayerRepository.SchemaVersion, QuerySchemaVersion());
+        }
+
+        [Fact]
+        public void Nivel_Y_Experiencia_Se_Guardan_Y_Se_Cargan_En_El_Esquema_Existente()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            AccountLoginResult login = repository.Login("cuenta", "secreto1", "invita", "invita");
+            byte[] mapHash = NewHash(5);
+            Vec2 spawn = new Vec2(1.5f, 1.5f);
+            CharacterRecord character = repository.GetOrCreateCharacter(
+                login.AccountId, "personaje", 1, spawn, mapHash)!;
+
+            repository.SaveCharacter(character.WithProgress(4, 275));
+
+            CharacterRecord loaded = repository.GetOrCreateCharacter(
+                login.AccountId, "personaje", 1, spawn, mapHash)!;
+            Assert.Equal(4, loaded.Level);
+            Assert.Equal(275, loaded.Experience);
+            Assert.Equal(SqlitePlayerRepository.SchemaVersion, QuerySchemaVersion());
+        }
+
+        [Fact]
         public void El_Inventario_Se_Guarda_Y_Se_Carga()
         {
             byte[] mapHash = NewHash(8);
@@ -599,6 +669,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                         HalfWidth = 0.35f,
                         HalfHeight = 0.35f,
                         MaxHealth = 30,
+                        Experience = 20,
                         RespawnSeconds = 10f,
                         AggroRadius = 0f,
                         LeashRadius = 8f,
@@ -762,6 +833,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
             first.EquippedWeaponId = 3101;
+            first.Level = 4;
+            first.Experience = 275;
 
             harness.Connect(2);
             harness.Handshake(2, "dev", "avelora-dev", "dev");
@@ -770,8 +843,21 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             PlayerEntity reconnected = Assert.IsType<PlayerEntity>(
                 harness.Zone.Entities.Get(harness.LastWelcome(2).EntityId));
             Assert.Equal((ushort)3101, reconnected.EquippedWeaponId);
+            Assert.Equal(4, reconnected.Level);
+            Assert.Equal(275, reconnected.Experience);
             Assert.True(harness.Saves.TryGetLatest(first.CharacterId, out CharacterRecord latest));
             Assert.Equal((ushort)3101, latest.EquippedItemId);
+            Assert.Equal(4, latest.Level);
+            Assert.Equal(275, latest.Experience);
+        }
+
+        private int QuerySchemaVersion()
+        {
+            using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+            connection.Open();
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "PRAGMA user_version;";
+            return Convert.ToInt32(query.ExecuteScalar());
         }
 
         [Fact]

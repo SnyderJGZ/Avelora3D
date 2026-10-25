@@ -49,5 +49,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: catálogo y reglas de objetos (I-05).</summary>
         ItemCatalog = 15,
+
+        /// <summary>Servidor → cliente: nivel, experiencia y vida máxima (I-06).</summary>
+        Progress = 16,
     }
 }

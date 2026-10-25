@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 e I-05 de servidor implementadas (I-05b de cliente pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04, I-05 e I-06 de servidor implementadas (clientes I-04b/I-05b/I-06b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -15,9 +15,10 @@ calcular igual (movimiento y colisión).
 > (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67 entidades.
 > Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones;
 > desde I-05 (**protocolo v8**) hay armas, equipo persistente y catálogo de objetos enviado al cliente.
+> Desde I-06 (**protocolo v9**) las muertes de PNJ dan experiencia, suben niveles y aumentan vida y daño.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04) e
-> [I-05](#armas-y-equipo-i-05-protocolo-v8).
+> [I-05](#armas-y-equipo-i-05-protocolo-v8) y [I-06](#experiencia-y-niveles-i-06-protocolo-v9).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -26,7 +27,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **421/421 en verde** |
+| `dotnet test Avelora.slnx` | **449/449 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -338,12 +339,13 @@ pueden discrepar** del formato.
 | `Equip` | 6 | C → S | 2 B | hueco que contiene el arma (u8) |
 | `Unequip` | 7 | C → S | 1 B | sin carga útil |
 | `ItemCatalog` | 15 | S → C | 19 B + 23 B/objeto + nombre | reglas de puños y recogida, más datos de cada objeto (nombre UTF-8 de hasta 48 B) |
+| `Progress` | 16 | S → C | **14 B** | nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo), vida máxima (u32) |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
-  `Unequip`, `ItemCatalog` e `Inventory`.
+  `Unequip`, `ItemCatalog`, `Inventory` y `Progress`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
@@ -351,7 +353,7 @@ Canales:
 > `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
 > I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
 > `PickUp`, `UseItem` e `Inventory`; I-05 sube a **v8** por `Equip`, `Unequip`, `ItemCatalog` y el campo
-> `equippedItemId` al final de `Inventory`.
+> `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`. El snapshot no cambia.
 
 ### Handshake
 
@@ -888,7 +890,7 @@ botín e inventario autoritativos.
 {
   "types": [
     { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35,
-      "maxHealth": 30, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
+      "maxHealth": 30, "experience": 20, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
       "attackDamage": 8, "attackRange": 1.0, "attackCooldownSeconds": 1.5 }
   ],
   "spawners": [
@@ -1041,10 +1043,11 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín y equipo | ⏳ I-01 a I-05 de servidor hechas; pendientes los clientes I-04b/I-05b |
+| **I** | Enemigos, combate, botín, equipo, experiencia y niveles | ⏳ I-01 a I-06 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
+| **I-06** | Experiencia y niveles (protocolo v9; esquema SQLite v3) | ✅ servidor; I-06b implementa el cliente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1145,10 +1148,10 @@ El snapshot ahora lleva el **tipo de PNJ** para que el cliente distinga un enemi
 {
   "types": [
     { "id": 2001, "name": "Orco", "speed": 2.0, "halfWidth": 0.35, "halfHeight": 0.35,
-      "maxHealth": 30, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
+      "maxHealth": 30, "experience": 20, "respawnSeconds": 10, "aggroRadius": 4.0, "leashRadius": 8.0,
       "attackDamage": 8, "attackRange": 1.0, "attackCooldownSeconds": 1.5 },
     { "id": 2002, "name": "Orco guerrero", "speed": 1.6, "halfWidth": 0.35, "halfHeight": 0.35,
-      "maxHealth": 60, "respawnSeconds": 20, "aggroRadius": 5.0, "leashRadius": 8.0,
+      "maxHealth": 60, "experience": 35, "respawnSeconds": 20, "aggroRadius": 5.0, "leashRadius": 8.0,
       "attackDamage": 14, "attackRange": 1.0, "attackCooldownSeconds": 2.0 }
   ],
   "spawners": [
@@ -1308,6 +1311,62 @@ con arma** y no hubo rechazos de equipar; los PNJ murieron/reaparecieron **252/2
 jugadores murieron/reaparecieron **9/8** veces. El servidor envió **27 633 309 B (27,6 MB)**,
 **7 609 229 B (21,6 %) menos** que los 35 242 538 B (35,2 MB) de I-04.
 
+### Experiencia y niveles (I-06, protocolo v9)
+
+`server/Avelora.Server/levels.json` contiene una tabla obligatoria, cargada y validada al arrancar:
+
+```json
+{
+  "healthPerLevel": 15,
+  "damagePerLevel": 1,
+  "experienceToNext": [100, 150, 225, 340, 500, 750, 1100, 1650, 2500]
+}
+```
+
+`healthPerLevel` y `damagePerLevel` deben estar entre 0 y 10000. `experienceToNext` contiene de 1 a
+254 umbrales, cada uno entre 1 y 10000000; el nivel máximo es su longitud más uno (10 con los datos
+actuales). Cada tipo de `npcs.json` debe declarar `experience` entre 0 y 1000000: el orco 2001 da
+**20** y el orco guerrero 2002 da **35**. El mismo dato está en `tools/carga/npcs-carga.json`.
+
+Solo recibe experiencia el jugador que asesta el golpe mortal al PNJ. La recompensa se aplica en el
+mismo tick: se resta cada umbral alcanzado y se puede subir varios niveles por una muerte; cada subida
+actualiza y **llena** la vida máxima. En el nivel máximo la experiencia permanece en 0 y no se acumula.
+Las fórmulas únicas de `LevelTable` son:
+
+- vida máxima = `playerMaxHealth + (nivel − 1) × healthPerLevel`;
+- daño del ataque = daño base del arma o de los puños `+ (nivel − 1) × damagePerLevel`.
+
+Esa vida máxima por nivel rige al aparecer (la vida guardada se recorta), al reaparecer, al regenerar y
+al usar pociones. El cliente no elige recompensa, nivel, vida ni daño.
+
+El protocolo sube a **v9** sin cambiar el snapshot. El nuevo mensaje `Progress` (`MessageType = 16`,
+14 bytes, `ReliableOrdered`) lleva nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo)
+y vida máxima (u32). Tras `Welcome` llega después de `ItemCatalog` e `Inventory`; tras las muertes se
+manda el estado actualizado después del combate, como máximo una vez por jugador y tick.
+
+SQLite conserva el **esquema v3**: `characters.level` y `characters.experience` ya existían. Al cargar,
+un nivel menor que 1 se corrige a 1 y uno mayor al máximo se recorta; la experiencia negativa pasa a
+0, la que supera el umbral se deja en umbral−1 y en el nivel máximo se fuerza a 0. Cada corrección se
+registra con un aviso. Los guardados periódicos, al desconectar y `TryGetLatest` copian los valores
+vivos de la entidad, así la reconexión inmediata conserva nivel y experiencia.
+
+El informe periódico y el resumen final añaden `experiencia_otorgada` y `subidas_nivel`; la cabecera
+de arranque muestra el nivel máximo y los bonus de vida y daño por nivel. `fight` procesa `Progress`
+y el resumen de bots incluye subidas y nivel máximo alcanzado.
+
+| Campo de `server.json` | Defecto | Significado |
+| --- | --- | --- |
+| `levelsPath` | `levels.json` | Tabla obligatoria, relativa a la configuración si no es absoluta. |
+
+**Verificación y carga I-06:**
+`dotnet build Avelora.slnx -v q --nologo`: **0 errores, 0 advertencias**; `dotnet test Avelora.slnx`:
+**449/449**. En la carga prescrita `.\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior fight -LogCorrections -NuevaBase`
+(servidor 160 s), se conectaron **50/50**. El tick p99 fue **0,054 ms** (I-05: 0,055 ms), el peor
+**7,732 ms** y hubo **0** ticks sobre 50 ms. Se registraron **0 correcciones** y ninguna línea
+`[corrección]`; los bots sumaron **5845** de experiencia, **32** subidas y nivel máximo **3**. Murieron
+y reaparecieron **287/287 PNJ** y **7/6 jugadores**. Hubo **134 ataques con arma**. El servidor envió
+**23 890 303 B (23,9 MB)**, **3 743 006 B (13,5 %) menos** que los 27 633 309 B de I-05.
+
 ---
 
 ### Mapa de prueba de 80×60 (J-01)
@@ -1339,7 +1398,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 ## Próximo paso
 
 La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
-la desconexión. El backend de **I-04/I-05** añade botín, inventario, pociones, armas y equipo con
-persistencia v3. Los siguientes trabajos de este bloque son **I-04b/I-05b**, conectar protocolo v8,
-recoger objetos y mostrar inventario y equipo en el cliente de Unity; también siguen pendientes los
-trabajos de seguridad de H que no forman parte de esta tarea.
+la desconexión. El backend de **I-04/I-05/I-06** añade botín, inventario, equipo, experiencia y niveles
+con persistencia v3. Los siguientes trabajos del cliente son **I-04b/I-05b/I-06b**, conectar protocolo
+v9 y mostrar inventario, equipo y progreso; también siguen pendientes los trabajos de seguridad de H
+que no forman parte de esta tarea.

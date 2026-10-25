@@ -175,6 +175,24 @@ namespace Avelora.Server.Persistence
                 DateTime.UtcNow,
                 InventoryItems,
                 equippedItemId);
+
+        /// <summary>Crea una foto con el nivel y la experiencia vivos de la entidad (I-06).</summary>
+        public CharacterRecord WithProgress(int level, int experience) =>
+            new CharacterRecord(
+                Id,
+                AccountId,
+                Name,
+                level,
+                experience,
+                Health,
+                Mana,
+                ZoneId,
+                Position,
+                MapHash,
+                CreatedUtc,
+                DateTime.UtcNow,
+                InventoryItems,
+                EquippedItemId);
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

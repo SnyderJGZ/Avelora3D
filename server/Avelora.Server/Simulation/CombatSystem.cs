@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -29,11 +30,13 @@ namespace Avelora.Server.Simulation
 
         private readonly CombatSettings _settings;
         private readonly ItemCatalog? _catalog;
+        private readonly LevelTable _levels;
 
-        public CombatSystem(CombatSettings settings, ItemCatalog? catalog = null)
+        public CombatSystem(CombatSettings settings, ItemCatalog? catalog = null, LevelTable? levels = null)
         {
             _settings = settings;
             _catalog = catalog;
+            _levels = levels ?? LevelTable.Default;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -132,7 +135,8 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            int damage = hasWeapon ? weapon!.Damage : _settings.Damage;
+            int baseDamage = hasWeapon ? weapon!.Damage : _settings.Damage;
+            int damage = _levels.GetAttackDamage(baseDamage, attacker.Level);
             target.Health = Math.Max(0, target.Health - damage);
 
             if (target.Health == 0)
@@ -140,6 +144,7 @@ namespace Avelora.Server.Simulation
                 // La baja definitiva (quitar del almacén y del interés, y programar la reaparición)
                 // la hace NpcSystem en este mismo tick: aquí solo consta que ha muerto.
                 target.Action = EntityAction.Dead;
+                target.KillerPlayerId = attacker.Id;
             }
             else if (target.AiState == NpcAiState.Wander)
             {

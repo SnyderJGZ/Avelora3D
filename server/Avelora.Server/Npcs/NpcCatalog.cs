@@ -34,6 +34,9 @@ namespace Avelora.Server.Npcs
         /// <summary>Vida máxima del tipo (1..100000).</summary>
         public int MaxHealth { get; set; }
 
+        /// <summary>Experiencia que gana quien asesta el golpe mortal (0..1000000, I-06).</summary>
+        public int Experience { get; set; } = -1;
+
         /// <summary>Segundos que tarda el spawner en reponer un enemigo muerto (0,5..3600).</summary>
         public float RespawnSeconds { get; set; }
 
@@ -354,6 +357,13 @@ namespace Avelora.Server.Npcs
                     throw new InvalidOperationException(
                         "npcs.json: el tipo " + type.Id + " tiene maxHealth " + type.MaxHealth +
                         "; debe estar entre 1 y " + MaxHealthLimit + ".");
+                }
+
+                if (type.Experience < 0 || type.Experience > 1_000_000)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene experience " + type.Experience +
+                        "; debe estar entre 0 y 1000000 (el campo es obligatorio).");
                 }
 
                 if (!(type.RespawnSeconds >= MinRespawnSeconds) ||

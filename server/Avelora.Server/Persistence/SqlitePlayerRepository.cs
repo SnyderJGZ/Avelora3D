@@ -3,6 +3,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using Avelora.Server.Items;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 using Microsoft.Data.Sqlite;
@@ -31,6 +32,7 @@ namespace Avelora.Server.Persistence
         private readonly int _passwordIterations;
         private readonly ItemCatalog? _items;
         private readonly int _inventorySlots;
+        private readonly LevelTable _levels;
         private readonly object _initializeGate = new object();
         private bool _initialized;
         private bool _disposed;
@@ -39,7 +41,8 @@ namespace Avelora.Server.Persistence
             string databasePath,
             int passwordIterations = PasswordHasher.DefaultIterations,
             ItemCatalog? items = null,
-            int inventorySlots = 20)
+            int inventorySlots = 20,
+            LevelTable? levels = null)
         {
             if (string.IsNullOrWhiteSpace(databasePath))
             {
@@ -56,6 +59,7 @@ namespace Avelora.Server.Persistence
             DatabasePath = databasePath;
             _passwordIterations = passwordIterations;
             _items = items;
+            _levels = levels ?? LevelTable.Default;
             if (inventorySlots < 1 || inventorySlots > 60)
             {
                 throw new ArgumentOutOfRangeException(nameof(inventorySlots));
@@ -545,12 +549,62 @@ CREATE TABLE inventory_items (
                         "El personaje " + reader.GetInt32(0) + " tiene una huella de mapa corrupta.");
                 }
 
+                long rawLevel = reader.GetInt64(3);
+                int level;
+                if (rawLevel < 1)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió level inválido del personaje " + reader.GetInt32(0) +
+                        " (" + rawLevel + " → 1).");
+                    level = 1;
+                }
+                else if (rawLevel > _levels.MaxLevel)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió level fuera del máximo del personaje " + reader.GetInt32(0) +
+                        " (" + rawLevel + " → " + _levels.MaxLevel + ").");
+                    level = _levels.MaxLevel;
+                }
+                else
+                {
+                    level = (int)rawLevel;
+                }
+
+                int threshold = _levels.GetExperienceToNext(level);
+                long rawExperience = reader.GetInt64(4);
+                int experience;
+                if (rawExperience < 0)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió experience negativo del personaje " + reader.GetInt32(0) +
+                        " (" + rawExperience + " → 0).");
+                    experience = 0;
+                }
+                else if (threshold == 0 && rawExperience != 0)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió experience del personaje máximo " + reader.GetInt32(0) +
+                        " (" + rawExperience + " → 0).");
+                    experience = 0;
+                }
+                else if (threshold > 0 && rawExperience >= threshold)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se recortó experience sobre el umbral del personaje " + reader.GetInt32(0) +
+                        " (" + rawExperience + " → " + (threshold - 1) + ").");
+                    experience = threshold - 1;
+                }
+                else
+                {
+                    experience = (int)rawExperience;
+                }
+
                 character = new CharacterRecord(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     reader.GetString(2),
-                    reader.GetInt32(3),
-                    reader.GetInt32(4),
+                    level,
+                    experience,
                     reader.GetInt32(5),
                     reader.GetInt32(6),
                     reader.GetInt32(7),

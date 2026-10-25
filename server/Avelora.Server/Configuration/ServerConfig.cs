@@ -78,6 +78,9 @@ namespace Avelora.Server.Configuration
         /// </summary>
         public string ItemsPath { get; set; } = "items.json";
 
+        /// <summary>Archivo de umbrales y bonus de nivel (I-06).</summary>
+        public string LevelsPath { get; set; } = "levels.json";
+
         /// <summary>Número de huecos del inventario (I-04).</summary>
         public int InventorySlots { get; set; } = 20;
 
@@ -384,6 +387,10 @@ namespace Avelora.Server.Configuration
             ValidateVitals();
             ValidatePersistence();
             ValidateItems();
+            if (string.IsNullOrWhiteSpace(LevelsPath))
+            {
+                throw new InvalidOperationException("levelsPath está vacío.");
+            }
         }
 
         /// <summary>
@@ -630,6 +637,23 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ItemsPath));
+        }
+
+        /// <summary>Resuelve el archivo de niveles junto a la configuración.</summary>
+        public string ResolveLevelsPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(LevelsPath))
+            {
+                throw new InvalidOperationException("levelsPath está vacío.");
+            }
+
+            if (Path.IsPathRooted(LevelsPath))
+            {
+                return LevelsPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", LevelsPath));
         }
 
         /// <summary>

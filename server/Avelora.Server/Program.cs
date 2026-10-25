@@ -14,6 +14,7 @@ using Avelora.Server.Net;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
+using Avelora.Server.Progression;
 using Avelora.Server.Security;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -116,6 +117,18 @@ namespace Avelora.Server
                 return 2;
             }
 
+            LevelTable levels;
+            try
+            {
+                levels = LevelTable.Load(config.ResolveLevelsPath(configPath));
+            }
+            catch (Exception ex) when (
+                ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)
+            {
+                ConsoleReporter.WriteError("No se pudo cargar la tabla de niveles: " + ex.Message);
+                return 2;
+            }
+
             // Enemigos (I-01). Con npcsPath vacío la zona se queda sin PNJ. Con ruta, el archivo
             // tiene que existir y ser válido contra el mapa y el catálogo de objetos.
             NpcCatalog? npcs = null;
@@ -152,7 +165,8 @@ namespace Avelora.Server
                     repository = new SqlitePlayerRepository(
                         databasePath,
                         items: items,
-                        inventorySlots: config.InventorySlots);
+                        inventorySlots: config.InventorySlots,
+                        levels: levels);
                     repository.Initialize();
                     saves = new CharacterSaveService(repository);
                 }
@@ -222,7 +236,8 @@ namespace Avelora.Server
                 (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate),
                 config.PickupRange,
                 config.AttackRangeTolerance,
-                (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate));
+                (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
+                levels);
 
             try
             {
@@ -263,7 +278,8 @@ namespace Avelora.Server
                 network.Port,
                 databasePath,
                 network.KeyFingerprint,
-                npcs);
+                npcs,
+                levels);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>
