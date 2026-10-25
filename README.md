@@ -626,7 +626,8 @@ codifica solo esos estados.
 - `NetworkStats` añade `EntitiesSent` (suma de entidades incluidas) y `SnapshotBytes` (bytes de
   snapshot generados). El informe muestra `ents=` y `bytes=` y el resumen los totaliza.
 - El tope de **entidades por snapshot** sigue ahí: si una zona tuviera más, se recorta y se cuenta.
-  El destinatario va primero, así que el recorte nunca lo elimina a él. Hoy son **77** (I-02): es el
+  El destinatario va primero, así que el recorte nunca lo elimina a él. Al recortar, los objetos del
+  suelo pasan al final: se cae botín antes que un jugador o un enemigo. Hoy son **77** (I-02): es el
   máximo que cabe en los 1020 B de un paquete secuenciado de LiteNetLib.
 - El cliente **no necesitó cambios**: `NetworkClient` retira una vista remota cuando su entidad deja
   de aparecer en el último snapshot y la vuelve a crear si regresa; `SnapshotTimeline` ya usa la
@@ -739,8 +740,11 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 - La reserva es por **cuenta**, no por personaje. Si la misma cuenta entra desde otra conexión, la
   nueva pasa a ser la dueña y la anterior recibe `Reject(LoggedInElsewhere)`: se guarda su posición,
   se retira su entidad y se suelta su conexión.
-- Si es el **mismo personaje**, la sesión nueva hereda la posición viva de la anterior, que es más
-  reciente que la de la base de datos; así no reaparece donde se guardó por última vez.
+- Si es el **mismo personaje**, la sesión nueva parte de la **última foto encolada** en
+  `CharacterSaveService` (`TryGetLatest`): posición, vida e inventario vivos. Así no hereda lo que el
+  login leyó de la base, que puede ir hasta un intervalo de guardado atrasado. Vale para la sesión
+  que se acaba de echar y para salir y volver a entrar antes de que se escriba el guardado. Antes
+  solo se conservaba la posición, y el siguiente guardado pisaba la vida y el inventario buenos.
 - El `Reject` fiable no siempre llega si se corta enseguida: LiteNetLib manda el paquete de
   desconexión antes que el mensaje en cola. Por eso el servidor apunta la conexión y espera
   **`rejectDisconnectDelayMilliseconds` (500 ms)** antes de cerrarla, descartando mientras tanto lo

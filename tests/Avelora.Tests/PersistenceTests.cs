@@ -609,6 +609,45 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
         }
 
         [Fact]
+        public void Al_Reconectar_Se_Conservan_La_Vida_Y_El_Inventario_Vivos()
+        {
+            // Auditoría: antes solo se conservaba la posición. La vida y el inventario salían de la
+            // base (hasta un intervalo de guardado atrás) y el siguiente guardado pisaba el bueno.
+            using var harness = new ServerHarness(DatabasePath);
+
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            PlayerEntity first = (PlayerEntity)harness.Zone.Entities.All[0];
+            first.Health = 37;
+            first.Inventory[0] = new InventorySlot(3002, 4);
+
+            // 1) La misma cuenta entra desde otra conexión mientras la primera sigue viva.
+            harness.Connect(2);
+            harness.Handshake(2, "dev", "avelora-dev", "dev");
+            harness.Pump(2);
+
+            PlayerEntity second = (PlayerEntity)harness.Zone.Entities.Get(harness.LastWelcome(2).EntityId)!;
+            Assert.Equal(37, second.Health);
+            Assert.Equal(new InventorySlot(3002, 4), second.Inventory[0]);
+
+            // 2) Sale y vuelve a entrar enseguida: entra con la foto de la salida aunque el login
+            // haya leído la base antes de que se escribiera.
+            second.Health = 21;
+            harness.Transport.RaiseDisconnected(2);
+            harness.Server.BeforeTick(harness.Zone);
+
+            harness.Connect(3);
+            harness.Handshake(3, "dev", "avelora-dev", "dev");
+            harness.Pump(3);
+
+            PlayerEntity third = (PlayerEntity)harness.Zone.Entities.Get(harness.LastWelcome(3).EntityId)!;
+            Assert.Equal(21, third.Health);
+            Assert.Equal(new InventorySlot(3002, 4), third.Inventory[0]);
+        }
+
+        [Fact]
         public void La_Misma_Cuenta_Desde_Dos_Conexiones_Echa_A_La_Conexion_Cero()
         {
             using var harness = new ServerHarness(DatabasePath);

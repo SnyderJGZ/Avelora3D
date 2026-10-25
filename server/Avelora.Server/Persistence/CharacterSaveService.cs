@@ -24,6 +24,10 @@ namespace Avelora.Server.Persistence
         private readonly IPlayerRepository _repository;
         private readonly object _gate = new object();
         private readonly Dictionary<int, CharacterRecord> _pending = new Dictionary<int, CharacterRecord>();
+
+        // Última foto encolada de cada personaje en esta ejecución, escrita o no. Una entrada por
+        // personaje que haya jugado: crece con los personajes, no con el tiempo.
+        private readonly Dictionary<int, CharacterRecord> _latest = new Dictionary<int, CharacterRecord>();
         private readonly AutoResetEvent _signal = new AutoResetEvent(false);
         private readonly ManualResetEventSlim _idle = new ManualResetEventSlim(true);
         private readonly Thread _thread;
@@ -84,10 +88,24 @@ namespace Avelora.Server.Persistence
             lock (_gate)
             {
                 _pending[character.Id] = character;
+                _latest[character.Id] = character;
                 _idle.Reset();
             }
 
             _signal.Set();
+        }
+
+        /// <summary>
+        /// La foto más nueva de un personaje encolada en esta ejecución. Solo este servidor escribe
+        /// en la base, así que nunca es más vieja que lo que leyó el login, y sí puede ser más nueva
+        /// si el guardado de la sesión anterior aún no se escribió (o se escribió después de leer).
+        /// </summary>
+        public bool TryGetLatest(int characterId, out CharacterRecord character)
+        {
+            lock (_gate)
+            {
+                return _latest.TryGetValue(characterId, out character!);
+            }
         }
 
         /// <summary>Espera a que no quede nada pendiente. Devuelve <c>false</c> si se agota el tiempo.</summary>

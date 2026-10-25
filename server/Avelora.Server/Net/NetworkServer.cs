@@ -101,6 +101,7 @@ namespace Avelora.Server.Net
         // Solo hilo de simulación.
         private readonly Dictionary<int, Session> _sessions = new Dictionary<int, Session>();
         private readonly List<Entity> _visibleBuffer = new List<Entity>(64);
+        private readonly List<Entity> _deferredItems = new List<Entity>(64);
         private int _nextCharacterId;
 
         private Thread? _netThread;
@@ -1009,11 +1010,20 @@ namespace Avelora.Server.Net
             }
 
             // Misma cuenta en otra conexión: se echa a la anterior antes de contar el aforo, así
-            // reconectar no depende de que quede hueco. Si es el mismo personaje, se conserva la
-            // posición viva que tenía (más reciente que la de la base de datos).
-            Vec2? previousPosition = control.ReplacesConnectionId != NoConnection
-                ? ReplaceSession(control.ReplacesConnectionId, control.Character?.Id ?? 0)
-                : null;
+            // reconectar no depende de que quede hueco. Al echarla se encola su guardado.
+            if (control.ReplacesConnectionId != NoConnection)
+            {
+                RemoveSession(control.ReplacesConnectionId, RejectReason.LoggedInElsewhere);
+            }
+
+            // El login leyó la base en su hilo, quizá antes de que se escribiera el guardado de la
+            // sesión anterior (la que se acaba de echar, o una que salió hace un momento). La última
+            // foto encolada es la buena: posición, vida e inventario vivos.
+            CharacterRecord? character = control.Character;
+            if (character != null && _saves != null && _saves.TryGetLatest(character.Id, out CharacterRecord latest))
+            {
+                character = latest;
+            }
 
             if (_sessions.Count >= _config.MaxPlayers)
             {
@@ -1027,10 +1037,10 @@ namespace Avelora.Server.Net
             Vec2 spawn = _config.Spawn;
             int characterId = _nextCharacterId++;
 
-            if (control.Character != null)
+            if (character != null)
             {
-                characterId = control.Character.Id;
-                spawn = previousPosition ?? ResolveSpawn(zone, control.Character);
+                characterId = character.Id;
+                spawn = ResolveSpawn(zone, character);
             }
 
             PlayerEntity player = zone.SpawnPlayer(
@@ -1038,13 +1048,13 @@ namespace Avelora.Server.Net
                 spawn,
                 _config.PlayerHalfSize,
                 _config.InputBufferCapacity,
-                control.Character?.Health ?? 0);
+                character?.Health ?? 0);
 
-            if (control.Character != null)
+            if (character != null)
             {
-                for (int i = 0; i < control.Character.InventoryItems.Length; i++)
+                for (int i = 0; i < character.InventoryItems.Length; i++)
                 {
-                    InventoryItemRecord saved = control.Character.InventoryItems[i];
+                    InventoryItemRecord saved = character.InventoryItems[i];
                     if (saved.Slot >= 0 && saved.Slot < player.Inventory.Length)
                     {
                         player.Inventory[saved.Slot] = new InventorySlot(
@@ -1061,7 +1071,7 @@ namespace Avelora.Server.Net
                 player.Id,
                 control.AccountId,
                 control.AccountName,
-                control.Character);
+                character);
 
             _connectionToEntity[connectionId] = player.Id;
             Interlocked.Increment(ref _playersJoined);
@@ -1081,33 +1091,6 @@ namespace Avelora.Server.Net
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
-        }
-
-        /// <summary>
-        /// Retira la sesión anterior de la misma cuenta: guarda, quita su entidad y le avisa con
-        /// <see cref="RejectReason.LoggedInElsewhere"/>. Devuelve su posición si el personaje es el
-        /// mismo que va a entrar, para no aparecer en la posición vieja de la base de datos.
-        /// </summary>
-        private Vec2? ReplaceSession(int previousConnectionId, int characterId)
-        {
-            if (!_sessions.TryGetValue(previousConnectionId, out Session? previous))
-            {
-                return null;
-            }
-
-            Vec2? position = null;
-
-            if (characterId > 0 &&
-                previous.Character != null &&
-                previous.Character.Id == characterId &&
-                _zone.Entities.TryGet(previous.EntityId, out Entity? entity) &&
-                entity is PlayerEntity player)
-            {
-                position = player.Position;
-            }
-
-            RemoveSession(previousConnectionId, RejectReason.LoggedInElsewhere);
-            return position;
         }
 
         private void RemovePlayer(int connectionId) => RemoveSession(connectionId, null);
@@ -1254,6 +1237,28 @@ namespace Avelora.Server.Net
                 // El destinatario va primero, así que nunca se cae a sí mismo.
                 Interlocked.Increment(ref _snapshotsTruncated);
                 available = ProtocolConstants.MaxEntitiesPerSnapshot;
+
+                // Los objetos del suelo pasan al final, sin cambiar el orden del resto: si sobra
+                // algo, que sea botín y no el orco que está pegando al jugador (auditoría).
+                _deferredItems.Clear();
+                int kept = 0;
+                for (int i = 0; i < _visibleBuffer.Count; i++)
+                {
+                    Entity entity = _visibleBuffer[i];
+                    if (entity.Kind == EntityKind.Item)
+                    {
+                        _deferredItems.Add(entity);
+                    }
+                    else
+                    {
+                        _visibleBuffer[kept++] = entity;
+                    }
+                }
+
+                for (int i = 0; i < _deferredItems.Count; i++)
+                {
+                    _visibleBuffer[kept++] = _deferredItems[i];
+                }
             }
 
             EntityState[] states = available == 0

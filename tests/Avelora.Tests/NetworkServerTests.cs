@@ -744,6 +744,56 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Al_Recortar_El_Snapshot_Se_Quitan_Objetos_Antes_Que_Enemigos()
+        {
+            // Auditoría: el recorte se quedaba con los primeros de la rejilla; con mucho botín en
+            // el suelo podía caerse el orco que pega al jugador.
+            using var harness = new Harness(config => config.InterestHysteresis = 0f);
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            player.Position = new Vec2(0f, 5f);
+
+            for (int i = 0; i < ProtocolConstants.MaxEntitiesPerSnapshot + 10; i++)
+            {
+                harness.Zone.AddEntity(new GroundItemEntity(1000 + i, 3001, 1, long.MaxValue)
+                {
+                    Position = new Vec2(0.5f, 5f),
+                });
+            }
+
+            // El orco llega el último a la misma celda que el botín.
+            var orc = new NpcEntity(
+                100,
+                2001,
+                0f,
+                new Vec2(0.5f, 5f),
+                2f,
+                nextDirectionChangeTick: long.MaxValue,
+                maxHealth: 30,
+                respawnTicks: 400,
+                spawnerIndex: -1)
+            {
+                Position = new Vec2(0.5f, 5f),
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+            harness.Zone.AddEntity(orc);
+            harness.Zone.Tick();
+
+            harness.Transport.Sent.Clear();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            SnapshotMessage snapshot = SnapshotFor(harness, 1);
+            Assert.Equal(ProtocolConstants.MaxEntitiesPerSnapshot, snapshot.Entities.Length);
+            Assert.Contains(snapshot.Entities, e => e.Id == player.Id);
+            Assert.Contains(snapshot.Entities, e => e.Id == 100);
+        }
+
+        [Fact]
         public void El_Jugador_Local_Se_Incluye_Aunque_El_Radio_Sea_Minimo()
         {
             using var harness = new Harness(config =>
