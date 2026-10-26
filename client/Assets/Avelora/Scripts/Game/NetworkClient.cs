@@ -155,6 +155,15 @@ namespace Avelora.Client
         private float _fistRange;
         private float _fistCooldownSeconds;
         private ushort[] _inventoryCounts = new ushort[0];
+
+        // Arte de la interfaz (Resources/GUI). Los iconos van por id de objeto (GUI/Items/<id>):
+        // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
+        private readonly Dictionary<ushort, Texture2D> _itemIcons = new Dictionary<ushort, Texture2D>();
+        private Texture2D _slotTexture;
+        private GUIStyle _panelStyle;
+        private GUIStyle _ribbonStyle;
+        private GUIStyle _barStyle;
+        private GUIStyle _panelTextStyle;
         private bool _showInventory = true;
         private byte _ownHealthPercent = 100;
         private bool _ownDead;
@@ -1421,34 +1430,142 @@ namespace Avelora.Client
             }
         }
 
-        /// <summary>Inventario a la derecha (I-04b): una línea por hueco ocupado; I lo oculta.</summary>
+        /// <summary>
+        /// Inventario a la derecha (I-04b): rejilla de huecos con el icono de cada objeto, la
+        /// cantidad abajo a la derecha y el número de tecla arriba a la izquierda; el nombre sale al
+        /// pasar el ratón. I lo oculta.
+        /// </summary>
         private void DrawInventory()
         {
-            var lines = new System.Text.StringBuilder("Inventario (I) · E recoger · Q poción · 1-9 usar · U guardar arma");
-            lines.Append("\n").Append("Arma: ").Append(
-                _catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped)
-                    ? equipped.Name + " (daño " + equipped.Damage + ")"
-                    : "puños");
-            int used = 1;
+            const int columns = 5;
+            const float cell = 48f;
+            const float gap = 4f;
+            const float pad = 18f;
+            const float header = 74f;
+
+            EnsureGuiArt();
+
+            int rows = Mathf.Max(1, (_inventoryIds.Length + columns - 1) / columns);
+            float width = (pad * 2f) + (columns * cell) + ((columns - 1) * gap);
+            float height = header + (rows * (cell + gap)) + pad;
+            var box = new Rect(Screen.width - width - 10f, 24f, width, height);
+            GUI.Box(box, GUIContent.none, _panelStyle);
+            GUI.Box(new Rect(box.x + 40f, box.y - 18f, width - 80f, 44f), "Inventario (I)", _ribbonStyle);
+
+            string weapon = _catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped)
+                ? equipped.Name + " (daño " + equipped.Damage + ")"
+                : "puños";
+            GUI.Label(
+                new Rect(box.x + pad, box.y + 28f, width - (pad * 2f), header - 28f),
+                "Arma: " + weapon + "\nE recoger · Q poción · 1-9 usar · U guardar",
+                _panelTextStyle);
+
+            string hovered = null;
+            Vector2 mouse = Event.current.mousePosition;
 
             for (int i = 0; i < _inventoryIds.Length; i++)
             {
-                if (_inventoryIds[i] == 0)
+                var slot = new Rect(
+                    box.x + pad + ((i % columns) * (cell + gap)),
+                    box.y + header + ((i / columns) * (cell + gap)),
+                    cell,
+                    cell);
+                ushort id = _inventoryIds[i];
+                Texture2D icon = ItemIcon(id);
+
+                if (icon != null)
+                {
+                    GUI.DrawTexture(slot, icon);
+                }
+                else if (_slotTexture != null)
+                {
+                    GUI.DrawTexture(slot, _slotTexture);
+                }
+                else
+                {
+                    GUI.Box(slot, GUIContent.none);
+                }
+
+                if (i < 9)
+                {
+                    GUI.Label(new Rect(slot.x + 3f, slot.y, cell, 18f), (i + 1).ToString(), _overlayStyle);
+                }
+
+                if (id == 0)
                 {
                     continue;
                 }
 
-                string name = _catalog.TryGetValue(_inventoryIds[i], out ItemCatalogEntry entry) ? entry.Name : "Objeto " + _inventoryIds[i];
-                lines.Append("\n").Append(i + 1).Append(". ").Append(name).Append(" x").Append(_inventoryCounts[i]);
-                used++;
+                string name = _catalog.TryGetValue(id, out ItemCatalogEntry entry) ? entry.Name : "Objeto " + id;
+
+                if (icon == null)
+                {
+                    // Sin arte todavía: las primeras letras del nombre en el centro del hueco.
+                    GUI.Label(new Rect(slot.x + 6f, slot.y + 15f, cell - 6f, 20f), name.Substring(0, Mathf.Min(4, name.Length)), _overlayStyle);
+                }
+
+                if (_inventoryCounts[i] > 1)
+                {
+                    GUI.Label(new Rect(slot.x + cell - 24f, slot.y + cell - 19f, 24f, 18f), _inventoryCounts[i].ToString(), _overlayStyle);
+                }
+
+                if (slot.Contains(mouse))
+                {
+                    hovered = name;
+                }
             }
 
-            lines.Append("\n").Append(used - 1).Append('/').Append(_inventoryIds.Length).Append(" huecos");
+            if (hovered != null)
+            {
+                GUI.Box(new Rect(mouse.x - 170f, mouse.y + 12f, 170f, 34f), GUIContent.none, _panelStyle);
+                GUI.Label(new Rect(mouse.x - 160f, mouse.y + 19f, 150f, 22f), hovered, _panelTextStyle);
+            }
+        }
 
-            float height = 44f + (18f * (used + 1));
-            var box = new Rect(Screen.width - 280f, 10f, 270f, height);
-            GUI.Box(box, GUIContent.none);
-            GUI.Label(new Rect(box.x + 10f, box.y + 6f, 250f, height - 8f), lines.ToString(), _overlayStyle);
+        /// <summary>
+        /// Carga una vez el arte de Resources/GUI (pack Tiny Swords UI). Los bordes son los píxeles que
+        /// no se estiran al dibujar en 9 partes.
+        /// </summary>
+        private void EnsureGuiArt()
+        {
+            if (_panelStyle != null)
+            {
+                return;
+            }
+
+            _slotTexture = Resources.Load<Texture2D>("GUI/Slot");
+            _panelStyle = new GUIStyle { border = new RectOffset(24, 24, 24, 24) };
+            _panelStyle.normal.background = Resources.Load<Texture2D>("GUI/Panel");
+            _barStyle = new GUIStyle { border = new RectOffset(24, 24, 0, 0) };
+            _barStyle.normal.background = Resources.Load<Texture2D>("GUI/Bar");
+            _ribbonStyle = new GUIStyle
+            {
+                border = new RectOffset(64, 64, 0, 0),
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 15,
+                fontStyle = FontStyle.Bold,
+                contentOffset = new Vector2(0f, -4f),
+            };
+            _ribbonStyle.normal.background = Resources.Load<Texture2D>("GUI/Ribbon");
+            _ribbonStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
+            _panelTextStyle = new GUIStyle(_overlayStyle);
+            _panelTextStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
+        }
+
+        private Texture2D ItemIcon(ushort itemId)
+        {
+            if (itemId == 0)
+            {
+                return null;
+            }
+
+            if (!_itemIcons.TryGetValue(itemId, out Texture2D icon))
+            {
+                icon = Resources.Load<Texture2D>("GUI/Items/" + itemId);
+                _itemIcons[itemId] = icon;
+            }
+
+            return icon;
         }
 
         /// <summary>Barra de vida propia abajo al centro y aviso de muerte con cuenta atrás (I-03b).</summary>
@@ -1456,7 +1573,11 @@ namespace Avelora.Client
         {
             const float width = 300f;
             const float height = 16f;
-            var back = new Rect((Screen.width - width) / 2f, Screen.height - 40f, width, height);
+            var back = new Rect((Screen.width - width) / 2f, Screen.height - 50f, width, height);
+
+            // Marco de madera tallada alrededor de las dos barras.
+            EnsureGuiArt();
+            GUI.Box(new Rect(back.x - 16f, back.y - 12f, width + 32f, height + 33f), GUIContent.none, _barStyle);
 
             Color previous = GUI.color;
             GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
