@@ -37,6 +37,9 @@ namespace Avelora.Bots
 
         /// <summary>Saluda con la contraseña incorrecta, una y otra vez, sin rampa de reintento.</summary>
         BadLogin = 6,
+
+        /// <summary>Se mueve al azar y manda mensajes cortos al chat de la zona (I-07).</summary>
+        Chat = 8,
     }
 
     /// <summary>
@@ -176,6 +179,7 @@ namespace Avelora.Bots
         private long _nextGarbageAt;
         private long _nextInvalidDirectionAt;
         private long _nextReplayAt;
+        private long _nextChatAt;
         private int _garbageKind;
         private int _invalidDirectionKind;
 
@@ -201,6 +205,8 @@ namespace Avelora.Bots
         private readonly HashSet<int> _deadNpcs = new HashSet<int>();
         private long _nextAttackAt;
         private long _sentAttacks;
+        private long _sentChat;
+        private long _receivedChat;
         private long _deathsSeen;
 
         // Vida propia (I-03): el snapshot trae la acción del jugador local. Mientras está muerto
@@ -393,6 +399,12 @@ namespace Avelora.Bots
         /// <summary>Ataques enviados (modo <c>fight</c>, I-02).</summary>
         public long SentAttacks => Interlocked.Read(ref _sentAttacks);
 
+        /// <summary>Mensajes de chat enviados por el comportamiento <c>chat</c> (I-07).</summary>
+        public long SentChat => Interlocked.Read(ref _sentChat);
+
+        /// <summary>Mensajes de chat recibidos por el comportamiento <c>chat</c> (I-07).</summary>
+        public long ReceivedChat => Interlocked.Read(ref _receivedChat);
+
         /// <summary>Muertes de enemigos vistas en los snapshots (modo <c>fight</c>, I-02).</summary>
         public long DeathsSeen => Interlocked.Read(ref _deathsSeen);
 
@@ -421,7 +433,7 @@ namespace Avelora.Bots
         public byte MaxLevelReached => _maxLevelReached;
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
-        public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood;
+        public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood && behavior != BotBehavior.Chat;
 
         /// <summary>Suma los <c>Reject</c> recibidos a un acumulador, para el resumen de la ejecución.</summary>
         public void AccumulateRejectCounts(SortedDictionary<string, int> totals)
@@ -556,6 +568,7 @@ namespace Avelora.Bots
             _nextGarbageAt = _attemptStartedAt;
             _nextInvalidDirectionAt = _attemptStartedAt;
             _nextReplayAt = _attemptStartedAt;
+            _nextChatAt = _attemptStartedAt;
             _nextAttackAt = _attemptStartedAt;
             _npcs.Clear();
             _lastSnapshotTick = 0;
@@ -676,6 +689,12 @@ namespace Avelora.Bots
                     {
                         UpdateItemActions(_pendingFightSnapshot);
                         _itemDecisionPending = false;
+                    }
+
+                    if (_behavior == BotBehavior.Chat && now >= _nextChatAt)
+                    {
+                        SendChat();
+                        _nextChatAt = now + 4000 + _random.Next(2001);
                     }
 
                     // Los abusos van en su propio temporizador: el bot sigue moviéndose normal
@@ -911,6 +930,7 @@ namespace Avelora.Bots
             _itemDecisionPending = false;
             _level = 1;
             _hasProgress = false;
+            _nextChatAt = 0;
         }
 
         private void DiscardTransport()
@@ -1342,6 +1362,10 @@ namespace Avelora.Bots
                 _welcomed = true;
                 _welcomedAt = now;
                 _lastSnapshotAt = now;
+                if (_behavior == BotBehavior.Chat)
+                {
+                    _nextChatAt = now + 4000 + _random.Next(2001);
+                }
                 _welcomeMs = now - _firstAttemptAt;
                 EntityId = welcome.EntityId;
                 _x = welcome.SpawnX;
@@ -1361,7 +1385,8 @@ namespace Avelora.Bots
                 // Igual que el cliente de Unity: si el bot es un jugador normal, predice su
                 // posición y mide las correcciones que le costaría la red. El modo fight también
                 // predice: se mueve como un jugador que persigue.
-                if ((_behavior == BotBehavior.Random || _behavior == BotBehavior.Fight) && _map != null)
+                if ((_behavior == BotBehavior.Random || _behavior == BotBehavior.Fight ||
+                    _behavior == BotBehavior.Chat) && _map != null)
                 {
                     _halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
 
@@ -1439,6 +1464,12 @@ namespace Avelora.Bots
                     _maxLevelReached = progress.Level;
                 }
 
+                return;
+            }
+
+            if (MessageCodec.TryReadChat(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _receivedChat);
                 return;
             }
 
@@ -1831,6 +1862,13 @@ namespace Avelora.Bots
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
             // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.
             _nextAttackAt = now + CurrentAttackCooldownMs + AttackSlackMs;
+        }
+
+        private void SendChat()
+        {
+            byte[] chat = MessageCodec.EncodeChatSend(new ChatSendMessage("Hola-" + Index));
+            _transport!.Send(chat, chat.Length, DeliveryMode.ReliableOrdered);
+            Interlocked.Increment(ref _sentChat);
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>

@@ -22,9 +22,15 @@ namespace Avelora.Shared.Protocol
         /// el tipo de PNJ (2 bytes más) para que el cliente distinga un enemigo de otro. I-04 a 7
         /// porque aparecen <c>PickUp</c>, <c>UseItem</c>, <c>Inventory</c> y <c>EntityKind.Item</c>;
         /// I-05 a 8 porque se añaden <c>Equip</c>, <c>Unequip</c>, <c>ItemCatalog</c> y el arma equipada;
-        /// I-06 a 9 por el mensaje <c>Progress</c>.
+        /// I-06 a 9 por el mensaje <c>Progress</c>; I-07 a 10 por <c>ChatSend</c> y <c>Chat</c>.
         /// </summary>
-        public const ushort Version = 9;
+        public const ushort Version = 10;
+
+        /// <summary>Máximo de bytes UTF-8 del texto de chat (I-07).</summary>
+        public const int MaxChatBytes = 120;
+
+        /// <summary>Máximo de bytes UTF-8 del nombre del emisor en chat (I-07).</summary>
+        public const int MaxChatNameBytes = 24;
 
         /// <summary>
         /// Tope de inputs que puede llevar un <c>MoveInput</c>: el más nuevo y hasta tres copias

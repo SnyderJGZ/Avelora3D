@@ -122,7 +122,11 @@ namespace Avelora.Tests
                     "La conexión " + connectionId + " no recibió el desafío del servidor.");
             }
 
-            public void Handshake(int connectionId, ushort? version = null, byte[]? mapHash = null)
+            public void Handshake(
+                int connectionId,
+                ushort? version = null,
+                byte[]? mapHash = null,
+                string characterName = "dev")
             {
                 byte[] encrypted = HelloSecrets.Encrypt(
                     Server.PublicKey,
@@ -137,7 +141,7 @@ namespace Avelora.Tests
                     4242u + (uint)connectionId,
                     "dev",
                     encrypted,
-                    "dev");
+                    characterName);
 
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
             }
@@ -257,6 +261,122 @@ namespace Avelora.Tests
             Assert.Equal(20u, progress.Experience);
             Assert.Equal(100u, progress.ExperienceToNext);
             Assert.Equal(1, harness.Zone.NpcDeaths);
+        }
+
+        [Fact]
+        public void El_Chat_Se_Entrega_A_Toda_La_Zona_Incluido_El_Emisor()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.InterestRadius = 1f;
+                config.InterestCellSize = 2f;
+                config.InterestHysteresis = 0f;
+            });
+            harness.Connect(1);
+            harness.Handshake(1, characterName: "Alicia");
+            harness.Pump();
+            harness.Connect(2);
+            harness.Handshake(2, characterName: "Bruno");
+            harness.Pump();
+
+            ((PlayerEntity)harness.Zone.Entities.Get(1)!).Position = new Vec2(-7f, 5f);
+            ((PlayerEntity)harness.Zone.Entities.Get(2)!).Position = new Vec2(7f, -5f);
+            harness.Zone.Tick();
+            ((PlayerEntity)harness.Zone.Entities.Get(1)!).Action = EntityAction.Dead;
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("  Hola  ")));
+            harness.Server.PollOnce();
+
+            List<SentMessage> messages = harness.Transport.Sent.FindAll(sent =>
+                MessageCodec.TryReadChat(sent.Data, 0, sent.Data.Length, out _));
+            Assert.Equal(2, messages.Count);
+            Assert.All(messages, sent =>
+            {
+                Assert.True(MessageCodec.TryReadChat(sent.Data, 0, sent.Data.Length, out ChatMessage chat));
+                Assert.Equal(1, chat.SenderEntityId);
+                Assert.Equal("Alicia", chat.SenderName);
+                Assert.Equal("Hola", chat.Text);
+                Assert.Equal(DeliveryMode.ReliableOrdered, sent.Mode);
+            });
+            Assert.Equal(1, harness.Server.Snapshot().ChatReceived);
+            Assert.Equal(2, harness.Server.Snapshot().ChatDelivered);
+        }
+
+        [Fact]
+        public void El_Nombre_Del_Emisor_Se_Trunca_Sin_Partir_UTF8()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1, characterName: "😀😀😀😀😀😀😀");
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("hola")));
+            harness.Server.PollOnce();
+
+            SentMessage sent = Assert.Single(harness.Transport.Sent);
+            Assert.True(MessageCodec.TryReadChat(sent.Data, 0, sent.Data.Length, out ChatMessage chat));
+            Assert.Equal("😀😀😀😀😀😀", chat.SenderName);
+        }
+
+        [Fact]
+        public void El_Chat_Rechaza_Texto_Invalido_Largo_Y_UTF8_Roto_Sin_Enviar()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("   ")));
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("hola\nque tal")));
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("hola\u200B")));
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeChatSend(new ChatSendMessage("hola\u202E")));
+
+            byte[] tooLong = new byte[3 + 121];
+            tooLong[0] = (byte)MessageType.ChatSend;
+            tooLong[1] = 121;
+            harness.Transport.RaiseReceived(1, tooLong);
+            harness.Transport.RaiseReceived(1, new byte[] { (byte)MessageType.ChatSend, 1, 0, 0xFF });
+            harness.Server.PollOnce();
+
+            Assert.Empty(harness.Transport.Sent);
+            NetworkStats stats = harness.Server.Snapshot();
+            Assert.Equal(0, stats.ChatReceived);
+            Assert.Equal(0, stats.ChatDelivered);
+            Assert.Equal(5, stats.ChatRejectedInvalid);
+            Assert.Equal(1, stats.ChatRejectedLong);
+        }
+
+        [Fact]
+        public void El_Chat_Limita_Rafaga_Y_Repone_Una_Ficha_Tras_Un_Segundo_De_Ticks()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+
+            byte[] chat = MessageCodec.EncodeChatSend(new ChatSendMessage("hola"));
+            harness.Transport.RaiseReceived(1, chat);
+            harness.Transport.RaiseReceived(1, chat);
+            harness.Transport.RaiseReceived(1, chat);
+            harness.Transport.RaiseReceived(1, chat);
+
+            Assert.Equal(1, harness.Server.Snapshot().ChatRejectedFast);
+            for (int i = 0; i < SimulationConstants.TickRate; i++)
+            {
+                harness.Zone.Tick();
+            }
+
+            harness.Transport.RaiseReceived(1, chat);
+            harness.Server.PollOnce();
+
+            NetworkStats stats = harness.Server.Snapshot();
+            Assert.Equal(4, stats.ChatReceived);
+            Assert.Equal(4, stats.ChatDelivered);
+            Assert.Equal(1, stats.ChatRejectedFast);
         }
 
         [Fact]
@@ -1268,7 +1388,7 @@ namespace Avelora.Tests
             {
                 var copy = new byte[length];
                 Array.Copy(data, copy, length);
-                Sent.Add(new SentMessage(connectionId, copy));
+                Sent.Add(new SentMessage(connectionId, copy, mode));
             }
 
             public void Disconnect(int connectionId, DisconnectReason reason) => DisconnectedConnections.Add(connectionId);
@@ -1289,15 +1409,18 @@ namespace Avelora.Tests
         /// <summary>Un mensaje tal como lo entregó el transporte falso.</summary>
         private readonly struct SentMessage
         {
-            public SentMessage(int connectionId, byte[] data)
+            public SentMessage(int connectionId, byte[] data, DeliveryMode mode)
             {
                 ConnectionId = connectionId;
                 Data = data;
+                Mode = mode;
             }
 
             public int ConnectionId { get; }
 
             public byte[] Data { get; }
+
+            public DeliveryMode Mode { get; }
         }
     }
 }

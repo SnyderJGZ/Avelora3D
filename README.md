@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04, I-05 e I-06 de servidor implementadas (clientes I-04b/I-05b/I-06b pendientes).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-07 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -15,10 +15,12 @@ calcular igual (movimiento y colisión).
 > (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67 entidades.
 > Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones;
 > desde I-05 (**protocolo v8**) hay armas, equipo persistente y catálogo de objetos enviado al cliente.
-> Desde I-06 (**protocolo v9**) las muertes de PNJ dan experiencia, suben niveles y aumentan vida y daño.
+> Desde I-06 (**protocolo v9**) las muertes de PNJ dan experiencia, suben niveles y aumentan vida y daño;
+> desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04) e
-> [I-05](#armas-y-equipo-i-05-protocolo-v8) y [I-06](#experiencia-y-niveles-i-06-protocolo-v9).
+> [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06](#experiencia-y-niveles-i-06-protocolo-v9) e
+> [I-07](#chat-i-07-protocolo-v10).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -27,7 +29,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **449/449 en verde** |
+| `dotnet test Avelora.slnx` | **463/463 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -340,12 +342,14 @@ pueden discrepar** del formato.
 | `Unequip` | 7 | C → S | 1 B | sin carga útil |
 | `ItemCatalog` | 15 | S → C | 19 B + 23 B/objeto + nombre | reglas de puños y recogida, más datos de cada objeto (nombre UTF-8 de hasta 48 B) |
 | `Progress` | 16 | S → C | **14 B** | nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo), vida máxima (u32) |
+| `ChatSend` | 8 | C → S | 3 B + texto | texto UTF-8 con longitud u16; máximo 120 bytes |
+| `Chat` | 17 | S → C | 9 B + nombre + texto | emisor (i32), nombre UTF-8 (≤24 B) y texto UTF-8 (≤120 B), ambos con longitud u16 |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
-  `Unequip`, `ItemCatalog`, `Inventory` y `Progress`.
+  `Unequip`, `ChatSend`, `ItemCatalog`, `Inventory`, `Progress` y `Chat`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
@@ -353,7 +357,8 @@ Canales:
 > `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
 > I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
 > `PickUp`, `UseItem` e `Inventory`; I-05 sube a **v8** por `Equip`, `Unequip`, `ItemCatalog` y el campo
-> `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`. El snapshot no cambia.
+> `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
+> `ChatSend` y `Chat`. El snapshot no cambia.
 
 ### Handshake
 
@@ -1043,11 +1048,12 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia y niveles | ⏳ I-01 a I-06 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles y chat de zona | ⏳ I-01 a I-07 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
 | **I-06** | Experiencia y niveles (protocolo v9; esquema SQLite v3) | ✅ servidor; I-06b implementa el cliente |
+| **I-07** | Chat básico de zona (protocolo v10) | ✅ servidor y bots; I-07b implementa el cliente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1367,6 +1373,47 @@ y el resumen de bots incluye subidas y nivel máximo alcanzado.
 y reaparecieron **287/287 PNJ** y **7/6 jugadores**. Hubo **134 ataques con arma**. El servidor envió
 **23 890 303 B (23,9 MB)**, **3 743 006 B (13,5 %) menos** que los 27 633 309 B de I-05.
 
+### Chat (I-07, protocolo v10)
+
+Hay un único canal de chat por zona. Un `ChatSend` válido se devuelve como `Chat` a **todos los
+jugadores de la zona**, incluido el emisor, aunque estén lejos según el área de interés o el emisor
+esté muerto. No hay canales privados, comandos, filtro de palabras, silencios ni guardado del chat.
+
+El servidor valida el contenido, no confía en la interfaz del cliente: decodifica UTF-8 estricto,
+recorta los espacios de los extremos y exige de 1 byte al límite configurado. Rechaza caracteres
+Unicode de control (`Cc`, incluidos saltos de línea y tabuladores) y de formato (`Cf`, como U+200B y
+U+202E). El protocolo v10 impone además un máximo de 120 bytes aunque `chatMaxBytes` se configure por
+encima de ese valor.
+
+Cada conexión tiene un cubo de fichas con una capacidad inicial de 3; se repone a 1 ficha por segundo
+según los ticks de la zona. Al no tener ficha, el mensaje se rechaza sin notificación al cliente.
+Los contadores `chat_recibidos`, `chat_entregados` y `chat_rech_invalido`, `chat_rech_largo`,
+`chat_rech_rapido` aparecen en los informes periódicos y en el resumen final. El servidor valida y
+difunde el chat en el hilo de red, usando el mapa concurrente de conexiones de la zona y la cola de
+salida fiable: no toca las entidades ni bloquea el tick.
+
+| Campo de `server.json` | Defecto | Rango / significado |
+| --- | --- | --- |
+| `chatMaxBytes` | 120 | Bytes UTF-8 después de recortar, entre 1 y 255; el tope del protocolo sigue siendo 120. |
+| `chatBurst` | 3 | Fichas disponibles al inicio, entre 1 y 20. |
+| `chatPerSecond` | 1 | Fichas repuestas por segundo de ticks, entre 0,1 y 10. |
+
+El bot `chat` se desplaza como `random` y manda un texto breve cada 5 s ± 1 s; cuenta
+`chat_enviados` y `chat_recibidos`. `fight` conserva su comportamiento.
+
+**Verificación y carga I-07:** pasadas con 50 bots durante 120 s y `-LogCorrections` (servidor 160 s).
+
+| Comportamiento | Tick p99 | Correcciones | Chat recibido / copias / rechazos | Bytes enviados |
+| --- | --- | --- | --- | --- |
+| `chat` | **0,062 ms** | 8 (0,08/bot/min), 0 saltos | 1168 / 57 351 / 0 | **30,5 MB** |
+| `fight` | **0,090 ms** | 0, 0 saltos | 0 / 0 / 0 | **26,9 MB** |
+
+En `fight`, frente a I-06 (0,054 ms y 23,9 MB), el p99 subió 0,036 ms y los bytes aumentaron
+3 004 070 B (**12,6 %**); hubo 0 ticks por encima de 50 ms. En `chat` se conectaron 50/50 bots y el
+servidor no registró rechazos de chat. Las 8 líneas `[corrección]` fueron correcciones pequeñas
+(≈0,14–0,21 tiles) en cinco bots, con `baseOk=sí` y distancias a pared en los diagnósticos; tres
+parejas consecutivas, sin saltos. No se modificó predicción, fuera del alcance de I-07.
+
 ---
 
 ### Mapa de prueba de 80×60 (J-01)
@@ -1399,6 +1446,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
 la desconexión. El backend de **I-04/I-05/I-06** añade botín, inventario, equipo, experiencia y niveles
-con persistencia v3. Los siguientes trabajos del cliente son **I-04b/I-05b/I-06b**, conectar protocolo
-v9 y mostrar inventario, equipo y progreso; también siguen pendientes los trabajos de seguridad de H
-que no forman parte de esta tarea.
+con persistencia v3; **I-07** añade chat básico de zona en protocolo v10. Los siguientes trabajos del
+cliente son **I-04b/I-05b/I-06b/I-07b**, conectar inventario, equipo, progreso y chat; también siguen
+pendientes los trabajos de seguridad de H que no forman parte de esta tarea.

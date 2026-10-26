@@ -99,6 +99,15 @@ namespace Avelora.Server.Configuration
         /// <summary>Tope de acciones de objeto encoladas por la red (I-04).</summary>
         public int MaxQueuedItemActions { get; set; } = 1024;
 
+        /// <summary>Máximo de bytes UTF-8 de un mensaje de chat (I-07).</summary>
+        public int ChatMaxBytes { get; set; } = ProtocolConstants.MaxChatBytes;
+
+        /// <summary>Fichas iniciales del chat por jugador (I-07).</summary>
+        public int ChatBurst { get; set; } = 3;
+
+        /// <summary>Fichas de chat que se reponen por segundo, medidas en ticks de zona (I-07).</summary>
+        public double ChatPerSecond { get; set; } = 1d;
+
         /// <summary>
         /// Semilla del azar de la IA de los enemigos. Con la misma semilla y los mismos datos, dos
         /// zonas producen exactamente las mismas posiciones.
@@ -387,6 +396,7 @@ namespace Avelora.Server.Configuration
             ValidateVitals();
             ValidatePersistence();
             ValidateItems();
+            ValidateChat();
             if (string.IsNullOrWhiteSpace(LevelsPath))
             {
                 throw new InvalidOperationException("levelsPath está vacío.");
@@ -554,6 +564,26 @@ namespace Avelora.Server.Configuration
             if (MaxQueuedItemActions < 1)
             {
                 throw new InvalidOperationException("maxQueuedItemActions debe ser >= 1.");
+            }
+        }
+
+        /// <summary>Valida los límites configurables del chat de zona (I-07).</summary>
+        private void ValidateChat()
+        {
+            if (ChatMaxBytes < 1 || ChatMaxBytes > 255)
+            {
+                throw new InvalidOperationException("chatMaxBytes debe estar entre 1 y 255.");
+            }
+
+            if (ChatBurst < 1 || ChatBurst > 20)
+            {
+                throw new InvalidOperationException("chatBurst debe estar entre 1 y 20.");
+            }
+
+            if (ChatPerSecond < 0.1d || ChatPerSecond > 10d ||
+                double.IsNaN(ChatPerSecond) || double.IsInfinity(ChatPerSecond))
+            {
+                throw new InvalidOperationException("chatPerSecond debe estar entre 0,1 y 10.");
             }
         }
 

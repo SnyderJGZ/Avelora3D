@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
@@ -64,6 +65,8 @@ namespace Avelora.Server.Net
         private readonly ConcurrentQueue<OutboundMessage> _outbound = new ConcurrentQueue<OutboundMessage>();
         private readonly ConcurrentDictionary<int, int> _connectionToEntity = new ConcurrentDictionary<int, int>();
         private readonly ConcurrentDictionary<int, int> _connectionToAccount = new ConcurrentDictionary<int, int>();
+        private readonly ConcurrentDictionary<int, string> _connectionToCharacterName =
+            new ConcurrentDictionary<int, string>();
         private readonly ConcurrentDictionary<int, int> _onlineAccounts = new ConcurrentDictionary<int, int>();
 
         // Solo hilo de red.
@@ -83,6 +86,7 @@ namespace Avelora.Server.Net
         private readonly Dictionary<string, int> _loginsInFlightPerAccount =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
+        private readonly Dictionary<int, ChatTokenBucket> _chatBuckets = new Dictionary<int, ChatTokenBucket>();
 
         /// <summary>Segundos, dentro del minuto actual, en los que cada conexión superó el límite.</summary>
         private readonly Dictionary<int, int> _secondsOverLimit = new Dictionary<int, int>();
@@ -123,6 +127,11 @@ namespace Avelora.Server.Net
         private long _snapshotBytes;
         private long _loginsSucceeded;
         private long _loginsRejected;
+        private long _chatReceived;
+        private long _chatDelivered;
+        private long _chatRejectedInvalid;
+        private long _chatRejectedLong;
+        private long _chatRejectedFast;
 
         public NetworkServer(
             Zone zone,
@@ -355,6 +364,11 @@ namespace Avelora.Server.Net
             _saves?.Saved ?? 0,
             _saves?.Failed ?? 0,
             _saves?.Pending ?? 0,
+            Interlocked.Read(ref _chatReceived),
+            Interlocked.Read(ref _chatDelivered),
+            Interlocked.Read(ref _chatRejectedInvalid),
+            Interlocked.Read(ref _chatRejectedLong),
+            Interlocked.Read(ref _chatRejectedFast),
             _saves?.LastError);
 
         // ---------------------------------------------------------------- hilo de red
@@ -396,6 +410,7 @@ namespace Avelora.Server.Net
             _handshakeDeadlines.Remove(connectionId);
             _pendingDisconnects.Remove(connectionId);
             _messagesThisSecond.Remove(connectionId);
+            _chatBuckets.Remove(connectionId);
             _challengeNonces.Remove(connectionId);
             _secondsOverLimit.Remove(connectionId);
             _lastOverLimitSecond.Remove(connectionId);
@@ -488,6 +503,12 @@ namespace Avelora.Server.Net
                     Interlocked.Increment(ref _messagesRejected);
                 }
 
+                return;
+            }
+
+            if (buffer[offset] == (byte)MessageType.ChatSend)
+            {
+                HandleChatSend(connectionId, entityId, buffer, offset, length);
                 return;
             }
 
@@ -1100,6 +1121,11 @@ namespace Avelora.Server.Net
 
             player.ConnectionId = connectionId;
 
+            string characterName = character?.Name ?? LoginValidation.ResolveCharacterName(
+                control.Hello.CharacterName,
+                LoginValidation.NormalizeAccount(control.Hello.AccountName));
+            characterName = TruncateUtf8(characterName, ProtocolConstants.MaxChatNameBytes);
+
             _sessions[connectionId] = new Session(
                 connectionId,
                 player.Id,
@@ -1108,6 +1134,7 @@ namespace Avelora.Server.Net
                 character);
 
             _connectionToEntity[connectionId] = player.Id;
+            _connectionToCharacterName[connectionId] = characterName;
             Interlocked.Increment(ref _playersJoined);
 
             byte[] welcome = MessageCodec.EncodeWelcome(new WelcomeMessage(
@@ -1149,6 +1176,7 @@ namespace Avelora.Server.Net
             _sessions.Remove(connectionId);
             _zone.RemoveEntity(session.EntityId);
             _connectionToEntity.TryRemove(connectionId, out _);
+            _connectionToCharacterName.TryRemove(connectionId, out _);
             ReleaseConnection(connectionId);
             Interlocked.Increment(ref _playersLeft);
 
@@ -1259,6 +1287,102 @@ namespace Avelora.Server.Net
                 checked((uint)player.Experience),
                 checked((uint)threshold),
                 checked((uint)player.MaxHealth)));
+        }
+
+        private void HandleChatSend(int connectionId, int senderEntityId, byte[] buffer, int offset, int length)
+        {
+            if (!MessageCodec.TryReadChatSend(buffer, offset, length, out ChatSendMessage request))
+            {
+                if (IsOverlongChatSend(buffer, offset, length))
+                {
+                    Interlocked.Increment(ref _chatRejectedLong);
+                }
+                else
+                {
+                    Interlocked.Increment(ref _chatRejectedInvalid);
+                }
+
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            ChatTextValidationResult validation = ChatTextValidator.Validate(
+                request.Text,
+                _config.ChatMaxBytes,
+                out string text);
+            if (validation == ChatTextValidationResult.Invalid)
+            {
+                Interlocked.Increment(ref _chatRejectedInvalid);
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (validation == ChatTextValidationResult.TooLong)
+            {
+                Interlocked.Increment(ref _chatRejectedLong);
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (!_connectionToCharacterName.TryGetValue(connectionId, out string? senderName))
+            {
+                Interlocked.Increment(ref _chatRejectedInvalid);
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (!_chatBuckets.TryGetValue(connectionId, out ChatTokenBucket? bucket))
+            {
+                bucket = new ChatTokenBucket(_config.ChatBurst, _zone.TickCount);
+                _chatBuckets.Add(connectionId, bucket);
+            }
+
+            if (!bucket.TryConsume(_zone.TickCount, _config.ChatBurst, _config.ChatPerSecond))
+            {
+                Interlocked.Increment(ref _chatRejectedFast);
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            byte[] encoded = MessageCodec.EncodeChat(new ChatMessage(senderEntityId, senderName, text));
+            Interlocked.Increment(ref _chatReceived);
+
+            // Cada entrada de esta tabla corresponde a un jugador de esta zona. No se filtra por
+            // área de interés: el chat de zona llega también a jugadores lejos del emisor.
+            foreach (KeyValuePair<int, int> recipient in _connectionToEntity)
+            {
+                if (_connectionToCharacterName.ContainsKey(recipient.Key))
+                {
+                    Enqueue(recipient.Key, encoded, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                    Interlocked.Increment(ref _chatDelivered);
+                }
+            }
+        }
+
+        private static bool IsOverlongChatSend(byte[] buffer, int offset, int length)
+        {
+            return buffer != null && offset >= 0 && length >= 3 &&
+                offset <= buffer.Length - 3 &&
+                buffer[offset] == (byte)MessageType.ChatSend &&
+                (buffer[offset + 1] | (buffer[offset + 2] << 8)) > ProtocolConstants.MaxChatBytes;
+        }
+
+        private static string TruncateUtf8(string value, int maxBytes)
+        {
+            var result = new StringBuilder(Math.Min(value.Length, maxBytes));
+            int bytes = 0;
+            foreach (Rune rune in value.EnumerateRunes())
+            {
+                if (bytes + rune.Utf8SequenceLength > maxBytes)
+                {
+                    break;
+                }
+
+                result.Append(rune.ToString());
+                bytes += rune.Utf8SequenceLength;
+            }
+
+            return result.ToString();
         }
 
         private byte[] EncodeItemCatalog()
@@ -1561,6 +1685,39 @@ namespace Avelora.Server.Net
             /// <summary>Última foto conocida del personaje; se actualiza al guardar.</summary>
             public CharacterRecord? Character { get; set; }
         }
+
+        /// <summary>Cubo de fichas que repone usando los ticks publicados por la zona.</summary>
+        private sealed class ChatTokenBucket
+        {
+            private double _tokens;
+            private long _lastTick;
+
+            public ChatTokenBucket(int capacity, long tick)
+            {
+                _tokens = capacity;
+                _lastTick = tick;
+            }
+
+            public bool TryConsume(long tick, int capacity, double refillPerSecond)
+            {
+                long elapsedTicks = tick - _lastTick;
+                if (elapsedTicks > 0)
+                {
+                    _tokens = Math.Min(
+                        capacity,
+                        _tokens + (elapsedTicks * refillPerSecond / SimulationConstants.TickRate));
+                    _lastTick = tick;
+                }
+
+                if (_tokens < 1d)
+                {
+                    return false;
+                }
+
+                _tokens -= 1d;
+                return true;
+            }
+        }
     }
 
     /// <summary>Contadores de red para los informes.</summary>
@@ -1586,6 +1743,11 @@ namespace Avelora.Server.Net
             long charactersSaved,
             long saveFailures,
             int pendingSaves,
+            long chatReceived,
+            long chatDelivered,
+            long chatRejectedInvalid,
+            long chatRejectedLong,
+            long chatRejectedFast,
             string? saveLastError = null)
         {
             Connections = connections;
@@ -1607,6 +1769,11 @@ namespace Avelora.Server.Net
             CharactersSaved = charactersSaved;
             SaveFailures = saveFailures;
             PendingSaves = pendingSaves;
+            ChatReceived = chatReceived;
+            ChatDelivered = chatDelivered;
+            ChatRejectedInvalid = chatRejectedInvalid;
+            ChatRejectedLong = chatRejectedLong;
+            ChatRejectedFast = chatRejectedFast;
             SaveLastError = saveLastError;
         }
 
@@ -1656,6 +1823,12 @@ namespace Avelora.Server.Net
 
         /// <summary>Personajes esperando a que SQLite los escriba.</summary>
         public int PendingSaves { get; }
+
+        public long ChatReceived { get; }
+        public long ChatDelivered { get; }
+        public long ChatRejectedInvalid { get; }
+        public long ChatRejectedLong { get; }
+        public long ChatRejectedFast { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

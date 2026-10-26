@@ -277,6 +277,14 @@ namespace Avelora.Shared.Protocol
     {
     }
 
+    /// <summary>Texto que el cliente propone publicar en el chat de la zona (I-07).</summary>
+    public readonly struct ChatSendMessage
+    {
+        public ChatSendMessage(string text) => Text = text ?? string.Empty;
+
+        public string Text { get; }
+    }
+
     /// <summary>Tipos de objeto anunciados por el servidor.</summary>
     public enum ItemKind : byte
     {
@@ -590,5 +598,20 @@ namespace Avelora.Shared.Protocol
         public uint Experience { get; }
         public uint ExperienceToNext { get; }
         public uint MaxHealth { get; }
+    }
+
+    /// <summary>Mensaje del chat de zona aceptado por el servidor (I-07).</summary>
+    public readonly struct ChatMessage
+    {
+        public ChatMessage(int senderEntityId, string senderName, string text)
+        {
+            SenderEntityId = senderEntityId;
+            SenderName = senderName ?? string.Empty;
+            Text = text ?? string.Empty;
+        }
+
+        public int SenderEntityId { get; }
+        public string SenderName { get; }
+        public string Text { get; }
     }
 }

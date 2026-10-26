@@ -93,6 +93,14 @@ namespace Avelora.Client
         private const float ApproachFraction = 0.85f;
         private const float AxisDeadZone = 0.15f;
 
+        // Chat de zona (I-07b): Enter abre la caja, Enter envía, Esc cancela.
+        private const int ChatLogLines = 8;
+        private const string ChatControl = "avelora-chat";
+        private readonly List<string> _chatLog = new List<string>(ChatLogLines + 1);
+        private GUIStyle _chatLineStyle;
+        private bool _chatOpen;
+        private string _chatDraft = string.Empty;
+
         private bool _autoAttack;
         private int _lastClickId;
         private float _lastClickAt;
@@ -371,13 +379,15 @@ namespace Avelora.Client
 
             // Muerto (I-03b): ni ataques ni movimiento. Se siguen mandando inputs a cero para que la
             // secuencia avance igual que en el servidor, que los consume sin moverlo.
-            if (!_ownDead && _catalogReceived)
+            // Con la caja de chat abierta (I-07b) las teclas son texto: ni combate, ni objetos, ni
+            // inventario, ni movimiento.
+            if (!_ownDead && _catalogReceived && !_chatOpen)
             {
                 HandleCombatInput();
                 HandleItemInput();
             }
 
-            if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
+            if (!_chatOpen && Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
             {
                 _showInventory = !_showInventory;
             }
@@ -395,6 +405,12 @@ namespace Avelora.Client
             _accumulator += frame;
 
             ReadDirection(out sbyte directionX, out sbyte directionY);
+
+            if (_chatOpen)
+            {
+                directionX = 0;
+                directionY = 0;
+            }
 
             if (_ownDead)
             {
@@ -952,6 +968,19 @@ namespace Avelora.Client
 
                     break;
 
+                case MessageType.Chat:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadChat(buffer, offset, length, out ChatMessage chat))
+                    {
+                        _chatLog.Add(chat.SenderName + ": " + chat.Text);
+                        if (_chatLog.Count > ChatLogLines)
+                        {
+                            _chatLog.RemoveAt(0);
+                        }
+                    }
+
+                    break;
+
                 case MessageType.Progress:
                     if (_welcomeReceived &&
                         MessageCodec.TryReadProgress(buffer, offset, length, out ProgressMessage progress))
@@ -1399,6 +1428,7 @@ namespace Avelora.Client
                     wordWrap = true,
                 };
                 _overlayStyle.normal.textColor = Color.white;
+                _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip };
             }
 
             string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId.ToString() : "ninguno") +
@@ -1427,7 +1457,82 @@ namespace Avelora.Client
             if (_welcomeReceived)
             {
                 DrawOwnHealth();
+                DrawChat();
             }
+        }
+
+        /// <summary>
+        /// Últimos mensajes de la zona abajo a la izquierda y caja para escribir (I-07b). Las teclas
+        /// se leen aquí, antes que el TextField, para que Enter y Esc no los consuma él.
+        /// </summary>
+        private void DrawChat()
+        {
+            Event e = Event.current;
+            bool keyDown = e.type == EventType.KeyDown;
+            bool enter = keyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
+
+            if (!_chatOpen && enter)
+            {
+                _chatOpen = true;
+                _chatDraft = string.Empty;
+                e.Use();
+            }
+            else if (_chatOpen && enter)
+            {
+                SendChat(_chatDraft);
+                _chatOpen = false;
+                e.Use();
+            }
+            else if (_chatOpen && keyDown && e.keyCode == KeyCode.Escape)
+            {
+                _chatOpen = false;
+                e.Use();
+            }
+
+            const float width = 420f;
+            const float lineHeight = 18f;
+            float logHeight = (ChatLogLines * lineHeight) + 10f;
+            var log = new Rect(10f, Screen.height - 100f - logHeight, width, logHeight);
+
+            if (_chatLog.Count > 0 || _chatOpen)
+            {
+                GUI.Box(log, GUIContent.none);
+                float y = log.yMax - 5f - (_chatLog.Count * lineHeight);
+                for (int i = 0; i < _chatLog.Count; i++)
+                {
+                    GUI.Label(new Rect(log.x + 6f, y + (i * lineHeight), width - 12f, lineHeight), _chatLog[i], _chatLineStyle);
+                }
+            }
+
+            if (_chatOpen)
+            {
+                GUI.SetNextControlName(ChatControl);
+                _chatDraft = GUI.TextField(new Rect(log.x, log.yMax + 4f, width, 22f), _chatDraft, ProtocolConstants.MaxChatBytes);
+                GUI.FocusControl(ChatControl);
+            }
+            else if (_chatLog.Count == 0)
+            {
+                GUI.Label(new Rect(log.x, log.yMax - 20f, width, 20f), "Enter: chat", _overlayStyle);
+            }
+        }
+
+        /// <summary>El servidor valida y limita el ritmo; aquí solo se evita mandar lo que seguro rechazaría.</summary>
+        private void SendChat(string text)
+        {
+            text = text.Trim();
+            if (text.Length == 0 || _transport == null)
+            {
+                return;
+            }
+
+            if (System.Text.Encoding.UTF8.GetByteCount(text) > ProtocolConstants.MaxChatBytes)
+            {
+                ShowHint("mensaje demasiado largo");
+                return;
+            }
+
+            byte[] bytes = MessageCodec.EncodeChatSend(new ChatSendMessage(text));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
         /// <summary>

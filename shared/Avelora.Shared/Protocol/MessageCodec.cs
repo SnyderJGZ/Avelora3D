@@ -34,6 +34,7 @@ namespace Avelora.Shared.Protocol
         private const int UnequipSize = 1;
         private const int RejectSize = 1 + 1;
         private const int ProgressSize = 1 + 1 + 4 + 4 + 4;
+        private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
@@ -520,6 +521,51 @@ namespace Avelora.Shared.Protocol
 
             message = new UnequipMessage();
             return true;
+        }
+
+        /// <summary>Codifica ChatSend: tipo y cadena UTF-8 con longitud uint16.</summary>
+        public static byte[] EncodeChatSend(in ChatSendMessage message)
+        {
+            string text = message.Text ?? string.Empty;
+            int byteCount = Encoding.UTF8.GetByteCount(text);
+            RequireStringLength(byteCount, ProtocolConstants.MaxChatBytes, nameof(message.Text));
+
+            var buffer = new byte[1 + 2 + byteCount];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.ChatSend);
+            writer.WriteString(text, ProtocolConstants.MaxChatBytes);
+            return buffer;
+        }
+
+        /// <summary>Lee ChatSend; rechaza texto mayor de 120 bytes, UTF-8 roto y longitudes erróneas.</summary>
+        public static bool TryReadChatSend(byte[] buffer, int offset, int length, out ChatSendMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.ChatSend) || length < 3)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                string text = reader.ReadString(ProtocolConstants.MaxChatBytes);
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ChatSendMessage(text);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+            catch (DecoderFallbackException)
+            {
+                return false;
+            }
         }
 
         // ---------------------------------------------------------------- servidor → cliente
@@ -1054,6 +1100,70 @@ namespace Avelora.Shared.Protocol
                 return true;
             }
             catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Codifica Chat: tipo, id de entidad y nombre/texto con sus longitudes UTF-8 uint16.
+        /// </summary>
+        public static byte[] EncodeChat(in ChatMessage message)
+        {
+            string name = message.SenderName ?? string.Empty;
+            string text = message.Text ?? string.Empty;
+            RequireStringLength(
+                Encoding.UTF8.GetByteCount(name),
+                ProtocolConstants.MaxChatNameBytes,
+                nameof(message.SenderName));
+            RequireStringLength(
+                Encoding.UTF8.GetByteCount(text),
+                ProtocolConstants.MaxChatBytes,
+                nameof(message.Text));
+
+            int size = ChatHeaderSize + 2 + Encoding.UTF8.GetByteCount(name) + 2 + Encoding.UTF8.GetByteCount(text);
+            if (size > ProtocolConstants.MaxMessageSize)
+            {
+                throw new ArgumentException("El mensaje de chat supera el tope del protocolo.", nameof(message));
+            }
+
+            var buffer = new byte[size];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Chat);
+            writer.WriteInt32(message.SenderEntityId);
+            writer.WriteString(name, ProtocolConstants.MaxChatNameBytes);
+            writer.WriteString(text, ProtocolConstants.MaxChatBytes);
+            return buffer;
+        }
+
+        /// <summary>Lee Chat y valida longitudes, UTF-8 y tamaño exacto.</summary>
+        public static bool TryReadChat(byte[] buffer, int offset, int length, out ChatMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.Chat) || length < ChatHeaderSize + 4)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                int senderEntityId = reader.ReadInt32();
+                string senderName = reader.ReadString(ProtocolConstants.MaxChatNameBytes);
+                string text = reader.ReadString(ProtocolConstants.MaxChatBytes);
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ChatMessage(senderEntityId, senderName, text);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+            catch (DecoderFallbackException)
             {
                 return false;
             }

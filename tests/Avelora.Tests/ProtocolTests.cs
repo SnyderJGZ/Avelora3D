@@ -834,5 +834,63 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadProgress(bytes, 0, bytes.Length - 1, out _));
             Assert.False(MessageCodec.TryReadProgress(bytes, 0, bytes.Length + 1, out _));
         }
+
+        [Fact]
+        public void ChatSend_Va_Y_Vuelve_Y_Rechaza_Texto_Excesivo_O_Longitudes_Invalidas()
+        {
+            var original = new ChatSendMessage("  Hola, mundo  ");
+            byte[] bytes = MessageCodec.EncodeChatSend(original);
+
+            Assert.Equal((byte)8, bytes[0]);
+            Assert.True(MessageCodec.TryReadChatSend(bytes, 0, bytes.Length, out ChatSendMessage decoded));
+            Assert.Equal(original.Text, decoded.Text);
+            Assert.False(MessageCodec.TryReadChatSend(bytes, 0, bytes.Length - 1, out _));
+
+            byte[] oversized = { (byte)MessageType.ChatSend, 121, 0 };
+            Array.Resize(ref oversized, 3 + 121);
+            Assert.False(MessageCodec.TryReadChatSend(oversized, 0, oversized.Length, out _));
+
+            byte[] brokenUtf8 = { (byte)MessageType.ChatSend, 1, 0, 0xFF };
+            Assert.False(MessageCodec.TryReadChatSend(brokenUtf8, 0, brokenUtf8.Length, out _));
+
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeChatSend(
+                new ChatSendMessage(new string('a', ProtocolConstants.MaxChatBytes + 1))));
+        }
+
+        [Fact]
+        public void Chat_Va_Y_Vuelve_Y_Rechaza_Nombres_Textos_Y_Longitudes_Invalidos()
+        {
+            var original = new ChatMessage(1234, "Personaje", "¡Hola!");
+            byte[] bytes = MessageCodec.EncodeChat(original);
+
+            Assert.Equal((byte)17, bytes[0]);
+            Assert.True(MessageCodec.TryReadChat(bytes, 0, bytes.Length, out ChatMessage decoded));
+            Assert.Equal(original.SenderEntityId, decoded.SenderEntityId);
+            Assert.Equal(original.SenderName, decoded.SenderName);
+            Assert.Equal(original.Text, decoded.Text);
+            Assert.False(MessageCodec.TryReadChat(bytes, 0, bytes.Length - 1, out _));
+
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeChat(
+                new ChatMessage(1, new string('n', ProtocolConstants.MaxChatNameBytes + 1), "hola")));
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeChat(
+                new ChatMessage(1, "nombre", new string('t', ProtocolConstants.MaxChatBytes + 1))));
+
+            byte[] oversizedName = new byte[1 + 4 + 2 + 25 + 2];
+            oversizedName[0] = (byte)MessageType.Chat;
+            oversizedName[1] = 1;
+            oversizedName[5] = 25;
+            for (int i = 0; i < 25; i++)
+            {
+                oversizedName[7 + i] = (byte)'n';
+            }
+            Assert.False(MessageCodec.TryReadChat(oversizedName, 0, oversizedName.Length, out _));
+            byte[] oversizedText = new byte[1 + 4 + 2 + 1 + 2 + 121];
+            oversizedText[0] = (byte)MessageType.Chat;
+            oversizedText[1] = 1;
+            oversizedText[5] = 1;
+            oversizedText[7] = (byte)'n';
+            oversizedText[8] = 121;
+            Assert.False(MessageCodec.TryReadChat(oversizedText, 0, oversizedText.Length, out _));
+        }
     }
 }

@@ -29,6 +29,9 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: guardar el arma equipada en el inventario (I-05).</summary>
         Unequip = 7,
 
+        /// <summary>Cliente → servidor: enviar texto al chat de la zona (I-07).</summary>
+        ChatSend = 8,
+
         /// <summary>Servidor → cliente: aceptación del saludo con la identidad y el punto de aparición.</summary>
         Welcome = 10,
 
@@ -52,5 +55,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: nivel, experiencia y vida máxima (I-06).</summary>
         Progress = 16,
+
+        /// <summary>Servidor → cliente: mensaje del chat de la zona (I-07).</summary>
+        Chat = 17,
     }
 }

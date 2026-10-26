@@ -97,6 +97,9 @@ namespace Avelora.Server.Diagnostics
                 "  Niveles       : máximo " + levelTable.MaxLevel + ", vida/nivel +" +
                 levelTable.HealthPerLevel + ", daño/nivel +" + levelTable.DamagePerLevel);
             Console.WriteLine(
+                "  Chat          : zona, máx " + config.ChatMaxBytes + " B UTF-8, ráfaga " +
+                config.ChatBurst + ", reposición " + Invariant(config.ChatPerSecond, "0.##") + "/s");
+            Console.WriteLine(
                 "  Objetos       : huecos " + config.InventorySlots +
                 ", catálogo " + (string.IsNullOrWhiteSpace(config.ItemsPath) ? "desactivado" : config.ItemsPath) +
                 ", suelo " + Invariant(config.GroundItemSeconds, "0.#") + " s (" +
@@ -198,6 +201,13 @@ namespace Avelora.Server.Diagnostics
                 " guardados=" + network.CharactersSaved +
                 " fallos=" + network.SaveFailures +
                 " pendientes=" + network.PendingSaves);
+
+            Console.WriteLine(
+                "            chat: chat_recibidos=" + network.ChatReceived +
+                " chat_entregados=" + network.ChatDelivered +
+                " chat_rech_invalido=" + network.ChatRejectedInvalid +
+                " chat_rech_largo=" + network.ChatRejectedLong +
+                " chat_rech_rapido=" + network.ChatRejectedFast);
 
             if (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError))
             {
@@ -333,6 +343,12 @@ namespace Avelora.Server.Diagnostics
                 (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError)
                     ? ", último error: " + network.SaveLastError
                     : string.Empty));
+            Console.WriteLine(
+                "  Chat            : chat_recibidos=" + network.ChatReceived +
+                ", chat_entregados=" + network.ChatDelivered +
+                ", chat_rech_invalido=" + network.ChatRejectedInvalid +
+                ", chat_rech_largo=" + network.ChatRejectedLong +
+                ", chat_rech_rapido=" + network.ChatRejectedFast);
             Console.WriteLine("  Jugadores       : " + zone.Players.Count);
             Console.WriteLine("  Código de salida: " + exitCode);
         }
