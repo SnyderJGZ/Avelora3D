@@ -606,22 +606,35 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             using var saves = new CharacterSaveService(repository);
 
-            Vec2 last = default;
-
-            for (int i = 0; i < 5; i++)
+            try
             {
-                last = new Vec2(i, -i);
-                saves.Enqueue(NewCharacter(i + 1, last));
+                // Se espera a que el hilo quede bloqueado escribiendo la primera foto: así las
+                // siguientes caen seguro en la cola, sin carrera con el hilo de guardado.
+                saves.Enqueue(NewCharacter(1, new Vec2(-1, 1)));
+                Assert.True(repository.Entered.Wait(TimeSpan.FromSeconds(5)));
+
+                Vec2 last = default;
+
+                for (int i = 0; i < 5; i++)
+                {
+                    last = new Vec2(i, -i);
+                    saves.Enqueue(NewCharacter(1, last));
+                }
+
+                Assert.Equal(1, saves.Pending);
+                repository.Gate.Set();
+
+                Assert.True(saves.Flush(TimeSpan.FromSeconds(5)));
+                Assert.Equal(0, saves.Pending);
+                Assert.Equal(2, repository.Saved.Count);
+                Assert.Equal(last, repository.Saved[1].Position);
+                Assert.Equal(0L, saves.Failed);
             }
-
-            Assert.True(saves.Pending >= 1);
-            repository.Gate.Set();
-
-            Assert.True(saves.Flush(TimeSpan.FromSeconds(5)));
-            Assert.Equal(0, saves.Pending);
-            Assert.True(repository.Saved.Count >= 1);
-            Assert.Equal(last, repository.Saved[repository.Saved.Count - 1].Position);
-            Assert.Equal(0L, saves.Failed);
+            finally
+            {
+                // Si un Assert falla con la compuerta cerrada, Dispose esperaría 10 s al hilo.
+                repository.Gate.Set();
+            }
         }
 
         [Fact]
@@ -1175,6 +1188,9 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             public ManualResetEventSlim Gate { get; } = new ManualResetEventSlim(true);
 
+            /// <summary>Se activa en cuanto el hilo de guardado entra en <see cref="SaveCharacter"/>.</summary>
+            public ManualResetEventSlim Entered { get; } = new ManualResetEventSlim(false);
+
             public List<CharacterRecord> Saved { get; } = new List<CharacterRecord>();
 
             public void Initialize()
@@ -1198,6 +1214,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             public void SaveCharacter(CharacterRecord character)
             {
+                Entered.Set();
                 Gate.Wait();
 
                 lock (_gate)

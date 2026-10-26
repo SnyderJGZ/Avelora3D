@@ -39,7 +39,9 @@ namespace Avelora.Tests
             Assert.Equal(1, proxy.ClientDatagrams);
             Assert.Equal(1, proxy.ForwardedToServer);
             Assert.Equal(1, proxy.ServerDatagrams);
-            Assert.Equal(1, proxy.ForwardedToClient);
+
+            // El proxy cuenta la entrega después de SendTo: el eco puede llegar antes que el contador.
+            Assert.True(WaitUntil(() => proxy.ForwardedToClient == 1, TimeSpan.FromSeconds(2)));
             Assert.Equal(0, proxy.Dropped);
         }
 
