@@ -29,8 +29,12 @@ namespace Avelora.Tests
             float tolerance = Tolerance,
             double cooldownSeconds = CooldownSeconds,
             ItemCatalog? items = null,
-            LevelTable? levels = null)
+            LevelTable? levels = null,
+            ClassCatalog? classes = null)
         {
+            classes ??= ClassCatalog.Default;
+            classes.Find(1)!.Unarmed!.Range = range;
+            classes.Find(1)!.Unarmed!.CooldownSeconds = cooldownSeconds;
             return new Zone(
                 1,
                 MapCollisionGrid.AllWalkable(40, 40),
@@ -46,7 +50,8 @@ namespace Avelora.Tests
                 new AttackQueue(256),
                 new CombatSettings(damage, range, tolerance, cooldownSeconds),
                 items: items,
-                levels: levels);
+                levels: levels,
+                classes: classes);
         }
 
         private static ItemCatalog WeaponCatalog() => new ItemCatalog
@@ -58,7 +63,14 @@ namespace Avelora.Tests
             },
         };
 
-        private static NpcEntity AddNpc(Zone zone, int id, Vec2 position, int maxHealth = 30, long respawnTicks = 200)
+        private static NpcEntity AddNpc(
+            Zone zone,
+            int id,
+            Vec2 position,
+            int maxHealth = 30,
+            long respawnTicks = 200,
+            int defense = 0,
+            int magicResist = 0)
         {
             var npc = new NpcEntity(
                 id,
@@ -69,7 +81,9 @@ namespace Avelora.Tests
                 nextDirectionChangeTick: long.MaxValue,
                 maxHealth,
                 respawnTicks,
-                spawnerIndex: -1)
+                spawnerIndex: -1,
+                defense: defense,
+                magicResist: magicResist)
             {
                 Position = position,
                 HalfSize = new Vec2(0.35f, 0.35f),
@@ -94,6 +108,7 @@ namespace Avelora.Tests
                         HalfHeight = 0.35f,
                         MaxHealth = maxHealth,
                         Experience = 20,
+                        Level = 1,
                         RespawnSeconds = respawnSeconds,
                         AggroRadius = 0f,
                         LeashRadius = 8f,
@@ -198,7 +213,7 @@ namespace Avelora.Tests
 
             Assert.Equal(1, inside.AttacksOk);
             Assert.Equal(0, inside.RejectedAttackDistance);
-            Assert.Equal(20, target.Health);
+            Assert.Equal(18, target.Health);
 
             Zone outside = NewZone(range: 1.25f);
             PlayerEntity farAttacker = outside.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -238,7 +253,7 @@ namespace Avelora.Tests
             zone.Tick();
 
             Assert.Equal(2, zone.AttacksOk);
-            Assert.Equal(980, npc.Health);
+            Assert.Equal(976, npc.Health);
         }
 
         [Fact]
@@ -251,7 +266,7 @@ namespace Avelora.Tests
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(986, npc.Health);
+            Assert.Equal(984, npc.Health);
             Assert.Equal(1, zone.AttacksWithWeapon);
 
             for (int tick = 1; tick <= 15; tick++)
@@ -263,7 +278,7 @@ namespace Avelora.Tests
             Assert.Equal(15, zone.RejectedAttackCooldown);
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(972, npc.Health);
+            Assert.Equal(968, npc.Health);
             Assert.Equal(2, zone.AttacksWithWeapon);
         }
 
@@ -277,7 +292,7 @@ namespace Avelora.Tests
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(978, npc.Health);
+            Assert.Equal(976, npc.Health);
 
             for (int tick = 1; tick <= 23; tick++)
             {
@@ -288,7 +303,7 @@ namespace Avelora.Tests
             Assert.Equal(23, zone.RejectedAttackCooldown);
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(956, npc.Health);
+            Assert.Equal(952, npc.Health);
             Assert.Equal(2, zone.AttacksWithWeapon);
         }
 
@@ -297,8 +312,6 @@ namespace Avelora.Tests
         {
             var levels = new LevelTable
             {
-                HealthPerLevel = 15,
-                DamagePerLevel = 1,
                 ExperienceToNext = new[] { 100, 150 },
             };
 
@@ -403,7 +416,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Jugador_Sin_Arma_Sigue_Usando_Las_Reglas_De_Punos()
+        public void Jugador_Sin_Arma_Aplica_Daño_Base_Mas_Atributo_Principal()
         {
             Zone zone = NewZone(damage: 10, range: 1.2f, tolerance: 0.5f, cooldownSeconds: 0.8d, items: WeaponCatalog());
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -412,8 +425,29 @@ namespace Avelora.Tests
             Attack(zone, attacker, npc);
             zone.Tick();
 
-            Assert.Equal(990, npc.Health);
+            Assert.Equal(988, npc.Health);
             Assert.Equal(0, zone.AttacksWithWeapon);
+        }
+
+        [Fact]
+        public void Ataques_Fisicos_Y_Magicos_Usan_La_Defensa_Y_Resistencia_Correspondientes()
+        {
+            Zone physicalZone = NewZone();
+            PlayerEntity warrior = physicalZone.SpawnPlayer(
+                1, new Vec2(10, 10), new Vec2(0.4f, 0.4f), 8);
+            NpcEntity armored = AddNpc(physicalZone, 100, new Vec2(11, 10), defense: 20);
+            Attack(physicalZone, warrior, armored);
+            physicalZone.Tick();
+            Assert.Equal(20, armored.Health); // floor(12 × 100 / 120) = 10
+
+            Zone magicalZone = NewZone();
+            PlayerEntity mage = magicalZone.SpawnPlayer(
+                1, new Vec2(10, 10), new Vec2(0.4f, 0.4f), 8, classId: 2);
+            NpcEntity resistant = AddNpc(
+                magicalZone, 100, new Vec2(11, 10), magicResist: 20);
+            Attack(magicalZone, mage, resistant);
+            magicalZone.Tick();
+            Assert.Equal(19, resistant.Health); // floor(14 × 100 / 120) = 11
         }
 
         [Fact]
@@ -448,13 +482,13 @@ namespace Avelora.Tests
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(20, npc.Health);
+            Assert.Equal(18, npc.Health);
             Assert.NotEqual(EntityAction.Dead, npc.Action);
 
             Advance(zone, 15);
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(10, npc.Health);
+            Assert.Equal(6, npc.Health);
             Assert.NotEqual(EntityAction.Dead, npc.Action);
 
             Advance(zone, 15);

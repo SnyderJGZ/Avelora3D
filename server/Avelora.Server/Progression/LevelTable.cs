@@ -6,7 +6,7 @@ using Avelora.Server.Entities;
 
 namespace Avelora.Server.Progression
 {
-    /// <summary>Tabla única de umbrales y fórmulas de nivel, vida y daño (I-06).</summary>
+    /// <summary>Tabla única de umbrales de experiencia y puntos por nivel (I-08).</summary>
     public sealed class LevelTable
     {
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -19,16 +19,16 @@ namespace Avelora.Server.Progression
         /// <summary>Reglas de nivel predeterminadas para zonas y repositorios aislados.</summary>
         public static LevelTable Default => new LevelTable
         {
-            HealthPerLevel = 15,
-            DamagePerLevel = 1,
-            ExperienceToNext = new[] { 100, 150, 225, 340, 500, 750, 1100, 1650, 2500 },
+            PointsPerLevel = 3,
+            ExperienceToNext = new[]
+            {
+                100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200,
+                8000, 10000, 12500, 15500, 19000, 23000, 27500, 32500, 38000, 44000, 51000, 59000,
+            },
         };
 
-        /// <summary>Vida máxima adicional por cada nivel por encima del primero.</summary>
-        public int HealthPerLevel { get; set; } = -1;
-
-        /// <summary>Daño adicional por cada nivel por encima del primero.</summary>
-        public int DamagePerLevel { get; set; } = -1;
+        /// <summary>Puntos repartibles que se ganan en cada nivel, incluido el primero.</summary>
+        public int PointsPerLevel { get; set; } = -1;
 
         /// <summary>Umbrales para pasar del nivel índice+1 al siguiente.</summary>
         public int[]? ExperienceToNext { get; set; }
@@ -49,7 +49,24 @@ namespace Avelora.Server.Progression
                 throw new FileNotFoundException("No se encuentra el archivo de niveles '" + path + "'.", path);
             }
 
-            LevelTable table = JsonSerializer.Deserialize<LevelTable>(File.ReadAllText(path), JsonOptions)
+            string json = File.ReadAllText(path);
+            using (JsonDocument document = JsonDocument.Parse(json))
+            {
+                if (document.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty property in document.RootElement.EnumerateObject())
+                    {
+                        if (string.Equals(property.Name, "healthPerLevel", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(property.Name, "damagePerLevel", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException(
+                                "levels.json: " + property.Name + " se trasladó a classes.json y ya no se admite.");
+                        }
+                    }
+                }
+            }
+
+            LevelTable table = JsonSerializer.Deserialize<LevelTable>(json, JsonOptions)
                 ?? throw new InvalidOperationException("levels.json está vacío o no contiene un objeto.");
             table.Validate();
             return table;
@@ -58,19 +75,14 @@ namespace Avelora.Server.Progression
         /// <summary>Valida todos los campos de la tabla.</summary>
         public void Validate()
         {
-            if (HealthPerLevel < 0 || HealthPerLevel > 10000)
+            if (PointsPerLevel < 0 || PointsPerLevel > 100)
             {
-                throw new InvalidOperationException("levels.json: healthPerLevel debe estar entre 0 y 10000.");
+                throw new InvalidOperationException("levels.json: pointsPerLevel debe estar entre 0 y 100.");
             }
 
-            if (DamagePerLevel < 0 || DamagePerLevel > 10000)
+            if (ExperienceToNext == null || ExperienceToNext.Length != 24)
             {
-                throw new InvalidOperationException("levels.json: damagePerLevel debe estar entre 0 y 10000.");
-            }
-
-            if (ExperienceToNext == null || ExperienceToNext.Length < 1 || ExperienceToNext.Length > 254)
-            {
-                throw new InvalidOperationException("levels.json: experienceToNext debe tener entre 1 y 254 valores.");
+                throw new InvalidOperationException("levels.json: experienceToNext debe tener exactamente 24 valores (nivel máximo 25).");
             }
 
             for (int i = 0; i < ExperienceToNext.Length; i++)
@@ -90,39 +102,20 @@ namespace Avelora.Server.Progression
             return level == MaxLevel ? 0 : ExperienceToNext![level - 1];
         }
 
-        /// <summary>Calcula la vida máxima: vida base + (nivel − 1) × healthPerLevel.</summary>
-        public int GetMaxHealth(int baseMaxHealth, int level)
-        {
-            RequireLevel(level);
-            if (baseMaxHealth < 1)
-            {
-                throw new ArgumentOutOfRangeException(nameof(baseMaxHealth));
-            }
-
-            return checked(baseMaxHealth + ((level - 1) * HealthPerLevel));
-        }
-
-        /// <summary>Calcula el daño: daño base + (nivel − 1) × damagePerLevel.</summary>
-        public int GetAttackDamage(int baseDamage, int level)
-        {
-            RequireLevel(level);
-            if (baseDamage < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(baseDamage));
-            }
-
-            return checked(baseDamage + ((level - 1) * DamagePerLevel));
-        }
-
         /// <summary>
         /// Aplica experiencia ganada al jugador. Devuelve los niveles subidos y rellena la vida en
         /// cada subida; el sobrante se conserva salvo al alcanzar el nivel máximo.
         /// </summary>
-        public int AddExperience(PlayerEntity player, int amount, int baseMaxHealth)
+        public int AddExperience(PlayerEntity player, int amount, ClassCatalog classes)
         {
             if (player == null)
             {
                 throw new ArgumentNullException(nameof(player));
+            }
+
+            if (classes == null)
+            {
+                throw new ArgumentNullException(nameof(classes));
             }
 
             RequireLevel(player.Level);
@@ -142,7 +135,16 @@ namespace Avelora.Server.Progression
             {
                 experience -= GetExperienceToNext(player.Level);
                 player.Level++;
-                player.MaxHealth = GetMaxHealth(baseMaxHealth, player.Level);
+                DerivedCharacterStats stats = CharacterStats.Calculate(
+                    classes,
+                    player.ClassId,
+                    player.Level,
+                    player.AllocStr,
+                    player.AllocDex,
+                    player.AllocInt,
+                    player.AllocVit);
+                player.MaxHealth = stats.MaxHealth;
+                player.MaxMana = stats.MaxResource;
                 player.Health = player.MaxHealth;
                 levelsGained++;
             }

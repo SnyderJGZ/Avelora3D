@@ -38,6 +38,7 @@ namespace Avelora.Tests
                         HalfHeight = 0.35f,
                         MaxHealth = 30,
                         Experience = 20,
+                        Level = 1,
                         RespawnSeconds = 10,
                         AggroRadius = 0,
                         LeashRadius = 8,
@@ -277,21 +278,19 @@ namespace Avelora.Tests
         {
             var levels = new LevelTable
             {
-                HealthPerLevel = 15,
-                DamagePerLevel = 1,
                 ExperienceToNext = new[] { 100, 150 },
             };
             Zone zone = NewZone(slots: 1, levels: levels);
             PlayerEntity player = zone.SpawnPlayer(
                 1, new Vec2(5f, 5f), new Vec2(0.4f, 0.4f), 8, level: 3);
-            player.Health = 120;
+            player.Health = 90;
             player.Inventory[0] = new InventorySlot(3002, 1);
             zone.ItemActions!.TryEnqueue(ItemAction.UseItem(player.Id, 0));
 
             zone.Tick();
 
-            Assert.Equal(130, player.MaxHealth);
-            Assert.Equal(130, player.Health);
+            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(100, player.Health);
         }
 
         [Fact]

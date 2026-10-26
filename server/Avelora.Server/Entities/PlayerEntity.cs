@@ -53,8 +53,22 @@ namespace Avelora.Server.Entities
         /// <summary>Nivel persistente del personaje (I-06).</summary>
         public int Level { get; set; } = 1;
 
+        /// <summary>Identificador de clase declarada en classes.json (I-08).</summary>
+        public int ClassId { get; set; } = 1;
+
+        public int AllocStr { get; set; }
+        public int AllocDex { get; set; }
+        public int AllocInt { get; set; }
+        public int AllocVit { get; set; }
+
         /// <summary>Experiencia acumulada dentro del nivel actual (I-06).</summary>
         public int Experience { get; set; }
+
+        /// <summary>Recurso actual persistido en la columna mana.</summary>
+        public int Mana { get; set; } = 100;
+
+        /// <summary>Máximo del recurso definido por la clase.</summary>
+        public int MaxMana { get; set; } = 100;
 
         /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
         internal bool ProgressChanged { get; set; }

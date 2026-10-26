@@ -54,8 +54,9 @@ namespace Avelora.Tests
                     Speed = 2f,
                     HalfWidth = 0.35f,
                     HalfHeight = 0.35f,
-                    MaxHealth = 30,
-                    Experience = 20,
+                        MaxHealth = 30,
+                        Experience = 20,
+                        Level = 1,
                     RespawnSeconds = 10f,
                     AggroRadius = 0f,
                     LeashRadius = 8f,
@@ -96,7 +97,7 @@ namespace Avelora.Tests
         {
             string path = WriteTempJson(@"{
   ""types"": [
-    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""experience"": 20, ""respawnSeconds"": 10, ""aggroRadius"": 4.0, ""leashRadius"": 8.0, ""attackDamage"": 8, ""attackRange"": 1.0, ""attackCooldownSeconds"": 1.5 }
+    { ""id"": 2001, ""name"": ""Orco"", ""speed"": 2.0, ""halfWidth"": 0.35, ""halfHeight"": 0.35, ""maxHealth"": 30, ""experience"": 20, ""level"": 1, ""respawnSeconds"": 10, ""aggroRadius"": 4.0, ""leashRadius"": 8.0, ""attackDamage"": 8, ""attackRange"": 1.0, ""attackCooldownSeconds"": 1.5 }
   ],
   ""spawners"": [
     { ""typeId"": 2001, ""x"": 3.5, ""y"": 1.5, ""count"": 3, ""wanderRadius"": 3.0 },
@@ -126,6 +127,50 @@ namespace Avelora.Tests
         }
 
         [Theory]
+        [InlineData(0, 0, 0, "level")]
+        [InlineData(256, 0, 0, "level")]
+        [InlineData(1, -1, 0, "defense")]
+        [InlineData(1, 0, 100001, "magicResist")]
+        public void Level_Y_Defensas_De_Pnj_Validan_Sus_Rangos(
+            int level,
+            int defense,
+            int magicResist,
+            string expected)
+        {
+            NpcCatalog catalog = Catalog();
+            catalog.Types[0].Level = level;
+            catalog.Types[0].Defense = defense;
+            catalog.Types[0].MagicResist = magicResist;
+
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                () => catalog.Validate(MapCollisionGrid.AllWalkable(20, 20)));
+            Assert.Contains(expected, error.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void Npc_Json_Sin_Nivel_Obligatorio_No_Valida()
+        {
+            string path = WriteTempJson("""
+                { "types": [
+                  { "id": 2001, "name": "Orco", "speed": 2, "halfWidth": 0.35, "halfHeight": 0.35,
+                    "maxHealth": 30, "experience": 20, "respawnSeconds": 10, "aggroRadius": 0,
+                    "leashRadius": 8, "attackDamage": 8, "attackRange": 1, "attackCooldownSeconds": 1.5 }
+                ], "spawners": [] }
+                """);
+            try
+            {
+                NpcCatalog catalog = NpcCatalog.Load(path);
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                    () => catalog.Validate(MapCollisionGrid.AllWalkable(20, 20)));
+                Assert.Contains("level", error.Message);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Theory]
         [InlineData("\"experience\": 0", true)]
         [InlineData("\"experience\": -1", true)]
         [InlineData("\"experience\": 1000001", true)]
@@ -136,7 +181,7 @@ namespace Avelora.Tests
             string path = WriteTempJson("""
                 { "types": [
                   { "id": 2001, "name": "Orco", "speed": 2, "halfWidth": 0.35, "halfHeight": 0.35,
-                    "maxHealth": 30EXPERIENCE_FIELD, "respawnSeconds": 10, "aggroRadius": 0,
+                    "maxHealth": 30EXPERIENCE_FIELD, "level": 1, "respawnSeconds": 10, "aggroRadius": 0,
                     "leashRadius": 8, "attackDamage": 8, "attackRange": 1, "attackCooldownSeconds": 1.5 }
                 ], "spawners": [] }
                 """.Replace("EXPERIENCE_FIELD", experience));

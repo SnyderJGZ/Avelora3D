@@ -129,6 +129,18 @@ namespace Avelora.Server
                 return 2;
             }
 
+            ClassCatalog classes;
+            try
+            {
+                classes = ClassCatalog.Load(config.ResolveClassesPath(configPath));
+            }
+            catch (Exception ex) when (
+                ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)
+            {
+                ConsoleReporter.WriteError("No se pudieron cargar las clases: " + ex.Message);
+                return 2;
+            }
+
             // Enemigos (I-01). Con npcsPath vacío la zona se queda sin PNJ. Con ruta, el archivo
             // tiene que existir y ser válido contra el mapa y el catálogo de objetos.
             NpcCatalog? npcs = null;
@@ -166,7 +178,8 @@ namespace Avelora.Server
                         databasePath,
                         items: items,
                         inventorySlots: config.InventorySlots,
-                        levels: levels);
+                        levels: levels,
+                        classes: classes);
                     repository.Initialize();
                     saves = new CharacterSaveService(repository);
                 }
@@ -237,7 +250,8 @@ namespace Avelora.Server
                 config.PickupRange,
                 config.AttackRangeTolerance,
                 (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
-                levels);
+                levels,
+                classes);
 
             try
             {
@@ -279,7 +293,8 @@ namespace Avelora.Server
                 databasePath,
                 network.KeyFingerprint,
                 npcs,
-                levels);
+                levels,
+                classes);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -49,6 +50,7 @@ namespace Avelora.Server.Simulation
         private readonly MapCollisionGrid _map;
         private readonly EntitySpatialGrid _grid;
         private readonly System.Random _random;
+        private readonly ClassCatalog _classes;
         private readonly List<Entity> _candidates = new List<Entity>(32);
         private long _tick;
 
@@ -60,16 +62,17 @@ namespace Avelora.Server.Simulation
         private long _respawns;
         private long _hits;
 
-        public NpcSystem(MapCollisionGrid map, int seed, EntitySpatialGrid grid)
-            : this(map, new System.Random(seed), grid)
+        public NpcSystem(MapCollisionGrid map, int seed, EntitySpatialGrid grid, ClassCatalog? classes = null)
+            : this(map, new System.Random(seed), grid, classes)
         {
         }
 
-        public NpcSystem(MapCollisionGrid map, System.Random random, EntitySpatialGrid grid)
+        public NpcSystem(MapCollisionGrid map, System.Random random, EntitySpatialGrid grid, ClassCatalog? classes = null)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _random = random ?? throw new ArgumentNullException(nameof(random));
+            _classes = classes ?? ClassCatalog.Default;
         }
 
         /// <summary>Se invoca en el hilo del tick al registrar una muerte, antes de simular PNJ.</summary>
@@ -293,7 +296,10 @@ namespace Avelora.Server.Simulation
                 state.Type.AttackDamage,
                 state.Type.AttackRange,
                 state.Type.AttackCooldownTicks,
-                state.Type.Experience)
+                state.Type.Experience,
+                state.Type.Level,
+                state.Type.Defense,
+                state.Type.MagicResist)
             {
                 MapId = _zoneId,
                 Position = state.Spawner.Position,
@@ -425,7 +431,16 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            target.Health = Math.Max(0, target.Health - npc.AttackDamage);
+            DerivedCharacterStats targetStats = CharacterStats.Calculate(
+                _classes,
+                target.ClassId,
+                target.Level,
+                target.AllocStr,
+                target.AllocDex,
+                target.AllocInt,
+                target.AllocVit);
+            int damage = CharacterStats.MitigateDamage(npc.AttackDamage, targetStats.Defense);
+            target.Health = Math.Max(0, target.Health - damage);
             target.LastDamageTick = _tick;
             target.RegenAccumulator = 0d;
 

@@ -12,6 +12,7 @@
   "databasePath": "data/avelora.db",
   "itemsPath": "items.json",
   "levelsPath": "levels.json",
+  "classesPath": "classes.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "maxGroundItems": 500,

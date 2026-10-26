@@ -1101,7 +1101,13 @@ namespace Avelora.Server.Net
                 _config.InputBufferCapacity,
                 character?.Health ?? 0,
                 character?.Level ?? 1,
-                character?.Experience ?? 0);
+                character?.Experience ?? 0,
+                character?.ClassId ?? 1,
+                character?.AllocStr ?? 0,
+                character?.AllocDex ?? 0,
+                character?.AllocInt ?? 0,
+                character?.AllocVit ?? 0,
+                character?.Mana ?? -1);
 
             if (character != null)
             {
@@ -1250,9 +1256,15 @@ namespace Avelora.Server.Net
             }
 
             session.Character = session.Character
-                .WithState(zone.Id, position, _mapHash, health)
+                .WithState(zone.Id, position, _mapHash, health, player.Mana)
                 .WithInventory(inventory.ToArray())
                 .WithEquippedItem(player.EquippedWeaponId)
+                .WithClassAndAllocations(
+                    player.ClassId,
+                    player.AllocStr,
+                    player.AllocDex,
+                    player.AllocInt,
+                    player.AllocVit)
                 .WithProgress(player.Level, player.Experience);
             _saves.Enqueue(session.Character);
         }

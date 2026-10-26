@@ -34,7 +34,10 @@ namespace Avelora.Server.Entities
             int attackDamage = 1,
             float attackRange = 1f,
             long attackCooldownTicks = 30,
-            int experienceReward = 0)
+            int experienceReward = 0,
+            int level = 1,
+            int defense = 0,
+            int magicResist = 0)
             : base(id, EntityKind.Npc)
         {
             if (maxHealth < 1)
@@ -80,6 +83,16 @@ namespace Avelora.Server.Entities
                 throw new ArgumentOutOfRangeException(nameof(experienceReward));
             }
 
+            if (level < 1 || level > byte.MaxValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(level));
+            }
+
+            if (defense < 0 || defense > 100_000 || magicResist < 0 || magicResist > 100_000)
+            {
+                throw new ArgumentOutOfRangeException(nameof(defense));
+            }
+
             TypeId = typeId;
             Speed = speed;
             Home = home;
@@ -94,6 +107,9 @@ namespace Avelora.Server.Entities
             AttackRange = attackRange;
             AttackCooldownTicks = attackCooldownTicks;
             ExperienceReward = experienceReward;
+            Level = level;
+            Defense = defense;
+            MagicResist = magicResist;
             Health = maxHealth;
         }
 
@@ -126,6 +142,15 @@ namespace Avelora.Server.Entities
 
         /// <summary>Experiencia que otorga al morir.</summary>
         public int ExperienceReward { get; }
+
+        /// <summary>Nivel del tipo de enemigo.</summary>
+        public int Level { get; }
+
+        /// <summary>Defensa física del enemigo.</summary>
+        public int Defense { get; }
+
+        /// <summary>Resistencia mágica del enemigo.</summary>
+        public int MagicResist { get; }
 
         /// <summary>Id del jugador que dio el golpe mortal, o -1 si no murió por combate de jugador.</summary>
         public int KillerPlayerId { get; internal set; } = -1;

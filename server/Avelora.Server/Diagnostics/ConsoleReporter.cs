@@ -37,7 +37,8 @@ namespace Avelora.Server.Diagnostics
             string? databasePath,
             string serverKeyFingerprint,
             Avelora.Server.Npcs.NpcCatalog? npcs = null,
-            LevelTable? levels = null)
+            LevelTable? levels = null,
+            ClassCatalog? classes = null)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -94,8 +95,8 @@ namespace Avelora.Server.Diagnostics
                 Invariant(config.PlayerRegenDelaySeconds, "0.#") + " s sin daño");
             LevelTable levelTable = levels ?? LevelTable.Default;
             Console.WriteLine(
-                "  Niveles       : máximo " + levelTable.MaxLevel + ", vida/nivel +" +
-                levelTable.HealthPerLevel + ", daño/nivel +" + levelTable.DamagePerLevel);
+                "  Niveles       : máximo " + levelTable.MaxLevel + ", puntos/nivel " + levelTable.PointsPerLevel +
+                ", clases " + (classes?.Classes?.Count ?? ClassCatalog.Default.Classes?.Count ?? 0));
             Console.WriteLine(
                 "  Chat          : zona, máx " + config.ChatMaxBytes + " B UTF-8, ráfaga " +
                 config.ChatBurst + ", reposición " + Invariant(config.ChatPerSecond, "0.##") + "/s");

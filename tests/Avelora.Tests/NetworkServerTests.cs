@@ -225,6 +225,7 @@ namespace Avelora.Tests
                         HalfHeight = 0.35f,
                         MaxHealth = 10,
                         Experience = 20,
+                        Level = 1,
                         RespawnSeconds = 10f,
                         AggroRadius = 0f,
                         LeashRadius = 8f,
@@ -817,13 +818,13 @@ namespace Avelora.Tests
             Assert.Equal((byte)70, wounded.HealthPercent);
             Assert.Equal(EntityAction.None, wounded.Action);
 
-            // El ataque cruza la red y el servidor lo resuelve en el tick siguiente: 11/30 = 37 %.
+            // El ataque cruza la red; los puños del guerrero hacen 12 y dejan 9/30 = 30 %.
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(new AttackMessage(100)));
             SendSnapshots(harness);
 
             SnapshotMessage afterAttack = SnapshotFor(harness, 1);
             EntityState hit = Assert.Single(afterAttack.Entities, e => e.Id == 100);
-            Assert.Equal((byte)37, hit.HealthPercent);
+            Assert.Equal((byte)30, hit.HealthPercent);
             Assert.Equal(EntityAction.None, hit.Action);
 
             EntityState attacker = Assert.Single(afterAttack.Entities, e => e.Id == player.Id);

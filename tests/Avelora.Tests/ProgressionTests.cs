@@ -8,6 +8,18 @@ namespace Avelora.Tests
 {
     public sealed class ProgressionTests
     {
+        private static string Thresholds(int count = 24, int first = 100)
+        {
+            var values = new string[count];
+            Array.Fill(values, "100");
+            if (count > 0) values[0] = first.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return "[" + string.Join(", ", values) + "]";
+        }
+
+        private static string ValidLevels(int points = 3, string? thresholds = null) =>
+            "{ \"pointsPerLevel\": " + points + ", \"experienceToNext\": " +
+            (thresholds ?? Thresholds()) + " }";
+
         private static string WriteLevels(string json)
         {
             string path = Path.Combine(Path.GetTempPath(), "avelora-levels-" + Guid.NewGuid().ToString("N") + ".json");
@@ -18,18 +30,15 @@ namespace Avelora.Tests
         [Fact]
         public void Levels_Json_Valido_Carga_Limites_Y_Formulas()
         {
-            string path = WriteLevels("""
-                { "healthPerLevel": 15, "damagePerLevel": 1, "experienceToNext": [100, 150] }
-                """);
+            string path = WriteLevels(ValidLevels(thresholds: Thresholds(first: 150)));
 
             try
             {
                 LevelTable table = LevelTable.Load(path);
-                Assert.Equal(3, table.MaxLevel);
-                Assert.Equal(100, table.GetExperienceToNext(1));
-                Assert.Equal(0, table.GetExperienceToNext(3));
-                Assert.Equal(130, table.GetMaxHealth(100, 3));
-                Assert.Equal(16, table.GetAttackDamage(14, 3));
+                Assert.Equal(25, table.MaxLevel);
+                Assert.Equal(150, table.GetExperienceToNext(1));
+                Assert.Equal(0, table.GetExperienceToNext(25));
+                Assert.Equal(3, table.PointsPerLevel);
             }
             finally
             {
@@ -38,16 +47,11 @@ namespace Avelora.Tests
         }
 
         [Theory]
-        [InlineData("{ \"healthPerLevel\": -1, \"damagePerLevel\": 1, \"experienceToNext\": [100] }")]
-        [InlineData("{ \"healthPerLevel\": 10001, \"damagePerLevel\": 1, \"experienceToNext\": [100] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": -1, \"experienceToNext\": [100] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 10001, \"experienceToNext\": [100] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 1, \"experienceToNext\": [] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 1, \"experienceToNext\": [0] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 1, \"experienceToNext\": [10000001] }")]
-        public void Levels_Json_Con_Cualquier_Campo_Fuera_De_Rango_Se_Rechaza(string json)
+        [InlineData(-1)]
+        [InlineData(101)]
+        public void Levels_Json_Rechaza_PointsPerLevel_Fuera_De_Rango(int points)
         {
-            string path = WriteLevels(json);
+            string path = WriteLevels(ValidLevels(points));
             try
             {
                 Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
@@ -59,9 +63,31 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Levels_Json_Rechaza_Umbrales_Que_No_Son_24_O_Estan_Fuera_De_Rango()
+        {
+            Assert.Throws<InvalidOperationException>(() => LoadLevels(ValidLevels(thresholds: Thresholds(23))));
+            Assert.Throws<InvalidOperationException>(() => LoadLevels(ValidLevels(thresholds: Thresholds(25))));
+            Assert.Throws<InvalidOperationException>(() => LoadLevels(ValidLevels(thresholds: Thresholds(first: 0))));
+            Assert.Throws<InvalidOperationException>(() => LoadLevels(ValidLevels(thresholds: Thresholds(first: 10_000_001))));
+        }
+
+        private static LevelTable LoadLevels(string json)
+        {
+            string path = WriteLevels(json);
+            try
+            {
+                return LevelTable.Load(path);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
         public void Levels_Json_Sin_Un_Campo_Obligatorio_Se_Rechaza()
         {
-            string path = WriteLevels("{ \"healthPerLevel\": 1, \"experienceToNext\": [100] }");
+            string path = WriteLevels("{ \"pointsPerLevel\": 3 }");
             try
             {
                 Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
@@ -73,9 +99,9 @@ namespace Avelora.Tests
         }
 
         [Theory]
-        [InlineData("{ \"damagePerLevel\": 1, \"experienceToNext\": [100] }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 1 }")]
-        [InlineData("{ \"healthPerLevel\": 1, \"damagePerLevel\": 1, \"experienceToNext\": null }")]
+        [InlineData("{ \"experienceToNext\": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] }")]
+        [InlineData("{ \"pointsPerLevel\": 3 }")]
+        [InlineData("{ \"pointsPerLevel\": 3, \"experienceToNext\": null }")]
         public void Levels_Json_Rechaza_Cada_Campo_Obligatorio_Ausente_O_Nulo(string json)
         {
             string path = WriteLevels(json);
@@ -94,10 +120,14 @@ namespace Avelora.Tests
         {
             var limits = new LevelTable
             {
-                HealthPerLevel = 0,
-                DamagePerLevel = 10000,
-                ExperienceToNext = new[] { 1, 10_000_000 },
+                PointsPerLevel = 0,
+                ExperienceToNext = new int[24],
             };
+            Array.Fill(limits.ExperienceToNext, 1);
+            limits.Validate();
+
+            limits.ExperienceToNext[0] = 10_000_000;
+            limits.PointsPerLevel = 100;
             limits.Validate();
 
             limits.ExperienceToNext = new int[255];
@@ -110,24 +140,22 @@ namespace Avelora.Tests
         {
             var table = new LevelTable
             {
-                HealthPerLevel = 15,
-                DamagePerLevel = 1,
                 ExperienceToNext = new[] { 100, 150, 225 },
             };
             var player = new PlayerEntity(1, 1, 8) { MaxHealth = 100, Health = 20 };
 
-            Assert.Equal(1, table.AddExperience(player, 100, 100));
+            Assert.Equal(1, table.AddExperience(player, 100, ClassCatalog.Default));
             Assert.Equal(2, player.Level);
             Assert.Equal(0, player.Experience);
-            Assert.Equal(115, player.MaxHealth);
-            Assert.Equal(115, player.Health);
+            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(100, player.Health);
 
-            Assert.Equal(0, table.AddExperience(player, 149, 100));
+            Assert.Equal(0, table.AddExperience(player, 149, ClassCatalog.Default));
             Assert.Equal(149, player.Experience);
-            Assert.Equal(1, table.AddExperience(player, 10, 100));
+            Assert.Equal(1, table.AddExperience(player, 10, ClassCatalog.Default));
             Assert.Equal(3, player.Level);
             Assert.Equal(9, player.Experience);
-            Assert.Equal(130, player.Health);
+            Assert.Equal(100, player.Health);
         }
 
         [Fact]
@@ -135,19 +163,53 @@ namespace Avelora.Tests
         {
             var table = new LevelTable
             {
-                HealthPerLevel = 15,
-                DamagePerLevel = 1,
                 ExperienceToNext = new[] { 100, 150 },
             };
             var player = new PlayerEntity(1, 1, 8) { MaxHealth = 100, Health = 1 };
 
-            Assert.Equal(2, table.AddExperience(player, 400, 100));
+            Assert.Equal(2, table.AddExperience(player, 400, ClassCatalog.Default));
             Assert.Equal(3, player.Level);
             Assert.Equal(0, player.Experience);
-            Assert.Equal(130, player.MaxHealth);
-            Assert.Equal(130, player.Health);
-            Assert.Equal(0, table.AddExperience(player, 50, 100));
+            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(100, player.Health);
+            Assert.Equal(0, table.AddExperience(player, 50, ClassCatalog.Default));
             Assert.Equal(0, player.Experience);
+        }
+
+        [Fact]
+        public void Tabla_Por_Defecto_Llega_Al_Nivel_25_Y_No_Acopia_Experiencia_Al_Maximo()
+        {
+            LevelTable table = LevelTable.Default;
+            var player = new PlayerEntity(1, 1, 8) { Health = 1 };
+            int total = 0;
+            for (int i = 0; i < table.ExperienceToNext!.Length; i++) total += table.ExperienceToNext[i];
+
+            Assert.Equal(25, table.MaxLevel);
+            Assert.Equal(24, table.ExperienceToNext.Length);
+            Assert.Equal(24, table.AddExperience(player, total, ClassCatalog.Default));
+            Assert.Equal(25, player.Level);
+            Assert.Equal(0, player.Experience);
+            Assert.Equal(player.MaxHealth, player.Health);
+            Assert.Equal(0, table.AddExperience(player, 500, ClassCatalog.Default));
+            Assert.Equal(0, player.Experience);
+        }
+
+        [Theory]
+        [InlineData("healthPerLevel")]
+        [InlineData("damagePerLevel")]
+        public void Levels_Json_Indica_Que_La_Vida_Y_El_Daño_Se_Trasladaron_A_Classes(string field)
+        {
+            string path = WriteLevels(ValidLevels(thresholds: Thresholds())
+                .Replace("\"experienceToNext\"", "\"" + field + "\": 1, \"experienceToNext\""));
+            try
+            {
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
+                Assert.Contains("classes.json", error.Message);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         }
     }
 }

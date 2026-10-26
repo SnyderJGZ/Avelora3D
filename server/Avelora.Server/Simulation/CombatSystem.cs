@@ -30,13 +30,16 @@ namespace Avelora.Server.Simulation
 
         private readonly CombatSettings _settings;
         private readonly ItemCatalog? _catalog;
-        private readonly LevelTable _levels;
+        private readonly ClassCatalog _classes;
 
-        public CombatSystem(CombatSettings settings, ItemCatalog? catalog = null, LevelTable? levels = null)
+        public CombatSystem(
+            CombatSettings settings,
+            ItemCatalog? catalog = null,
+            ClassCatalog? classes = null)
         {
             _settings = settings;
             _catalog = catalog;
-            _levels = levels ?? LevelTable.Default;
+            _classes = classes ?? ClassCatalog.Default;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -115,7 +118,9 @@ namespace Avelora.Server.Simulation
                 ? _catalog?.Find(attacker.EquippedWeaponId)
                 : null;
             bool hasWeapon = weapon?.IsWeapon == true;
-            float range = (hasWeapon ? weapon!.Range : _settings.Range) + _settings.RangeTolerance;
+            CharacterClass characterClass = _classes.Find(attacker.ClassId)
+                ?? throw new InvalidOperationException("No existe la clase " + attacker.ClassId + " en classes.json.");
+            float range = (hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range) + _settings.RangeTolerance;
 
             if ((dx * dx) + (dy * dy) > range * range)
             {
@@ -128,15 +133,25 @@ namespace Avelora.Server.Simulation
 
             long cooldownTicks = hasWeapon
                 ? Math.Max(1L, (long)Math.Ceiling(weapon!.CooldownSeconds * SimulationConstants.TickRate))
-                : _settings.CooldownTicks;
+                : Math.Max(1L, (long)Math.Ceiling(characterClass.Unarmed!.CooldownSeconds * SimulationConstants.TickRate));
             if (lastAttackTick >= 0 && tick - lastAttackTick < cooldownTicks)
             {
                 RejectedCooldown++;
                 return;
             }
 
-            int baseDamage = hasWeapon ? weapon!.Damage : _settings.Damage;
-            int damage = _levels.GetAttackDamage(baseDamage, attacker.Level);
+            int damage = CharacterStats.GetAttackDamage(
+                _classes,
+                attacker.ClassId,
+                attacker.Level,
+                attacker.AllocStr,
+                attacker.AllocDex,
+                attacker.AllocInt,
+                attacker.AllocVit,
+                hasWeapon ? weapon!.Damage : null,
+                out string damageType);
+            int defense = damageType == "physical" ? target.Defense : target.MagicResist;
+            damage = CharacterStats.MitigateDamage(damage, defense);
             target.Health = Math.Max(0, target.Health - damage);
 
             if (target.Health == 0)

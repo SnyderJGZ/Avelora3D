@@ -48,6 +48,7 @@ namespace Avelora.Tests
                 HalfHeight = 0.35f,
                 MaxHealth = maxHealth,
                 Experience = 20,
+                Level = 1,
                 RespawnSeconds = 10f,
                 AggroRadius = aggroRadius,
                 LeashRadius = leashRadius,
@@ -87,8 +88,13 @@ namespace Avelora.Tests
             float combatRange = 5f,
             float combatTolerance = 0.5f,
             double combatCooldownSeconds = 0.8d,
-            LevelTable? levels = null) =>
-            new Zone(
+            LevelTable? levels = null,
+            ClassCatalog? classes = null)
+        {
+            classes ??= ClassCatalog.Default;
+            classes.Find(1)!.Unarmed!.Range = combatRange;
+            classes.Find(1)!.Unarmed!.CooldownSeconds = combatCooldownSeconds;
+            return new Zone(
                 1,
                 map ?? MapCollisionGrid.AllWalkable(40, 40),
                 new EntityStore(),
@@ -103,15 +109,15 @@ namespace Avelora.Tests
                 new AttackQueue(256),
                 new CombatSettings(combatDamage, combatRange, combatTolerance, combatCooldownSeconds),
                 vitals,
-                levels: levels);
+                levels: levels,
+                classes: classes);
+        }
 
         [Fact]
         public void Reaparicion_Y_Regeneracion_Respetan_La_Vida_Maxima_Del_Nivel()
         {
             var levels = new LevelTable
             {
-                HealthPerLevel = 15,
-                DamagePerLevel = 1,
                 ExperienceToNext = new[] { 100, 150 },
             };
             Zone zone = NewZone(
@@ -124,14 +130,14 @@ namespace Avelora.Tests
             zone.Tick();
             Tick(zone, 10);
 
-            Assert.Equal(130, player.MaxHealth);
-            Assert.Equal(130, player.Health);
+            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(100, player.Health);
             Assert.False(player.IsDead);
 
-            player.Health = 129;
+            player.Health = 99;
             player.LastDamageTick = -1;
             zone.Tick();
-            Assert.Equal(130, player.Health);
+            Assert.Equal(100, player.Health);
         }
 
         private static NpcEntity OnlyNpc(Zone zone)
@@ -293,6 +299,21 @@ namespace Avelora.Tests
 
             Assert.Equal(NpcAiState.Chase, npc.AiState);
             Assert.Equal(player.Id, npc.TargetEntityId);
+        }
+
+        [Fact]
+        public void Golpe_Fisico_De_Pnj_Se_Mitiga_Con_La_Defensa_De_La_Clase()
+        {
+            ClassCatalog classes = ClassCatalog.Default;
+            classes.Find(1)!.Defense = 20;
+            NpcCatalog catalog = Catalog(Orc(aggroRadius: 4f, attackRange: 1f));
+            Zone zone = NewZone(catalog, Vitals(), classes: classes);
+            PlayerEntity player = zone.SpawnPlayer(
+                1, new Vec2(10.5f, 10f), new Vec2(0.4f, 0.4f), 8);
+
+            Tick(zone, 3);
+
+            Assert.Equal(94, player.Health); // floor(8 × 100 / 120) = 6
         }
 
         [Fact]

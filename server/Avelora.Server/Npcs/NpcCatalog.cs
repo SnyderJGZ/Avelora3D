@@ -37,6 +37,15 @@ namespace Avelora.Server.Npcs
         /// <summary>Experiencia que gana quien asesta el golpe mortal (0..1000000, I-06).</summary>
         public int Experience { get; set; } = -1;
 
+        /// <summary>Nivel del enemigo, obligatorio para escalar experiencia (I-08).</summary>
+        public int Level { get; set; } = -1;
+
+        /// <summary>Defensa física del tipo (0..100000, I-08).</summary>
+        public int Defense { get; set; }
+
+        /// <summary>Resistencia mágica del tipo (0..100000, I-08).</summary>
+        public int MagicResist { get; set; }
+
         /// <summary>Segundos que tarda el spawner en reponer un enemigo muerto (0,5..3600).</summary>
         public float RespawnSeconds { get; set; }
 
@@ -364,6 +373,25 @@ namespace Avelora.Server.Npcs
                     throw new InvalidOperationException(
                         "npcs.json: el tipo " + type.Id + " tiene experience " + type.Experience +
                         "; debe estar entre 0 y 1000000 (el campo es obligatorio).");
+                }
+
+                if (type.Level < 1 || type.Level > byte.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene level " + type.Level +
+                        "; debe estar entre 1 y 255.");
+                }
+
+                if (type.Defense < 0 || type.Defense > 100_000)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene defense; debe estar entre 0 y 100000.");
+                }
+
+                if (type.MagicResist < 0 || type.MagicResist > 100_000)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene magicResist; debe estar entre 0 y 100000.");
                 }
 
                 if (!(type.RespawnSeconds >= MinRespawnSeconds) ||

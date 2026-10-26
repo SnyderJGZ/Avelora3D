@@ -44,6 +44,7 @@ namespace Avelora.Server.Simulation
         private readonly System.Random _random;
         private readonly NpcCatalog? _npcCatalog;
         private readonly LevelTable _levels;
+        private readonly ClassCatalog _classes;
         private readonly int _basePlayerMaxHealth;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
@@ -82,7 +83,8 @@ namespace Avelora.Server.Simulation
             float pickupRange = 1.5f,
             float pickupRangeTolerance = 0.5f,
             long potionCooldownTicks = 20,
-            LevelTable? levels = null)
+            LevelTable? levels = null,
+            ClassCatalog? classes = null)
         {
             if (map is null)
             {
@@ -139,13 +141,14 @@ namespace Avelora.Server.Simulation
             _npcCatalog = npcs;
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
+            _classes = classes ?? ClassCatalog.Default;
             _basePlayerMaxHealth = playerVitals?.MaxHealth ?? PlayerEntity.DefaultMaxHealth;
             _random = new System.Random(npcSeed);
             _movement = movement;
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value, items, _levels);
+                _combat = new CombatSystem(combat.Value, items, _classes);
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -182,7 +185,7 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, _random, _interest.Grid);
+                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes);
                 _npcs.NpcDied += OnNpcDied;
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
@@ -228,6 +231,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Tabla de experiencia y fórmulas de nivel de la zona.</summary>
         public LevelTable Levels => _levels;
+
+        /// <summary>Catálogo de clases y reglas de atributos de esta zona.</summary>
+        public ClassCatalog Classes => _classes;
 
         /// <summary>Vida máxima base, antes de aplicar el bonus por nivel.</summary>
         public int BasePlayerMaxHealth => _basePlayerMaxHealth;
@@ -345,7 +351,13 @@ namespace Avelora.Server.Simulation
             int inputBufferCapacity,
             int initialHealth = 0,
             int level = 1,
-            int experience = 0)
+            int experience = 0,
+            int classId = 1,
+            int allocStr = 0,
+            int allocDex = 0,
+            int allocInt = 0,
+            int allocVit = 0,
+            int initialMana = -1)
         {
             // Invariante de la zona: una entidad nunca aparece solapando una pared. Step rechaza
             // cualquier movimiento hacia una posición no caminable, así que nacer atrapado no
@@ -357,8 +369,17 @@ namespace Avelora.Server.Simulation
                     "No se puede crear una entidad en " + position + ": su caja se solapa con una pared.");
             }
 
-            int maxHealth = _levels.GetMaxHealth(_basePlayerMaxHealth, level);
+            if (level < 1 || level > _levels.MaxLevel)
+            {
+                throw new ArgumentOutOfRangeException(nameof(level));
+            }
+
+            DerivedCharacterStats stats = CharacterStats.Calculate(
+                _classes, classId, level, allocStr, allocDex, allocInt, allocVit);
+            int maxHealth = stats.MaxHealth;
             int health = initialHealth > 0 ? Math.Min(initialHealth, maxHealth) : maxHealth;
+            int mana = initialMana < 0 ? stats.MaxResource : Math.Min(initialMana, stats.MaxResource);
+            mana = Math.Max(0, mana);
 
             if (health < 1)
             {
@@ -372,8 +393,15 @@ namespace Avelora.Server.Simulation
                 HalfSize = halfSize,
                 Level = level,
                 Experience = level == _levels.MaxLevel ? 0 : experience,
+                ClassId = classId,
+                AllocStr = allocStr,
+                AllocDex = allocDex,
+                AllocInt = allocInt,
+                AllocVit = allocVit,
                 MaxHealth = maxHealth,
                 Health = health,
+                MaxMana = stats.MaxResource,
+                Mana = mana,
             };
 
             Entities.Add(player);
@@ -492,12 +520,14 @@ namespace Avelora.Server.Simulation
         {
             _items?.DropLoot(this, npc, tick);
 
-            if (npc.ExperienceReward > 0 && npc.KillerPlayerId > 0 &&
+            if (npc.KillerPlayerId > 0 &&
                 Entities.TryGet(npc.KillerPlayerId, out Entity? entity) && entity is PlayerEntity killer &&
                 killer.Level < _levels.MaxLevel)
             {
-                ExperienceGranted += npc.ExperienceReward;
-                LevelUps += _levels.AddExperience(killer, npc.ExperienceReward, _basePlayerMaxHealth);
+                int experience = CharacterStats.ScaleExperience(
+                    npc.ExperienceReward, npc.Level, killer.Level);
+                ExperienceGranted += experience;
+                LevelUps += _levels.AddExperience(killer, experience, _classes);
             }
         }
 

@@ -14,6 +14,7 @@
   "npcsPath": "npcs-carga.json",
   "itemsPath": "..\\..\\server\\Avelora.Server\\items.json",
   "levelsPath": "levels-carga.json",
+  "classesPath": "classes-carga.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "maxGroundItems": 500,

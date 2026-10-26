@@ -28,7 +28,12 @@ namespace Avelora.Server.Persistence
             DateTime createdUtc,
             DateTime updatedUtc,
             InventoryItemRecord[]? inventoryItems = null,
-            ushort equippedItemId = 0)
+            ushort equippedItemId = 0,
+            int classId = 1,
+            int allocStr = 0,
+            int allocDex = 0,
+            int allocInt = 0,
+            int allocVit = 0)
         {
             if (id <= 0)
             {
@@ -68,6 +73,11 @@ namespace Avelora.Server.Persistence
                 ? Array.Empty<InventoryItemRecord>()
                 : (InventoryItemRecord[])inventoryItems.Clone();
             EquippedItemId = equippedItemId;
+            ClassId = classId;
+            AllocStr = allocStr;
+            AllocDex = allocDex;
+            AllocInt = allocInt;
+            AllocVit = allocVit;
         }
 
         public int Id { get; }
@@ -101,6 +111,12 @@ namespace Avelora.Server.Persistence
         /// <summary>Arma equipada; 0 significa combatir con los puños.</summary>
         public ushort EquippedItemId { get; }
 
+        public int ClassId { get; }
+        public int AllocStr { get; }
+        public int AllocDex { get; }
+        public int AllocInt { get; }
+        public int AllocVit { get; }
+
         /// <summary>Copia el personaje con una posición, zona y mapa nuevos, dejando el resto igual.</summary>
         public CharacterRecord WithPosition(int zoneId, Vec2 position, byte[] mapHash) =>
             new CharacterRecord(
@@ -117,13 +133,18 @@ namespace Avelora.Server.Persistence
                 CreatedUtc,
                 DateTime.UtcNow,
                 InventoryItems,
-                EquippedItemId);
+                EquippedItemId,
+                ClassId,
+                AllocStr,
+                AllocDex,
+                AllocInt,
+                AllocVit);
 
         /// <summary>
         /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
         /// para que la vida viva llegue a SQLite y para normalizar a un jugador muerto.
         /// </summary>
-        public CharacterRecord WithState(int zoneId, Vec2 position, byte[] mapHash, int health) =>
+        public CharacterRecord WithState(int zoneId, Vec2 position, byte[] mapHash, int health, int? mana = null) =>
             new CharacterRecord(
                 Id,
                 AccountId,
@@ -131,14 +152,19 @@ namespace Avelora.Server.Persistence
                 Level,
                 Experience,
                 health,
-                Mana,
+                mana ?? Mana,
                 zoneId,
                 position,
                 mapHash,
                 CreatedUtc,
                 DateTime.UtcNow,
                 InventoryItems,
-                EquippedItemId);
+                EquippedItemId,
+                ClassId,
+                AllocStr,
+                AllocDex,
+                AllocInt,
+                AllocVit);
 
         /// <summary>Crea una foto nueva con el inventario completo.</summary>
         public CharacterRecord WithInventory(InventoryItemRecord[] inventoryItems) =>
@@ -156,7 +182,12 @@ namespace Avelora.Server.Persistence
                 CreatedUtc,
                 DateTime.UtcNow,
                 inventoryItems,
-                EquippedItemId);
+                EquippedItemId,
+                ClassId,
+                AllocStr,
+                AllocDex,
+                AllocInt,
+                AllocVit);
 
         /// <summary>Crea una foto nueva con el arma equipada.</summary>
         public CharacterRecord WithEquippedItem(ushort equippedItemId) =>
@@ -174,7 +205,12 @@ namespace Avelora.Server.Persistence
                 CreatedUtc,
                 DateTime.UtcNow,
                 InventoryItems,
-                equippedItemId);
+                equippedItemId,
+                ClassId,
+                AllocStr,
+                AllocDex,
+                AllocInt,
+                AllocVit);
 
         /// <summary>Crea una foto con el nivel y la experiencia vivos de la entidad (I-06).</summary>
         public CharacterRecord WithProgress(int level, int experience) =>
@@ -192,7 +228,40 @@ namespace Avelora.Server.Persistence
                 CreatedUtc,
                 DateTime.UtcNow,
                 InventoryItems,
-                EquippedItemId);
+                EquippedItemId,
+                ClassId,
+                AllocStr,
+                AllocDex,
+                AllocInt,
+                AllocVit);
+
+        /// <summary>Crea una foto con clase y puntos repartidos nuevos.</summary>
+        public CharacterRecord WithClassAndAllocations(
+            int classId,
+            int allocStr,
+            int allocDex,
+            int allocInt,
+            int allocVit) =>
+            new CharacterRecord(
+                Id,
+                AccountId,
+                Name,
+                Level,
+                Experience,
+                Health,
+                Mana,
+                ZoneId,
+                Position,
+                MapHash,
+                CreatedUtc,
+                DateTime.UtcNow,
+                InventoryItems,
+                EquippedItemId,
+                classId,
+                allocStr,
+                allocDex,
+                allocInt,
+                allocVit);
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

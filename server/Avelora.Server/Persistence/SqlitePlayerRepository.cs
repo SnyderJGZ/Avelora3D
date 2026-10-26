@@ -21,7 +21,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 3;
+        public const int SchemaVersion = 4;
 
         /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
         public const int MaxCharactersPerAccount = 3;
@@ -33,6 +33,7 @@ namespace Avelora.Server.Persistence
         private readonly ItemCatalog? _items;
         private readonly int _inventorySlots;
         private readonly LevelTable _levels;
+        private readonly ClassCatalog _classes;
         private readonly object _initializeGate = new object();
         private bool _initialized;
         private bool _disposed;
@@ -42,7 +43,8 @@ namespace Avelora.Server.Persistence
             int passwordIterations = PasswordHasher.DefaultIterations,
             ItemCatalog? items = null,
             int inventorySlots = 20,
-            LevelTable? levels = null)
+            LevelTable? levels = null,
+            ClassCatalog? classes = null)
         {
             if (string.IsNullOrWhiteSpace(databasePath))
             {
@@ -60,6 +62,7 @@ namespace Avelora.Server.Persistence
             _passwordIterations = passwordIterations;
             _items = items;
             _levels = levels ?? LevelTable.Default;
+            _classes = classes ?? ClassCatalog.Default;
             if (inventorySlots < 1 || inventorySlots > 60)
             {
                 throw new ArgumentOutOfRangeException(nameof(inventorySlots));
@@ -113,33 +116,41 @@ namespace Avelora.Server.Persistence
 
                 int version = GetUserVersion(connection);
 
-                if (version == 0)
+                switch (version)
                 {
-                    using SqliteTransaction transaction = connection.BeginTransaction();
-                    CreateSchema(connection, transaction);
-                    SetUserVersion(connection, transaction, SchemaVersion);
-                    transaction.Commit();
-                }
-                else if (version == 1)
-                {
-                    using (SqliteTransaction transaction = connection.BeginTransaction())
-                    {
-                        CreateInventorySchema(connection, transaction);
-                        SetUserVersion(connection, transaction, 2);
-                        transaction.Commit();
-                    }
+                    case 0:
+                        using (SqliteTransaction transaction = connection.BeginTransaction())
+                        {
+                            CreateSchema(connection, transaction);
+                            SetUserVersion(connection, transaction, SchemaVersion);
+                            transaction.Commit();
+                        }
 
-                    MigrateV2ToV3(connection);
-                }
-                else if (version == 2)
-                {
-                    MigrateV2ToV3(connection);
-                }
-                else if (version != SchemaVersion)
-                {
-                    throw new InvalidOperationException(
-                        "La base de datos '" + DatabasePath + "' tiene esquema versión " + version +
-                        "; este servidor espera la " + SchemaVersion + ".");
+                        break;
+                    case 1:
+                        using (SqliteTransaction transaction = connection.BeginTransaction())
+                        {
+                            CreateInventorySchema(connection, transaction);
+                            SetUserVersion(connection, transaction, 2);
+                            transaction.Commit();
+                        }
+
+                        MigrateV2ToV3(connection);
+                        MigrateV3ToV4(connection);
+                        break;
+                    case 2:
+                        MigrateV2ToV3(connection);
+                        MigrateV3ToV4(connection);
+                        break;
+                    case 3:
+                        MigrateV3ToV4(connection);
+                        break;
+                    case SchemaVersion:
+                        break;
+                    default:
+                        throw new InvalidOperationException(
+                            "La base de datos '" + DatabasePath + "' tiene esquema versión " + version +
+                            "; este servidor espera la " + SchemaVersion + ".");
                 }
 
                 _initialized = true;
@@ -262,15 +273,19 @@ namespace Avelora.Server.Persistence
             }
 
             DateTime now = DateTime.UtcNow;
+            DerivedCharacterStats stats = CharacterStats.Calculate(_classes, 1, 1, 0, 0, 0, 0);
 
             using SqliteCommand insert = connection.CreateCommand();
             insert.CommandText =
                 "INSERT INTO characters " +
-                "(account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, created_utc, updated_utc) " +
-                "VALUES (@account, @name, 1, 0, 100, 100, @zone, @x, @y, @map, @created, @updated) " +
+                "(account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, " +
+                "class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc) " +
+                "VALUES (@account, @name, 1, 0, @health, @mana, @zone, @x, @y, @map, 1, 0, 0, 0, 0, @created, @updated) " +
                 "RETURNING id;";
             insert.Parameters.AddWithValue("@account", accountId);
             insert.Parameters.AddWithValue("@name", characterName);
+            insert.Parameters.AddWithValue("@health", stats.MaxHealth);
+            insert.Parameters.AddWithValue("@mana", stats.MaxResource);
             insert.Parameters.AddWithValue("@zone", zoneId);
             insert.Parameters.AddWithValue("@x", (double)spawn.X);
             insert.Parameters.AddWithValue("@y", (double)spawn.Y);
@@ -287,13 +302,14 @@ namespace Avelora.Server.Persistence
                 characterName,
                 1,
                 0,
-                100,
-                100,
+                stats.MaxHealth,
+                stats.MaxResource,
                 zoneId,
                 spawn,
                 mapHash,
                 now,
-                now);
+                now,
+                classId: 1);
         }
 
         public void SaveCharacter(CharacterRecord character)
@@ -312,7 +328,9 @@ namespace Avelora.Server.Persistence
             update.CommandText =
                 "UPDATE characters SET " +
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
-                "zone_id = @zone, x = @x, y = @y, map_hash = @map, equipped_item_id = @equipped, updated_utc = @updated " +
+                "zone_id = @zone, x = @x, y = @y, map_hash = @map, equipped_item_id = @equipped, " +
+                "class_id = @class, alloc_str = @allocStr, alloc_dex = @allocDex, " +
+                "alloc_int = @allocInt, alloc_vit = @allocVit, updated_utc = @updated " +
                 "WHERE id = @id AND account_id = @account;";
             update.Parameters.AddWithValue("@level", character.Level);
             update.Parameters.AddWithValue("@experience", character.Experience);
@@ -323,6 +341,11 @@ namespace Avelora.Server.Persistence
             update.Parameters.AddWithValue("@y", (double)character.Position.Y);
             update.Parameters.AddWithValue("@map", character.MapHash);
             update.Parameters.AddWithValue("@equipped", character.EquippedItemId);
+            update.Parameters.AddWithValue("@class", character.ClassId);
+            update.Parameters.AddWithValue("@allocStr", character.AllocStr);
+            update.Parameters.AddWithValue("@allocDex", character.AllocDex);
+            update.Parameters.AddWithValue("@allocInt", character.AllocInt);
+            update.Parameters.AddWithValue("@allocVit", character.AllocVit);
             update.Parameters.AddWithValue("@updated", FormatTime(character.UpdatedUtc));
             update.Parameters.AddWithValue("@id", character.Id);
             update.Parameters.AddWithValue("@account", character.AccountId);
@@ -410,6 +433,11 @@ CREATE TABLE characters (
     y               REAL NOT NULL,
     map_hash        BLOB NOT NULL,
     equipped_item_id INTEGER NOT NULL DEFAULT 0,
+    class_id        INTEGER NOT NULL DEFAULT 1,
+    alloc_str       INTEGER NOT NULL DEFAULT 0,
+    alloc_dex       INTEGER NOT NULL DEFAULT 0,
+    alloc_int       INTEGER NOT NULL DEFAULT 0,
+    alloc_vit       INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL,
     UNIQUE (account_id, name)
@@ -427,6 +455,23 @@ CREATE INDEX characters_account_idx ON characters(account_id);
             using SqliteCommand command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = "ALTER TABLE characters ADD COLUMN equipped_item_id INTEGER NOT NULL DEFAULT 0;";
+            command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, 3);
+            transaction.Commit();
+        }
+
+        private static void MigrateV3ToV4(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = @"
+ALTER TABLE characters ADD COLUMN class_id INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE characters ADD COLUMN alloc_str INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN alloc_dex INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN alloc_int INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN alloc_vit INTEGER NOT NULL DEFAULT 0;
+";
             command.ExecuteNonQuery();
             SetUserVersion(connection, transaction, SchemaVersion);
             transaction.Commit();
@@ -529,7 +574,8 @@ CREATE TABLE inventory_items (
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
-                "map_hash, created_utc, updated_utc, equipped_item_id " +
+                "map_hash, created_utc, updated_utc, equipped_item_id, class_id, " +
+                "alloc_str, alloc_dex, alloc_int, alloc_vit " +
                 "FROM characters WHERE account_id = @account AND name = @name COLLATE NOCASE LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@name", characterName);
@@ -599,21 +645,83 @@ CREATE TABLE inventory_items (
                     experience = (int)rawExperience;
                 }
 
+                long rawClassId = reader.GetInt64(14);
+                int classId;
+                if (rawClassId < 1 || rawClassId > byte.MaxValue || _classes.Find((int)rawClassId) == null)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió class_id desconocida del personaje " + reader.GetInt32(0) +
+                        " (" + rawClassId + " → 1). ");
+                    classId = 1;
+                }
+                else
+                {
+                    classId = (int)rawClassId;
+                }
+
+                long rawAllocStr = reader.GetInt64(15);
+                long rawAllocDex = reader.GetInt64(16);
+                long rawAllocInt = reader.GetInt64(17);
+                long rawAllocVit = reader.GetInt64(18);
+                long maxAllocated = (long)_levels.PointsPerLevel * level;
+                bool validAllocations = rawAllocStr >= 0 && rawAllocDex >= 0 && rawAllocInt >= 0 && rawAllocVit >= 0 &&
+                    rawAllocStr <= int.MaxValue && rawAllocDex <= int.MaxValue && rawAllocInt <= int.MaxValue &&
+                    rawAllocVit <= int.MaxValue;
+                long allocationTotal = validAllocations
+                    ? rawAllocStr + rawAllocDex + rawAllocInt + rawAllocVit
+                    : long.MaxValue;
+                validAllocations &= allocationTotal <= maxAllocated;
+                int allocStr = validAllocations ? (int)rawAllocStr : 0;
+                int allocDex = validAllocations ? (int)rawAllocDex : 0;
+                int allocInt = validAllocations ? (int)rawAllocInt : 0;
+                int allocVit = validAllocations ? (int)rawAllocVit : 0;
+                if (!validAllocations)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigieron alloc_* inválidos del personaje " + reader.GetInt32(0) + " (→ 0). ");
+                }
+
+                DerivedCharacterStats stats = CharacterStats.Calculate(
+                    _classes, classId, level, allocStr, allocDex, allocInt, allocVit);
+                long rawHealth = reader.GetInt64(5);
+                int health = rawHealth > stats.MaxHealth ? stats.MaxHealth :
+                    rawHealth < 0 ? 0 : rawHealth > int.MaxValue ? stats.MaxHealth : (int)rawHealth;
+                if (rawHealth > stats.MaxHealth || rawHealth < 0 || rawHealth > int.MaxValue)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se recortó health del personaje " + reader.GetInt32(0) +
+                        " (" + rawHealth + " → " + health + ").");
+                }
+
+                long rawMana = reader.GetInt64(6);
+                int mana = rawMana < 0 ? 0 : rawMana > stats.MaxResource ? stats.MaxResource : (int)rawMana;
+                if (rawMana < 0 || rawMana > stats.MaxResource)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se recortó mana del personaje " + reader.GetInt32(0) +
+                        " (" + rawMana + " → " + mana + ").");
+                }
+
                 character = new CharacterRecord(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     reader.GetString(2),
                     level,
                     experience,
-                    reader.GetInt32(5),
-                    reader.GetInt32(6),
+                    health,
+                    mana,
                     reader.GetInt32(7),
                     new Vec2((float)reader.GetDouble(8), (float)reader.GetDouble(9)),
                     mapHash,
                     ParseTime(reader.GetString(11)),
                     ParseTime(reader.GetString(12)),
                     inventoryItems: null,
-                    equippedItemId: 0);
+                    equippedItemId: 0,
+                    classId: classId,
+                    allocStr: allocStr,
+                    allocDex: allocDex,
+                    allocInt: allocInt,
+                    allocVit: allocVit);
 
                 long rawEquippedItemId = reader.GetInt64(13);
                 if (rawEquippedItemId != 0)

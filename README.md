@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-07 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b pendientes).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-08 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -15,11 +15,13 @@ calcular igual (movimiento y colisión).
 > (**protocolo v6**) el snapshot lleva el tipo de cada PNJ (2001, 2002…) y el tope baja a 67 entidades.
 > Desde I-04 (**protocolo v7**) hay botín en el suelo, recogida, inventarios persistentes y pociones;
 > desde I-05 (**protocolo v8**) hay armas, equipo persistente y catálogo de objetos enviado al cliente.
-> Desde I-06 (**protocolo v9**) las muertes de PNJ dan experiencia, suben niveles y aumentan vida y daño;
-> desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
+> Desde I-06 (**protocolo v9**) las muertes de PNJ dan experiencia y suben niveles; I-08 añade clases,
+> atributos, defensa y nivel máximo 25 con **esquema SQLite v4**, sin cambiar el protocolo. La vida y el
+> daño dependen de la clase y de los puntos repartidos, no crecen automáticamente al subir nivel.
+> Desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04) e
-> [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06](#experiencia-y-niveles-i-06-protocolo-v9) e
+> [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08) e
 > [I-07](#chat-i-07-protocolo-v10).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
@@ -29,7 +31,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **463/463 en verde** |
+| `dotnet test Avelora.slnx` | **522/522 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -1048,12 +1050,13 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles y chat de zona | ⏳ I-01 a I-07 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases y chat | ⏳ I-01 a I-08 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
 | **I-06** | Experiencia y niveles (protocolo v9; esquema SQLite v3) | ✅ servidor; I-06b implementa el cliente |
 | **I-07** | Chat básico de zona (protocolo v10) | ✅ servidor y bots; I-07b implementa el cliente |
+| **I-08** | Clases, atributos y nivel 25 (sin protocolo; esquema SQLite v4) | ✅ servidor; puntos libres y selección de clase quedan para I-09/I-10 |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1295,7 +1298,8 @@ objetos: id, tipo, pila máxima, curación o estadísticas de arma y nombre. `In
 cliente a servidor; `ItemCatalog` usa el 15 de servidor a cliente. El catálogo admite como máximo 512
 objetos y cada mensaje respeta el tope de 1400 bytes.
 
-La base sube a **esquema v3**. V2→v3 añade `characters.equipped_item_id INTEGER NOT NULL DEFAULT 0` en
+En I-05 la base subió a **esquema v3** (el esquema actual es v4 desde I-08). V2→v3 añade
+`characters.equipped_item_id INTEGER NOT NULL DEFAULT 0` en
 una transacción; v1→v3 aplica primero la migración de inventario v1→v2 y después la v2→v3, cada una
 transaccionalmente. El arma se guarda junto a inventario/vida y también viaja en la foto de
 `TryGetLatest`, para que una reconexión inmediata conserve el equipo. Si el id guardado no existe o
@@ -1317,52 +1321,28 @@ con arma** y no hubo rechazos de equipar; los PNJ murieron/reaparecieron **252/2
 jugadores murieron/reaparecieron **9/8** veces. El servidor envió **27 633 309 B (27,6 MB)**,
 **7 609 229 B (21,6 %) menos** que los 35 242 538 B (35,2 MB) de I-04.
 
-### Experiencia y niveles (I-06, protocolo v9)
+### Experiencia, niveles y clases (I-06 / I-08)
 
-`server/Avelora.Server/levels.json` contiene una tabla obligatoria, cargada y validada al arrancar:
+I-06 añadió el mensaje `Progress` (protocolo v9, `MessageType = 16`, 14 bytes, fiable y ordenado): nivel
+(u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo) y vida máxima (u32). Tras `Welcome`
+llega después de `ItemCatalog` e `Inventory`; tras las muertes se publica el progreso después del
+combate, como máximo una vez por jugador y tick. El protocolo de servidor actual sigue siendo **v10**;
+I-08 no cambia ningún mensaje.
 
-```json
-{
-  "healthPerLevel": 15,
-  "damagePerLevel": 1,
-  "experienceToNext": [100, 150, 225, 340, 500, 750, 1100, 1650, 2500]
-}
-```
+`levels.json` contiene `pointsPerLevel` (0–100; defecto 3) y los **24 umbrales** hasta el nivel máximo
+25: `100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200, 8000, 10000, 12500, 15500,
+19000, 23000, 27500, 32500, 38000, 44000, 51000, 59000`. `healthPerLevel` y `damagePerLevel` ya no
+se aceptan: ambas reglas viven en `classes.json`. El jugador que da el golpe mortal recibe experiencia;
+I-08 la escala en décimas enteras según el nivel del PNJ y del jugador, con multiplicador entre 0,1 y
+1,3 y mínimo de 1. Al subir de nivel se rellena la vida; el nivel por sí solo **no** aumenta vida ni
+daño, porque los atributos no crecen automáticamente. En nivel 25 la experiencia queda en 0.
 
-`healthPerLevel` y `damagePerLevel` deben estar entre 0 y 10000. `experienceToNext` contiene de 1 a
-254 umbrales, cada uno entre 1 y 10000000; el nivel máximo es su longitud más uno (10 con los datos
-actuales). Cada tipo de `npcs.json` debe declarar `experience` entre 0 y 1000000: el orco 2001 da
-**20** y el orco guerrero 2002 da **35**. El mismo dato está en `tools/carga/npcs-carga.json`.
+La información detallada de atributos, clases, mitigación y el esquema actual está en [I-08](#clases-y-atributos-i-08).
+La verificación histórica de la carga de I-06 fue p99 **0,054 ms**, **5845** de experiencia y **32**
+subidas en 50 bots/120 s; I-08 vuelve a medir la misma carga con las reglas nuevas.
 
-Solo recibe experiencia el jugador que asesta el golpe mortal al PNJ. La recompensa se aplica en el
-mismo tick: se resta cada umbral alcanzado y se puede subir varios niveles por una muerte; cada subida
-actualiza y **llena** la vida máxima. En el nivel máximo la experiencia permanece en 0 y no se acumula.
-Las fórmulas únicas de `LevelTable` son:
-
-- vida máxima = `playerMaxHealth + (nivel − 1) × healthPerLevel`;
-- daño del ataque = daño base del arma o de los puños `+ (nivel − 1) × damagePerLevel`.
-
-Esa vida máxima por nivel rige al aparecer (la vida guardada se recorta), al reaparecer, al regenerar y
-al usar pociones. El cliente no elige recompensa, nivel, vida ni daño.
-
-El protocolo sube a **v9** sin cambiar el snapshot. El nuevo mensaje `Progress` (`MessageType = 16`,
-14 bytes, `ReliableOrdered`) lleva nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo)
-y vida máxima (u32). Tras `Welcome` llega después de `ItemCatalog` e `Inventory`; tras las muertes se
-manda el estado actualizado después del combate, como máximo una vez por jugador y tick.
-
-SQLite conserva el **esquema v3**: `characters.level` y `characters.experience` ya existían. Al cargar,
-un nivel menor que 1 se corrige a 1 y uno mayor al máximo se recorta; la experiencia negativa pasa a
-0, la que supera el umbral se deja en umbral−1 y en el nivel máximo se fuerza a 0. Cada corrección se
-registra con un aviso. Los guardados periódicos, al desconectar y `TryGetLatest` copian los valores
-vivos de la entidad, así la reconexión inmediata conserva nivel y experiencia.
-
-El informe periódico y el resumen final añaden `experiencia_otorgada` y `subidas_nivel`; la cabecera
-de arranque muestra el nivel máximo y los bonus de vida y daño por nivel. `fight` procesa `Progress`
-y el resumen de bots incluye subidas y nivel máximo alcanzado.
-
-| Campo de `server.json` | Defecto | Significado |
-| --- | --- | --- |
-| `levelsPath` | `levels.json` | Tabla obligatoria, relativa a la configuración si no es absoluta. |
+El mensaje `Progress` sigue siendo parte del protocolo v10. Los contadores `experiencia_otorgada` y
+`subidas_nivel` aparecen en los informes; `fight` procesa el progreso y muestra subidas y nivel máximo.
 
 **Verificación y carga I-06:**
 `dotnet build Avelora.slnx -v q --nologo`: **0 errores, 0 advertencias**; `dotnet test Avelora.slnx`:
@@ -1372,6 +1352,56 @@ y el resumen de bots incluye subidas y nivel máximo alcanzado.
 `[corrección]`; los bots sumaron **5845** de experiencia, **32** subidas y nivel máximo **3**. Murieron
 y reaparecieron **287/287 PNJ** y **7/6 jugadores**. Hubo **134 ataques con arma**. El servidor envió
 **23 890 303 B (23,9 MB)**, **3 743 006 B (13,5 %) menos** que los 27 633 309 B de I-05.
+
+### Clases y atributos (I-08)
+
+`classes.json` es la fuente de verdad para las clases. Incluye guerrero (1), mago (2), ranger (3) y
+sanador (4); el código no selecciona fórmulas por id, así que agregar otra clase es agregar una entrada
+con sus atributos, defensa, recurso y ataque sin arma. Todo personaje nuevo nace como clase 1; la
+selección de clase y el reparto de puntos pertenecen a tareas posteriores.
+
+Los atributos efectivos son `base + alloc_*` (el equipo suma 0 hasta I-14). No hay columna de puntos
+libres: se derivan como `pointsPerLevel × nivel − (alloc_str + alloc_dex + alloc_int + alloc_vit)`.
+Fórmulas enteras:
+
+- vida máxima = `baseHealth + VIT × healthPerVit`;
+- daño bruto = daño del arma o `unarmed.damage` + `floor(atributo principal × damagePerPoint)`;
+- recurso máximo = `resource.base + INT × resource.perInt` (el valor actual se persiste en `mana`);
+- daño mitigado = `max(1, floor(daño bruto × 100 / (100 + defensa/resistencia)))`.
+
+Las armas actuales son físicas; los puños usan el `damageType` de la clase. Los PNJ declaran `level`
+(obligatorio), `defense` y `magicResist` opcionales (0 por defecto). Orco 2001 es nivel 1 y orco
+guerrero 2002 nivel 3. La defensa física se aplica tanto al daño de PNJ contra jugador como al daño
+del jugador contra PNJ; la resistencia mágica se usa para ataques mágicos. Con defensa 0 se conserva
+el daño bruto (con mínimo 1).
+
+Valores nivel 1 de los datos iniciales: vida máxima **100/80/90/90** (guerrero/mago/ranger/sanador),
+daño sin arma **12/14/13/13**, espada corta del guerrero **16**, recurso máximo **100/92/100/88**.
+VIT +4 añade 20 de vida; FUE +4 añade 2 de daño del guerrero. Los puntos aún no se pueden repartir;
+por ello subir de nivel no altera atributos. Los personajes existentes se migran a guerrero con todos
+los puntos sin gastar.
+
+SQLite está en **esquema v4**. La migración v3→v4, transaccional, agrega `class_id` (defecto 1) y
+`alloc_str`, `alloc_dex`, `alloc_int`, `alloc_vit` (defecto 0); una base nueva se crea directamente en
+v4. Al cargar se normaliza una clase desconocida a 1, se ponen a cero las cuatro asignaciones si alguna
+es negativa o su suma excede los puntos disponibles, se recorta la vida al máximo de la clase y `mana`
+al rango `[0, recurso máximo]`. Los guardados y `TryGetLatest` conservan clase, asignaciones y recurso.
+
+`npcs-carga.json`, `levels-carga.json` y `classes-carga.json` mantienen las reglas de carga alineadas
+con los datos del servidor. El servidor sigue autoritativo: el cliente no determina atributos, daño,
+mitigación ni experiencia.
+
+**Verificación y carga I-08:** `dotnet build Avelora.slnx -v q --nologo`: **0 errores y 0 advertencias**;
+`dotnet test Avelora.slnx`: **522/522**. En la pasada prescrita de 50 bots/120 s con `fight`,
+`-LogCorrections` y `-NuevaBase` (160 s de servidor), se conectaron **50/50** y se completaron **3200
+ticks**; el p99 fue **0,073 ms** (I-07: 0,090 ms), el peor tick **9,330 ms** y hubo **0** ticks sobre
+50 ms. Se observaron **0 correcciones** y ninguna línea `[corrección]`; murieron/reaparecieron
+**203/203 PNJ** y murieron/reaparecieron **6/6 jugadores**. El servidor envió **31 256 232 B (31,3 MB)**
+(I-07: 26 894 373 B); los snapshots incluyeron 1 995 696 entidades frente a 1 704 901 en I-07, por
+lo que el tráfico depende de la distribución de los bots dentro del área de interés. La muestra hizo
+**636 ataques válidos** con 12 de daño sin arma del guerrero (I-07 usó 10); el menor número de bajas
+en esta pasada no permite aislar el efecto del daño frente a la variación de rutas/objetivos. Detalles,
+incluida una segunda pasada, en el [informe I-08](docs/agentes/informes/I-08.md).
 
 ### Chat (I-07, protocolo v10)
 
@@ -1445,7 +1475,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 ## Próximo paso
 
 La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
-la desconexión. El backend de **I-04/I-05/I-06** añade botín, inventario, equipo, experiencia y niveles
-con persistencia v3; **I-07** añade chat básico de zona en protocolo v10. Los siguientes trabajos del
-cliente son **I-04b/I-05b/I-06b/I-07b**, conectar inventario, equipo, progreso y chat; también siguen
-pendientes los trabajos de seguridad de H que no forman parte de esta tarea.
+la desconexión. El backend de **I-04 a I-08** añade botín, inventario, equipo, progreso, clases y
+atributos, con persistencia actual en esquema v4; **I-07** añade chat en protocolo v10. Siguen pendientes
+los clientes **I-04b/I-05b/I-06b/I-07b** y los trabajos de seguridad de H que no forman parte de esta tarea.

@@ -52,6 +52,7 @@ namespace Avelora.Tests
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
             Assert.Equal("items.json", config.ItemsPath);
+            Assert.Equal("classes.json", config.ClassesPath);
             Assert.Equal(20, config.InventorySlots);
             Assert.Equal(60d, config.GroundItemSeconds);
             Assert.Equal(500, config.MaxGroundItems);
@@ -297,6 +298,7 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { PotionCooldownSeconds = double.PositiveInfinity }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { MaxQueuedItemActions = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { LevelsPath = " " }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { ClassesPath = " " }.Validate);
 
             string configPath = Path_("config/server.json");
             var config = new ServerConfig { ItemsPath = "items/items.json" };
@@ -306,6 +308,9 @@ namespace Avelora.Tests
             Assert.Equal(
                 Path.GetFullPath(Path.Combine(_folder, "config", "levels.json")),
                 new ServerConfig().ResolveLevelsPath(configPath));
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(_folder, "config", "classes.json")),
+                new ServerConfig().ResolveClassesPath(configPath));
         }
 
         [Fact]
