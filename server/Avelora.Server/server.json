@@ -1,11 +1,11 @@
 {
   "tickRate": 20,
-  "mapPath": "maps/avelora-prueba.avmap",
+  "mapPath": "maps/avelora-valle.avmap",
   "zoneId": 1,
   "port": 7777,
   "maxPlayers": 10,
   "maxConnections": 16,
-  "spawnX": -9.5,
+  "spawnX": -6.5,
   "spawnY": 0.5,
   "firstCharacterId": 1,
   "persistenceEnabled": true,

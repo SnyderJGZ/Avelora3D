@@ -1443,9 +1443,27 @@ parejas consecutivas, sin saltos. No se modificó predicción, fuera del alcance
 
 ---
 
+### Mapa «Valle» (J-02)
+
+El servidor y los bots cargan **`maps/avelora-valle.avmap`** (80×60, x de −40 a 39 e y de −30 a 29).
+Lo genera el menú **Avelora › Generar mapa «Valle»** (`Editor/ValleyMapGenerator.cs`, semilla fija:
+volver a generarlo da la misma huella) con el arte de Tiny Swords recortado a 64 px en `Art/Map`:
+- **isla** con costa irregular, playa y espuma; el mar rodea todo el borde;
+- **río** de norte a sur con **dos puentes** (y = 0 e y = 16) que lleva a las tierras altas del este;
+- **aldea** en el centro, una plaza de arena con camino a cada zona; el spawn está en (−6,5; 0,5);
+- **bosque** espeso al oeste, con tres claros y un estanque; arboledas al norte;
+- **mesetas de roca** con acantilado al este del río.
+
+Capas: `Water`, `Foam`, `Sand`, `Floor` (hierba), `Deco`, `Rock`, `Bridge` y los árboles en `Props`.
+Solo el Tilemap `Collision` cuenta para la colisión: lleva un tile invisible (`Tiles/Map/Block`) en
+el agua, las mesetas, los acantilados, los troncos y las rocas del mar. El generador exporta el
+`.avmap` junto a la carpeta `Assets` y comprueba que todos los claros se alcanzan desde el spawn
+(2290 casillas alcanzables). `npcs.json` pone 25 enemigos en los 10 claros: orcos (2001) al oeste del
+río y orcos guerreros (2002) en las tierras altas.
+
 ### Mapa de prueba de 80×60 (J-01)
 
-El servidor y los bots cargan **`maps/avelora-prueba.avmap`**. Es un mapa de 80×60 casillas
+Sustituido por el «Valle»; `maps/avelora-prueba.avmap` se conserva. Era un mapa de 80×60 casillas
 (x de −40 a 39, y de −30 a 29) generado por código en el Tilemap de `AveloraEtapaA.unity`:
 - **12 salas** de unas 19×19, separadas por muros en x = −20, 0 y 20 y en y = −10 y 10;
 - una puerta de 3 casillas entre cada par de salas vecinas;
