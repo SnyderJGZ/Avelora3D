@@ -116,6 +116,37 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Una_Cuenta_Inexistente_Tarda_Lo_Mismo_Que_Una_Clave_Mala()
+        {
+            // Si la cuenta inexistente se rechazara sin PBKDF2, el tiempo de respuesta diría qué
+            // cuentas existen. Con 200 000 iteraciones el PBKDF2 domina; el mínimo de 3 quita ruido.
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 200_000);
+            repository.Initialize();
+            Assert.True(repository.Login("existe", "secreto1", "avelora-dev", "avelora-dev").Success);
+
+            double MinMilliseconds(string account)
+            {
+                double best = double.MaxValue;
+                for (int i = 0; i < 3; i++)
+                {
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    Assert.False(repository.Login(account, "otra-clave", string.Empty, "avelora-dev").Success);
+                    best = Math.Min(best, clock.Elapsed.TotalMilliseconds);
+                }
+
+                return best;
+            }
+
+            double wrongPassword = MinMilliseconds("existe");
+            double missingAccount = MinMilliseconds("no-existe");
+
+            Assert.True(
+                missingAccount >= wrongPassword * 0.5d,
+                "Cuenta inexistente: " + missingAccount.ToString("0.0") + " ms; clave mala: " +
+                wrongPassword.ToString("0.0") + " ms.");
+        }
+
+        [Fact]
         public void El_Personaje_Se_Guarda_Y_Se_Recupera_Al_Reabrir_La_Base()
         {
             byte[] mapHash = NewHash(3);
@@ -687,7 +718,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             Assert.Equal(harness.Config.SpawnY, welcome.SpawnY);
 
             PlayerEntity reconnected = (PlayerEntity)harness.Zone.Entities.Get(welcome.EntityId)!;
-            Assert.Equal(harness.Config.PlayerMaxHealth, reconnected.Health);
+            Assert.Equal(reconnected.MaxHealth, reconnected.Health);
         }
 
         [Fact]
@@ -726,7 +757,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             WelcomeMessage welcome = harness.LastWelcome(1);
             PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(welcome.EntityId)!;
-            Assert.Equal(harness.Config.PlayerMaxHealth, player.Health);
+            Assert.Equal(player.MaxHealth, player.Health);
         }
 
         [Fact]

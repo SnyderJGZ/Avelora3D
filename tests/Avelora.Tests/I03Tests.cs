@@ -17,14 +17,12 @@ namespace Avelora.Tests
     public class I03Tests
     {
         private static PlayerVitalsSettings Vitals(
-            int maxHealth = 100,
             float spawnX = 5f,
             float spawnY = 5f,
             double respawnSeconds = 0.5d,
             double regenPerSecond = 0d,
             double regenDelaySeconds = 0d) =>
             new PlayerVitalsSettings(
-                maxHealth,
                 new Vec2(spawnX, spawnY),
                 respawnSeconds,
                 regenPerSecond,
@@ -84,7 +82,6 @@ namespace Avelora.Tests
             PlayerVitalsSettings? vitals = null,
             int seed = 12345,
             MapCollisionGrid? map = null,
-            int combatDamage = 10,
             float combatRange = 5f,
             float combatTolerance = 0.5f,
             double combatCooldownSeconds = 0.8d,
@@ -107,7 +104,7 @@ namespace Avelora.Tests
                 npcs,
                 seed,
                 new AttackQueue(256),
-                new CombatSettings(combatDamage, combatRange, combatTolerance, combatCooldownSeconds),
+                new CombatSettings(combatTolerance),
                 vitals,
                 levels: levels,
                 classes: classes);
@@ -121,7 +118,7 @@ namespace Avelora.Tests
                 ExperienceToNext = new[] { 100, 150 },
             };
             Zone zone = NewZone(
-                vitals: Vitals(maxHealth: 100, respawnSeconds: 0.5d, regenPerSecond: 20d),
+                vitals: Vitals(respawnSeconds: 0.5d, regenPerSecond: 20d),
                 levels: levels);
             PlayerEntity player = zone.SpawnPlayer(
                 1, new Vec2(1f, 1f), new Vec2(0.4f, 0.4f), 8, level: 3);
@@ -450,7 +447,6 @@ namespace Avelora.Tests
         public void Reaparece_A_Los_Ticks_Configurados_En_El_Spawn_Con_La_Vida_Llena()
         {
             var vitals = new PlayerVitalsSettings(
-                100,
                 new Vec2(5f, 5f),
                 0.5d,
                 0d,
@@ -478,7 +474,6 @@ namespace Avelora.Tests
         public void Regenera_Solo_Pasado_El_Retraso_Y_Nunca_Por_Encima_Del_Maximo()
         {
             var vitals = new PlayerVitalsSettings(
-                100,
                 new Vec2(5f, 5f),
                 5d,
                 100d,

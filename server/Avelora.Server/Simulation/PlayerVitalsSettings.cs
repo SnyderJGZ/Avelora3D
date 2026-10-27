@@ -16,20 +16,11 @@ namespace Avelora.Server.Simulation
     public readonly struct PlayerVitalsSettings
     {
         public PlayerVitalsSettings(
-            int maxHealth,
             Vec2 spawn,
             double respawnSeconds,
             double regenPerSecond,
             double regenDelaySeconds)
         {
-            if (maxHealth < 1 || maxHealth > 100000)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(maxHealth),
-                    maxHealth,
-                    "La vida máxima debe estar entre 1 y 100000.");
-            }
-
             if (!(respawnSeconds >= 0.5d) ||
                 respawnSeconds > 600d ||
                 double.IsNaN(respawnSeconds) ||
@@ -59,15 +50,11 @@ namespace Avelora.Server.Simulation
                     "El retraso de regeneración no puede ser negativo.");
             }
 
-            MaxHealth = maxHealth;
             Spawn = spawn;
             RegenPerSecond = regenPerSecond;
             RespawnTicks = Math.Max(1L, (long)Math.Ceiling(respawnSeconds * SimulationConstants.TickRate));
             RegenDelayTicks = (long)Math.Ceiling(regenDelaySeconds * SimulationConstants.TickRate);
         }
-
-        /// <summary>Vida máxima de un jugador.</summary>
-        public int MaxHealth { get; }
 
         /// <summary>Punto al que vuelve un jugador muerto cuando reaparece.</summary>
         public Vec2 Spawn { get; }

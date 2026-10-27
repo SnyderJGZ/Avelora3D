@@ -317,12 +317,6 @@ namespace Avelora.Tests
         public void Un_Ajuste_De_Vida_Del_Jugador_Imposible_Impide_Arrancar()
         {
             Assert.Throws<InvalidOperationException>(
-                new ServerConfig { PlayerMaxHealth = 0 }.Validate);
-
-            Assert.Throws<InvalidOperationException>(
-                new ServerConfig { PlayerMaxHealth = 100001 }.Validate);
-
-            Assert.Throws<InvalidOperationException>(
                 new ServerConfig { PlayerRespawnSeconds = 0.4d }.Validate);
 
             Assert.Throws<InvalidOperationException>(
@@ -346,7 +340,6 @@ namespace Avelora.Tests
             // Los extremos válidos y el 0 de la regeneración también valen.
             new ServerConfig
             {
-                PlayerMaxHealth = 1,
                 PlayerRespawnSeconds = 0.5d,
                 PlayerRegenPerSecond = 0d,
                 PlayerRegenDelaySeconds = 0d,
@@ -354,7 +347,6 @@ namespace Avelora.Tests
 
             new ServerConfig
             {
-                PlayerMaxHealth = 100000,
                 PlayerRespawnSeconds = 600d,
             }.Validate();
         }
@@ -364,13 +356,11 @@ namespace Avelora.Tests
         {
             var config = new ServerConfig();
 
-            Assert.Equal(100, config.PlayerMaxHealth);
             Assert.Equal(5d, config.PlayerRespawnSeconds);
             Assert.Equal(2d, config.PlayerRegenPerSecond);
             Assert.Equal(5d, config.PlayerRegenDelaySeconds);
 
             PlayerVitalsSettings vitals = config.PlayerVitals;
-            Assert.Equal(100, vitals.MaxHealth);
             Assert.Equal(config.Spawn, vitals.Spawn);
             Assert.Equal(100L, vitals.RespawnTicks);
             Assert.Equal(100L, vitals.RegenDelayTicks);

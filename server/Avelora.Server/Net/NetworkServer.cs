@@ -9,6 +9,7 @@ using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Persistence;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Server.Items;
 using Avelora.Shared;
@@ -1157,7 +1158,7 @@ namespace Avelora.Server.Net
                 _mapHash));
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
-            Enqueue(connectionId, EncodeItemCatalog(), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Enqueue(connectionId, EncodeItemCatalog(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
@@ -1397,8 +1398,22 @@ namespace Avelora.Server.Net
             return result.ToString();
         }
 
-        private byte[] EncodeItemCatalog()
+        private byte[] EncodeItemCatalog(PlayerEntity player)
         {
+            // El ataque sin arma depende de la clase (I-08): el cliente lo usa para acercarse y
+            // marcar el ritmo del ataque automático, así que tiene que ser el mismo que valida el combate.
+            UnarmedAttack unarmed =_zone.Classes.Find(player.ClassId)!.Unarmed!;
+            int unarmedDamage = CharacterStats.GetAttackDamage(
+                _zone.Classes,
+                player.ClassId,
+                player.Level,
+                player.AllocStr,
+                player.AllocDex,
+                player.AllocInt,
+                player.AllocVit,
+                null,
+                out _);
+
             ItemCatalog? catalog = _zone.Items;
             var entries = new ItemCatalogEntry[catalog?.Items.Count ?? 0];
             for (int i = 0; i < entries.Length; i++)
@@ -1420,9 +1435,9 @@ namespace Avelora.Server.Net
 
             return MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                 _config.PickupRange,
-                (uint)_config.PlayerAttackDamage,
-                _config.PlayerAttackRange,
-                (float)_config.PlayerAttackCooldownSeconds,
+                (uint)unarmedDamage,
+                unarmed.Range,
+                (float)unarmed.CooldownSeconds,
                 entries));
         }
 

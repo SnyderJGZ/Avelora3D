@@ -45,7 +45,6 @@ namespace Avelora.Server.Simulation
         private readonly NpcCatalog? _npcCatalog;
         private readonly LevelTable _levels;
         private readonly ClassCatalog _classes;
-        private readonly int _basePlayerMaxHealth;
 
         // Buffers reutilizados en cada tick: reservar memoria dentro del bucle acabaría provocando
         // recolecciones en mal momento (plan del servidor §9).
@@ -142,7 +141,6 @@ namespace Avelora.Server.Simulation
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
             _classes = classes ?? ClassCatalog.Default;
-            _basePlayerMaxHealth = playerVitals?.MaxHealth ?? PlayerEntity.DefaultMaxHealth;
             _random = new System.Random(npcSeed);
             _movement = movement;
 
@@ -234,9 +232,6 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Catálogo de clases y reglas de atributos de esta zona.</summary>
         public ClassCatalog Classes => _classes;
-
-        /// <summary>Vida máxima base, antes de aplicar el bonus por nivel.</summary>
-        public int BasePlayerMaxHealth => _basePlayerMaxHealth;
 
         /// <summary>Notificación de cambios para enviar el inventario completo por la red.</summary>
         public event Action<PlayerEntity>? InventoryChanged;

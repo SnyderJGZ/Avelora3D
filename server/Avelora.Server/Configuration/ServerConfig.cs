@@ -148,18 +148,6 @@ namespace Avelora.Server.Configuration
         /// <summary>Semialto de la caja de colisión del jugador.</summary>
         public float PlayerHalfHeight { get; set; } = 0.4f;
 
-        /// <summary>Daño que hace cada ataque de un jugador (I-02).</summary>
-        public int PlayerAttackDamage { get; set; } = 10;
-
-        /// <summary>Alcance del ataque, en tiles, medido entre centros (I-02).</summary>
-        public float PlayerAttackRange { get; set; } = 1.2f;
-
-        /// <summary>Segundos entre dos ataques válidos de un mismo jugador (I-02).</summary>
-        public double PlayerAttackCooldownSeconds { get; set; } = 0.8d;
-
-        /// <summary>Vida máxima de un jugador (I-03).</summary>
-        public int PlayerMaxHealth { get; set; } = 100;
-
         /// <summary>Segundos que un jugador permanece muerto antes de reaparecer (I-03).</summary>
         public double PlayerRespawnSeconds { get; set; } = 5d;
 
@@ -268,7 +256,6 @@ namespace Avelora.Server.Configuration
         /// La zona las recibe al construirse; la simulación no lee <see cref="ServerConfig"/>.
         /// </summary>
         public PlayerVitalsSettings PlayerVitals => new PlayerVitalsSettings(
-            PlayerMaxHealth,
             Spawn,
             PlayerRespawnSeconds,
             PlayerRegenPerSecond,
@@ -417,11 +404,6 @@ namespace Avelora.Server.Configuration
         /// </summary>
         private void ValidateVitals()
         {
-            if (PlayerMaxHealth < 1 || PlayerMaxHealth > 100000)
-            {
-                throw new InvalidOperationException("playerMaxHealth debe estar entre 1 y 100000.");
-            }
-
             if (!(PlayerRespawnSeconds >= 0.5d) ||
                 PlayerRespawnSeconds > 600d ||
                 double.IsNaN(PlayerRespawnSeconds) ||
@@ -452,27 +434,6 @@ namespace Avelora.Server.Configuration
         /// </summary>
         private void ValidateCombat()
         {
-            if (PlayerAttackDamage < 1)
-            {
-                throw new InvalidOperationException("playerAttackDamage debe ser >= 1.");
-            }
-
-            if (!(PlayerAttackRange > 0f) ||
-                PlayerAttackRange > 5f ||
-                float.IsNaN(PlayerAttackRange) ||
-                float.IsInfinity(PlayerAttackRange))
-            {
-                throw new InvalidOperationException(
-                    "playerAttackRange debe ser mayor que 0 y como mucho 5.");
-            }
-
-            if (!(PlayerAttackCooldownSeconds >= 0.1d) ||
-                double.IsNaN(PlayerAttackCooldownSeconds) ||
-                double.IsInfinity(PlayerAttackCooldownSeconds))
-            {
-                throw new InvalidOperationException("playerAttackCooldownSeconds debe ser >= 0,1.");
-            }
-
             if (AttackRangeTolerance < 0f ||
                 AttackRangeTolerance > 2f ||
                 float.IsNaN(AttackRangeTolerance) ||

@@ -16,7 +16,6 @@ namespace Avelora.Tests
     /// </summary>
     public class CombatTests
     {
-        private const int Damage = 10;
         private const float Range = 1.2f;
         private const float Tolerance = 0.5f;
         private const double CooldownSeconds = 0.8d;
@@ -24,7 +23,6 @@ namespace Avelora.Tests
         private static Zone NewZone(
             NpcCatalog? npcs = null,
             int seed = 12345,
-            int damage = Damage,
             float range = Range,
             float tolerance = Tolerance,
             double cooldownSeconds = CooldownSeconds,
@@ -48,7 +46,7 @@ namespace Avelora.Tests
                 npcs,
                 seed,
                 new AttackQueue(256),
-                new CombatSettings(damage, range, tolerance, cooldownSeconds),
+                new CombatSettings(tolerance),
                 items: items,
                 levels: levels,
                 classes: classes);
@@ -418,7 +416,7 @@ namespace Avelora.Tests
         [Fact]
         public void Jugador_Sin_Arma_Aplica_Daño_Base_Mas_Atributo_Principal()
         {
-            Zone zone = NewZone(damage: 10, range: 1.2f, tolerance: 0.5f, cooldownSeconds: 0.8d, items: WeaponCatalog());
+            Zone zone = NewZone(range: 1.2f, tolerance: 0.5f, cooldownSeconds: 0.8d, items: WeaponCatalog());
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             NpcEntity npc = AddNpc(zone, 100, new Vec2(11f, 10f), maxHealth: 1000);
 

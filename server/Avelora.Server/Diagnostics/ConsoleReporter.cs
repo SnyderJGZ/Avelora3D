@@ -81,15 +81,11 @@ namespace Avelora.Server.Diagnostics
                     : (npcs.Types?.Count ?? 0) + " tipo(s), " + (npcs.Spawners?.Count ?? 0) +
                       " spawner(s), " + npcs.TotalEnemies + " enemigo(s)"));
             Console.WriteLine(
-                "  Combate       : daño " + config.PlayerAttackDamage +
-                ", alcance " + Invariant(config.PlayerAttackRange, "0.##") +
-                " (+" + Invariant(config.AttackRangeTolerance, "0.##") + ") tiles" +
-                ", recarga " + Invariant(config.PlayerAttackCooldownSeconds, "0.#") + " s (" +
-                (long)Math.Ceiling(config.PlayerAttackCooldownSeconds * SimulationConstants.TickRate) +
-                " ticks), cola de ataques " + config.MaxQueuedAttacks);
+                "  Combate       : daño, alcance y recarga por clase o arma, tolerancia +" +
+                Invariant(config.AttackRangeTolerance, "0.##") + " tiles, cola de ataques " +
+                config.MaxQueuedAttacks);
             Console.WriteLine(
-                "  Vida jugador  : max " + config.PlayerMaxHealth +
-                ", reaparición " + Invariant(config.PlayerRespawnSeconds, "0.#") + " s (" +
+                "  Vida jugador  : máx. por clase, reaparición " + Invariant(config.PlayerRespawnSeconds, "0.#") + " s (" +
                 (long)Math.Ceiling(config.PlayerRespawnSeconds * SimulationConstants.TickRate) +
                 " ticks), regeneración " + Invariant(config.PlayerRegenPerSecond, "0.##") + "/s tras " +
                 Invariant(config.PlayerRegenDelaySeconds, "0.#") + " s sin daño");

@@ -935,13 +935,14 @@ estas reglas:
 
 1. el atacante es un `PlayerEntity` de la zona;
 2. el objetivo existe, es un `NpcEntity` y está vivo (`Action != Dead`);
-3. la distancia entre centros es ≤ `playerAttackRange + attackRangeTolerance` (1,2 + 0,5 = **1,7
-   tiles** por defecto; la tolerancia compensa la interpolación del cliente);
-4. han pasado al menos `ceil(playerAttackCooldownSeconds × TickRate)` = **16 ticks** (0,8 s) desde el
-   último ataque **válido** de ese jugador. Se mide en ticks de la zona, nunca con el reloj del
+3. la distancia entre centros es ≤ alcance + `attackRangeTolerance` (sin arma, el guerrero tiene
+   1,2 + 0,5 = **1,7 tiles**; la tolerancia compensa la interpolación del cliente);
+4. han pasado al menos `ceil(recarga × TickRate)` ticks (guerrero sin arma: **16 ticks**, 0,8 s) desde
+   el último ataque **válido** de ese jugador. Se mide en ticks de la zona, nunca con el reloj del
    cliente.
 
-Un ataque válido quita `playerAttackDamage` (**10**) de vida, con mínimo 0, deja al atacante en
+Desde I-08 el daño, el alcance y la recarga sin arma son los de `unarmed` en `classes.json` (ver
+«Clases y atributos (I-08)»). Un ataque válido quita ese daño de vida, con mínimo 0, deja al atacante en
 `Action = Attacking` durante **6 ticks** (0,3 s) y suma `ataques_ok`. Si no es válido no hace nada y
 suma al contador del motivo: `ataque_rech_objetivo`, `ataque_rech_distancia` o
 `ataque_rech_cooldown`.
@@ -969,9 +970,6 @@ El informe periódico y el resumen muestran `ataques_ok`, los tres rechazos, `at
 | --- | --- | --- |
 | `npcsPath` | **`npcs.json`** | Archivo de enemigos; si es relativo se resuelve junto a `server.json`, como `databasePath`. **Vacío = zona sin enemigos.** |
 | `npcSeed` | **12345** | Semilla de la IA. Misma semilla y mismos datos = mismas posiciones. |
-| `playerAttackDamage` | **10** | Vida que quita cada ataque válido; ≥ 1. |
-| `playerAttackRange` | **1.2** | Alcance entre centros, en tiles; > 0 y ≤ 5. |
-| `playerAttackCooldownSeconds` | **0.8** | Segundos entre ataques válidos del mismo jugador; ≥ 0,1. Se redondea a ticks hacia arriba. |
 | `attackRangeTolerance` | **0.5** | Margen sumado al alcance para compensar la interpolación; entre 0 y 2. |
 | `maxQueuedAttacks` | **1024** | Tope de ataques encolados por la red; si se llena, se descartan y se cuentan; ≥ 1. |
 
@@ -1085,7 +1083,7 @@ con `Action = Dead`.
   que nunca se queda atascado para siempre. Hará falta A* cuando haya interiores.
 
 **Vida del jugador:**
-- `PlayerEntity` tiene `Health` y `MaxHealth` (`playerMaxHealth`).
+- `PlayerEntity` tiene `Health` y `MaxHealth` (desde I-08, calculada con la clase en `classes.json`).
 - **Al entrar,** la vida sale de `CharacterRecord.Health`, limitada a `[1, máximo]`. Un valor ≤ 0
   entra con la vida llena.
 - **Al guardar,** se guarda la vida. Un jugador muerto se guarda **vivo, lleno y en `spawn`**, para
@@ -1116,7 +1114,6 @@ con `Action = Dead`.
 
 | Campo de `server.json` | Defecto | Significado |
 | --- | --- | --- |
-| `playerMaxHealth` | **100** | Vida máxima del jugador; entre 1 y 100000. |
 | `playerRespawnSeconds` | **5** | Tiempo muerto antes de reaparecer; entre 0,5 y 600. |
 | `playerRegenPerSecond` | **2** | Vida recuperada por segundo; ≥ 0 (0 = sin regeneración). |
 | `playerRegenDelaySeconds` | **5** | Segundos sin daño antes de regenerar; ≥ 0. |
@@ -1287,8 +1284,8 @@ el servidor devuelve el `Inventory` completo tras un cambio válido.
 
 El combate usa daño, alcance y recarga del arma equipada. El servidor suma `attackRangeTolerance` al
 alcance igual que con los puños, y convierte la recarga en `ceil(cooldownSeconds × TickRate)` ticks:
-16 para la espada y 24 para el hacha. Sin arma siguen aplicándose `playerAttackDamage`,
-`playerAttackRange` y `playerAttackCooldownSeconds`. La autoridad de daño, alcance, recarga y equipo
+16 para la espada y 24 para el hacha. Sin arma se aplica el `unarmed` de la clase
+(`classes.json`, I-08), que es también lo que el `ItemCatalog` le manda al cliente. La autoridad de daño, alcance, recarga y equipo
 permanece en el servidor.
 
 Tras `Welcome`, el servidor entrega una sola vez `ItemCatalog` y luego `Inventory`, ambos por el canal

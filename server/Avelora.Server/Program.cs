@@ -236,11 +236,7 @@ namespace Avelora.Server
                 npcs,
                 config.NpcSeed,
                 new AttackQueue(config.MaxQueuedAttacks),
-                new CombatSettings(
-                    config.PlayerAttackDamage,
-                    config.PlayerAttackRange,
-                    config.AttackRangeTolerance,
-                    config.PlayerAttackCooldownSeconds),
+                new CombatSettings(config.AttackRangeTolerance),
                 config.PlayerVitals,
                 items,
                 new ItemActionQueue(config.MaxQueuedItemActions),

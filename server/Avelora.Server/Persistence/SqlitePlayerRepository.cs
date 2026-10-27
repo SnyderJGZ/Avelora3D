@@ -28,6 +28,10 @@ namespace Avelora.Server.Persistence
 
         private const string TimeFormat = "O";
 
+        // Sal y hash de tamaño válido para que Verify haga el PBKDF2 completo con cuentas inexistentes.
+        private static readonly byte[] DummySalt = new byte[16];
+        private static readonly byte[] DummyHash = new byte[32];
+
         private readonly string _connectionString;
         private readonly int _passwordIterations;
         private readonly ItemCatalog? _items;
@@ -207,6 +211,9 @@ namespace Avelora.Server.Persistence
             if (string.IsNullOrEmpty(registrationCode) ||
                 !string.Equals(invitationCode ?? string.Empty, registrationCode, StringComparison.Ordinal))
             {
+                // Mismo coste que una contraseña mala: sin esto, el tiempo de respuesta delata qué
+                // cuentas existen (PBKDF2 solo correría para las que sí).
+                PasswordHasher.Verify(password, DummySalt, DummyHash, _passwordIterations);
                 return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
             }
 

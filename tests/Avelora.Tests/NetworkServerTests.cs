@@ -52,11 +52,7 @@ namespace Avelora.Tests
                 npcs: npcs,
                 npcSeed: 12345,
                 attacks: new AttackQueue(config.MaxQueuedAttacks),
-                combat: new CombatSettings(
-                    config.PlayerAttackDamage,
-                    config.PlayerAttackRange,
-                    config.AttackRangeTolerance,
-                    config.PlayerAttackCooldownSeconds),
+                combat: new CombatSettings(config.AttackRangeTolerance),
                 playerVitals: config.PlayerVitals,
                 items: items,
                 itemActions: withItems ? new ItemActionQueue(config.MaxQueuedItemActions) : null,
@@ -161,6 +157,11 @@ namespace Avelora.Tests
         {
             using var harness = new Harness();
 
+            // Valores que no coinciden con nada de server.json: el catálogo tiene que sacar el
+            // ataque sin arma de la clase del jugador, que es lo que valida el combate.
+            harness.Zone.Classes.Find(1)!.Unarmed!.Range = 1.7f;
+            harness.Zone.Classes.Find(1)!.Unarmed!.CooldownSeconds = 1.3d;
+
             harness.Connect(1);
             harness.Handshake(1);
             harness.Pump();
@@ -188,7 +189,9 @@ namespace Avelora.Tests
                 harness.Transport.Sent[1].Data.Length,
                 out ItemCatalogMessage catalog));
             Assert.Equal(harness.Config.PickupRange, catalog.PickupRange);
-            Assert.Equal((uint)harness.Config.PlayerAttackDamage, catalog.FistDamage);
+            Assert.Equal(12u, catalog.FistDamage); // guerrero: 10 + ⌊FUE 4 × 0,5⌋
+            Assert.Equal(1.7f, catalog.FistRange);
+            Assert.Equal(1.3f, catalog.FistCooldownSeconds);
             Assert.Empty(catalog.Items);
             Assert.True(MessageCodec.TryReadInventory(
                 harness.Transport.Sent[2].Data,
