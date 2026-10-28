@@ -1618,7 +1618,7 @@ namespace Avelora.Client
 
             EnsureGuiArt();
 
-            _inventoryPanel = new Rect(Screen.width - (WindowWidth * scale) - 10f, 168f, WindowWidth * scale, WindowHeight * scale);
+            _inventoryPanel = new Rect(Screen.width - (WindowWidth * scale) - 10f, 10f, WindowWidth * scale, WindowHeight * scale);
             GUI.DrawTexture(_inventoryPanel, _darkWindow);
             if (GUI.Button(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
             {
@@ -1664,7 +1664,7 @@ namespace Avelora.Client
         {
             EnsureGuiArt();
 
-            float scale = Mathf.Min(0.42f, (Screen.width - 20f) / HotbarWidth);
+            const float scale = 0.42f; // tamaño fijo: el texto no escala, así que los paneles tampoco
             _hotbarPanel = new Rect((Screen.width - (HotbarWidth * scale)) / 2f, Screen.height - (HotbarHeight * scale) - 8f, HotbarWidth * scale, HotbarHeight * scale);
             GUI.DrawTexture(_hotbarPanel, _darkHotbar);
 
@@ -1778,8 +1778,9 @@ namespace Avelora.Client
         {
             EnsureGuiArt();
 
-            float scale = Mathf.Min(0.62f, (Screen.height - 168f - 90f) / CharacterHeight);
-            _statsPanel = new Rect(10f, 168f, CharacterWidth * scale, CharacterHeight * scale); // bajo el recuadro de depuración
+            // Tamaño fijo y arriba del todo: tapa el recuadro de depuración y deja libre el chat de abajo.
+            const float scale = 0.62f;
+            _statsPanel = new Rect(10f, 10f, CharacterWidth * scale, CharacterHeight * scale);
             GUI.DrawTexture(_statsPanel, _darkCharacter);
             if (GUI.Button(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
             {
@@ -1936,13 +1937,36 @@ namespace Avelora.Client
             _darkSmallStyle = new GUIStyle(_darkTextStyle) { fontSize = 11, wordWrap = true };
             _darkSmallStyle.normal.textColor = new Color(0.68f, 0.71f, 0.75f);
             _darkTitleStyle = new GUIStyle(_darkTextStyle) { fontSize = 16, fontStyle = FontStyle.Bold };
-            _darkButtonStyle = new GUIStyle(GUI.skin.button) { fontSize = 13, border = new RectOffset(20, 20, 20, 20) };
-            _darkButtonStyle.normal.background = _darkSlot;
-            _darkButtonStyle.hover.background = _darkSlot;
-            _darkButtonStyle.active.background = _darkSlot;
+            // Botón plano con borde de 1 px: el hueco de 121 px no cabe en 9 partes en un botón de 20 px.
+            _darkButtonStyle = new GUIStyle
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                border = new RectOffset(1, 1, 1, 1),
+                padding = new RectOffset(2, 2, 0, 0),
+            };
+            _darkButtonStyle.normal.background = FlatButton(new Color(0.15f, 0.18f, 0.22f), new Color(0.55f, 0.58f, 0.63f));
+            _darkButtonStyle.hover.background = FlatButton(new Color(0.22f, 0.26f, 0.31f), new Color(0.8f, 0.82f, 0.86f));
+            _darkButtonStyle.active.background = FlatButton(new Color(0.1f, 0.12f, 0.15f), new Color(0.95f, 0.8f, 0.2f));
             _darkButtonStyle.normal.textColor = light;
             _darkButtonStyle.hover.textColor = Color.white;
             _darkButtonStyle.active.textColor = new Color(0.95f, 0.8f, 0.2f);
+        }
+
+        private static Texture2D FlatButton(Color fill, Color edge)
+        {
+            var texture = new Texture2D(3, 3) { filterMode = FilterMode.Point };
+            for (int y = 0; y < 3; y++)
+            {
+                for (int x = 0; x < 3; x++)
+                {
+                    texture.SetPixel(x, y, x == 1 && y == 1 ? fill : edge);
+                }
+            }
+
+            texture.Apply();
+            return texture;
         }
 
         private Texture2D ItemIcon(ushort itemId)
