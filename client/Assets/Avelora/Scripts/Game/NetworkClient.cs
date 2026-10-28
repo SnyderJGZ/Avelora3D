@@ -191,11 +191,7 @@ namespace Avelora.Client
         // Arte de la interfaz (Resources/GUI). Los iconos van por id de objeto (GUI/Items/<id>):
         // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
         private readonly Dictionary<ushort, Texture2D> _itemIcons = new Dictionary<ushort, Texture2D>();
-        private Texture2D _slotTexture;
-        private GUIStyle _panelStyle;
-        private GUIStyle _ribbonStyle;
         private GUIStyle _barStyle;
-        private GUIStyle _panelTextStyle;
         private bool _showInventory = true;
         private byte _ownHealthPercent = 100;
         private bool _ownDead;
@@ -1492,7 +1488,8 @@ namespace Avelora.Client
                     wordWrap = true,
                 };
                 _overlayStyle.normal.textColor = Color.white;
-                _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip };
+                // Sin texto enriquecido: un <size=400> escrito en el chat taparía la pantalla de todos.
+                _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
             }
 
             string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId.ToString() : "ninguno") +
@@ -1904,33 +1901,18 @@ namespace Avelora.Client
         }
 
         /// <summary>
-        /// Carga una vez el arte de Resources/GUI (pack Tiny Swords UI). Los bordes son los píxeles que
-        /// no se estiran al dibujar en 9 partes.
+        /// Carga una vez el arte de Resources/GUI: el marco de la barra de vida (Tiny Swords, dibujado en
+        /// 9 partes) y las piezas oscuras de Resources/GUI/Dark.
         /// </summary>
         private void EnsureGuiArt()
         {
-            if (_panelStyle != null)
+            if (_barStyle != null)
             {
                 return;
             }
 
-            _slotTexture = Resources.Load<Texture2D>("GUI/Slot");
-            _panelStyle = new GUIStyle { border = new RectOffset(24, 24, 24, 24) };
-            _panelStyle.normal.background = Resources.Load<Texture2D>("GUI/Panel");
             _barStyle = new GUIStyle { border = new RectOffset(24, 24, 0, 0) };
             _barStyle.normal.background = Resources.Load<Texture2D>("GUI/Bar");
-            _ribbonStyle = new GUIStyle
-            {
-                border = new RectOffset(64, 64, 0, 0),
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 15,
-                fontStyle = FontStyle.Bold,
-                contentOffset = new Vector2(0f, -4f),
-            };
-            _ribbonStyle.normal.background = Resources.Load<Texture2D>("GUI/Ribbon");
-            _ribbonStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
-            _panelTextStyle = new GUIStyle(_overlayStyle);
-            _panelTextStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
 
             _darkWindow = Resources.Load<Texture2D>("GUI/Dark/Window");
             _darkSlot = Resources.Load<Texture2D>("GUI/Dark/Slot");
