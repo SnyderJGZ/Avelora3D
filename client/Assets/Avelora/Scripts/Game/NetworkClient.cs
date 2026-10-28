@@ -1614,11 +1614,13 @@ namespace Avelora.Client
         private void DrawInventory()
         {
             const int columns = 5;
-            const float scale = 0.45f;
+            const float scale = 0.62f;
 
             EnsureGuiArt();
 
-            _inventoryPanel = new Rect(Screen.width - (WindowWidth * scale) - 10f, 10f, WindowWidth * scale, WindowHeight * scale);
+            // Centrado en la mitad derecha de la pantalla (el personaje va en la izquierda).
+            float panelWidth = WindowWidth * scale;
+            _inventoryPanel = new Rect((Screen.width * 0.5f) + Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f, panelWidth, WindowHeight * scale);
             GUI.DrawTexture(_inventoryPanel, _darkWindow);
             if (GUI.Button(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
             {
@@ -1778,9 +1780,10 @@ namespace Avelora.Client
         {
             EnsureGuiArt();
 
-            // Tamaño fijo y arriba del todo: tapa el recuadro de depuración y deja libre el chat de abajo.
+            // Tamaño fijo, centrado en la mitad izquierda de la pantalla.
             const float scale = 0.62f;
-            _statsPanel = new Rect(10f, 10f, CharacterWidth * scale, CharacterHeight * scale);
+            float panelWidth = CharacterWidth * scale;
+            _statsPanel = new Rect(Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f, panelWidth, CharacterHeight * scale);
             GUI.DrawTexture(_statsPanel, _darkCharacter);
             if (GUI.Button(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
             {
