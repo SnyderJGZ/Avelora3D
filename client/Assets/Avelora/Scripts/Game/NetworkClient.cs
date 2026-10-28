@@ -162,6 +162,22 @@ namespace Avelora.Client
         private bool _showStats;
         private readonly int[] _pendingPoints = new int[4];
         private Rect _statsPanel;
+        private Rect _inventoryPanel;
+        private Rect _hotbarPanel;
+
+        // Arte oscuro de la interfaz (Resources/GUI/Dark) y sus estilos de texto.
+        private Texture2D _darkWindow;
+        private Texture2D _darkSlot;
+        private Texture2D _darkSlotFill;
+        private Texture2D _darkHotbar;
+        private Texture2D _darkCharacter;
+        private Texture2D _darkTooltip;
+        private readonly Texture2D[] _statIcons = new Texture2D[9];
+        private GUIStyle _darkTextStyle;
+        private GUIStyle _darkRightStyle;
+        private GUIStyle _darkSmallStyle;
+        private GUIStyle _darkTitleStyle;
+        private GUIStyle _darkButtonStyle;
 
         // Catálogo que manda el servidor tras el Welcome (I-05): nombres, tipos, armas, alcance para
         // recoger y los valores de los puños. Hasta que llega, no se ataca ni se recoge.
@@ -532,9 +548,15 @@ namespace Avelora.Client
             Camera cam = Camera.main;
             Keyboard keyboard = Keyboard.current;
 
-            // Un clic en el panel de atributos es para sus botones, no para elegir objetivo.
-            bool overPanel = mouse != null && _showStats &&
-                _statsPanel.Contains(new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y));
+            // Un clic sobre un panel es para la interfaz, no para elegir objetivo.
+            bool overPanel = false;
+            if (mouse != null)
+            {
+                var gui = new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y);
+                overPanel = (_showStats && _statsPanel.Contains(gui)) ||
+                    (_showInventory && _inventoryPanel.Contains(gui)) ||
+                    _hotbarPanel.Contains(gui);
+            }
 
             if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
             {
@@ -648,6 +670,12 @@ namespace Avelora.Client
                 {
                     UseSlot(n);
                 }
+            }
+
+            // El 0 es el décimo hueco de la barra rápida.
+            if (keyboard.digit0Key.wasPressedThisFrame && _inventoryIds.Length > 9)
+            {
+                UseSlot(9);
             }
 
             if (keyboard.uKey.wasPressedThisFrame)
@@ -1026,6 +1054,9 @@ namespace Avelora.Client
 
                         _stats = stats;
                         _statsReceived = true;
+
+                        // Repartir VIT o reajustar cambia la vida máxima sin subir de nivel (sin Progress).
+                        _maxHealth = stats.MaxHealth;
                         System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
                     }
 
@@ -1568,177 +1599,294 @@ namespace Avelora.Client
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
+        // Medidas en píxeles de las imágenes de Resources/GUI/Dark (recortadas de Art/GUI/Inventario y
+        // Art/GUI/panel_stats): todo se dibuja escalado y se coloca con estas coordenadas.
+        private const float WindowWidth = 838f, WindowHeight = 711f;
+        private const float CharacterWidth = 916f, CharacterHeight = 791f;
+        private const float TooltipWidth = 476f, TooltipHeight = 555f;
+        private const float HotbarWidth = 1466f, HotbarHeight = 152f;
+
+        /// <summary>Rectángulo de la imagen original (en píxeles) colocado sobre un panel escalado.</summary>
+        private static Rect Part(Rect panel, float scale, float x, float y, float width, float height) =>
+            new Rect(panel.x + (x * scale), panel.y + (y * scale), width * scale, height * scale);
+
         /// <summary>
-        /// Inventario a la derecha (I-04b): rejilla de huecos con el icono de cada objeto, la
-        /// cantidad abajo a la derecha y el número de tecla arriba a la izquierda; el nombre sale al
-        /// pasar el ratón. I lo oculta.
+        /// Inventario (I): ventana con la rejilla de 5 columnas; cantidad abajo a la derecha y la ficha
+        /// del objeto al pasar el ratón. La X o la tecla I lo cierran.
         /// </summary>
         private void DrawInventory()
         {
             const int columns = 5;
-            const float cell = 48f;
-            const float gap = 4f;
-            const float pad = 18f;
-            const float header = 74f;
+            const float scale = 0.45f;
 
             EnsureGuiArt();
 
+            _inventoryPanel = new Rect(Screen.width - (WindowWidth * scale) - 10f, 168f, WindowWidth * scale, WindowHeight * scale);
+            GUI.DrawTexture(_inventoryPanel, _darkWindow);
+            if (GUI.Button(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
+            {
+                _showInventory = false;
+            }
+
+            // Zona útil de la ventana: x 17–827, y 75–695 en la imagen original.
+            Rect content = Part(_inventoryPanel, scale, 17f, 75f, 810f, 620f);
             int rows = Mathf.Max(1, (_inventoryIds.Length + columns - 1) / columns);
-            float width = (pad * 2f) + (columns * cell) + ((columns - 1) * gap);
-            float height = header + (rows * (cell + gap)) + pad;
-            var box = new Rect(Screen.width - width - 10f, 24f, width, height);
-            GUI.Box(box, GUIContent.none, _panelStyle);
-            GUI.Box(new Rect(box.x + 40f, box.y - 18f, width - 80f, 44f), "Inventario (I)", _ribbonStyle);
+            // Abajo quedan 34 px para la línea de ayuda.
+            float cell = Mathf.Min((content.width - 40f) / columns, (content.height - 50f - ((rows - 1) * 6f)) / rows);
+            float gap = 6f;
+            float gridWidth = (columns * cell) + ((columns - 1) * gap);
+            float left = content.x + ((content.width - gridWidth) / 2f);
+            float top = content.y + 10f;
 
-            string weapon = _catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped)
-                ? equipped.Name + " (daño " + equipped.Damage + ")"
-                : "puños";
-            GUI.Label(
-                new Rect(box.x + pad, box.y + 28f, width - (pad * 2f), header - 28f),
-                "Arma: " + weapon + "\nE recoger · Q poción · 1-9 usar · U guardar · C atributos",
-                _panelTextStyle);
-
-            string hovered = null;
+            ushort hovered = 0;
             Vector2 mouse = Event.current.mousePosition;
-
             for (int i = 0; i < _inventoryIds.Length; i++)
             {
-                var slot = new Rect(
-                    box.x + pad + ((i % columns) * (cell + gap)),
-                    box.y + header + ((i / columns) * (cell + gap)),
-                    cell,
-                    cell);
-                ushort id = _inventoryIds[i];
-                Texture2D icon = ItemIcon(id);
-
-                if (icon != null)
+                var slot = new Rect(left + ((i % columns) * (cell + gap)), top + ((i / columns) * (cell + gap)), cell, cell);
+                if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i]) && slot.Contains(mouse))
                 {
-                    GUI.DrawTexture(slot, icon);
-                }
-                else if (_slotTexture != null)
-                {
-                    GUI.DrawTexture(slot, _slotTexture);
-                }
-                else
-                {
-                    GUI.Box(slot, GUIContent.none);
-                }
-
-                if (i < 9)
-                {
-                    GUI.Label(new Rect(slot.x + 3f, slot.y, cell, 18f), (i + 1).ToString(), _overlayStyle);
-                }
-
-                if (id == 0)
-                {
-                    continue;
-                }
-
-                string name = _catalog.TryGetValue(id, out ItemCatalogEntry entry) ? entry.Name : "Objeto " + id;
-
-                if (icon == null)
-                {
-                    // Sin arte todavía: las primeras letras del nombre en el centro del hueco.
-                    GUI.Label(new Rect(slot.x + 6f, slot.y + 15f, cell - 6f, 20f), name.Substring(0, Mathf.Min(4, name.Length)), _overlayStyle);
-                }
-
-                if (_inventoryCounts[i] > 1)
-                {
-                    GUI.Label(new Rect(slot.x + cell - 24f, slot.y + cell - 19f, 24f, 18f), _inventoryCounts[i].ToString(), _overlayStyle);
-                }
-
-                if (slot.Contains(mouse))
-                {
-                    hovered = name;
+                    hovered = _inventoryIds[i];
                 }
             }
 
-            if (hovered != null)
+            GUI.Label(
+                new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
+                "E recoger · Q poción · 1-0 usar · U guardar arma",
+                _darkSmallStyle);
+
+            if (hovered != 0)
             {
-                GUI.Box(new Rect(mouse.x - 170f, mouse.y + 12f, 170f, 34f), GUIContent.none, _panelStyle);
-                GUI.Label(new Rect(mouse.x - 160f, mouse.y + 19f, 150f, 22f), hovered, _panelTextStyle);
+                DrawItemTooltip(hovered, mouse);
             }
         }
 
         /// <summary>
-        /// Panel de atributos (I-09b), arriba a la izquierda. «+» aparta un punto; Confirmar manda el
-        /// reparto y el servidor decide. Todos los números vienen del último Stats.
+        /// Barra rápida abajo al centro: los 10 primeros huecos del inventario con las teclas 1–0.
+        /// </summary>
+        private void DrawHotbar()
+        {
+            EnsureGuiArt();
+
+            float scale = Mathf.Min(0.42f, (Screen.width - 20f) / HotbarWidth);
+            _hotbarPanel = new Rect((Screen.width - (HotbarWidth * scale)) / 2f, Screen.height - (HotbarHeight * scale) - 8f, HotbarWidth * scale, HotbarHeight * scale);
+            GUI.DrawTexture(_hotbarPanel, _darkHotbar);
+
+            ushort hovered = 0;
+            Vector2 mouse = Event.current.mousePosition;
+            int count = Mathf.Min(10, _inventoryIds.Length);
+            for (int i = 0; i < count; i++)
+            {
+                // Huecos de 123×120 cada 132 px desde x = 77, y = 16 en la imagen original.
+                Rect slot = Part(_hotbarPanel, scale, 77f + (i * 132f) + 13.5f, 16f + 12f, 96f, 96f);
+                if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i], drawFrame: false) && slot.Contains(mouse))
+                {
+                    hovered = _inventoryIds[i];
+                }
+            }
+
+            if (hovered != 0)
+            {
+                DrawItemTooltip(hovered, mouse);
+            }
+        }
+
+        /// <summary>Dibuja un hueco con su objeto. Devuelve si hay objeto.</summary>
+        private bool DrawItemSlot(Rect slot, ushort id, ushort count, bool drawFrame = true)
+        {
+            if (drawFrame)
+            {
+                GUI.DrawTexture(slot, _darkSlot);
+            }
+
+            if (id == 0)
+            {
+                return false;
+            }
+
+            Rect inner = new Rect(slot.x + (slot.width * 0.16f), slot.y + (slot.height * 0.16f), slot.width * 0.68f, slot.height * 0.68f);
+            Texture2D icon = ItemIcon(id);
+            string name = _catalog.TryGetValue(id, out ItemCatalogEntry entry) ? entry.Name : "Objeto " + id;
+            if (icon != null)
+            {
+                GUI.DrawTexture(inner, icon, ScaleMode.ScaleToFit);
+            }
+            else
+            {
+                // Sin arte todavía: las primeras letras del nombre.
+                GUI.Label(inner, name.Substring(0, Mathf.Min(4, name.Length)), _darkSmallStyle);
+            }
+
+            if (count > 1)
+            {
+                GUI.Label(new Rect(slot.x, slot.yMax - 20f, slot.width - 6f, 18f), count.ToString(), _darkRightStyle);
+            }
+
+            return true;
+        }
+
+        /// <summary>Ficha del objeto (panel de tooltip): icono, nombre, tipo y sus números.</summary>
+        private void DrawItemTooltip(ushort id, Vector2 mouse)
+        {
+            if (!_catalog.TryGetValue(id, out ItemCatalogEntry item))
+            {
+                return;
+            }
+
+            const float scale = 0.55f;
+            float width = TooltipWidth * scale;
+            float height = TooltipHeight * scale;
+            float x = mouse.x + 16f + width > Screen.width ? mouse.x - width - 16f : mouse.x + 16f;
+            float y = Mathf.Min(mouse.y + 12f, Screen.height - height - 4f);
+            var panel = new Rect(x, y, width, height);
+            GUI.DrawTexture(panel, _darkTooltip);
+
+            Texture2D icon = ItemIcon(id);
+            if (icon != null)
+            {
+                GUI.DrawTexture(Part(panel, scale, 33f, 55f, 104f, 110f), _darkSlotFill);
+                GUI.DrawTexture(Part(panel, scale, 45f, 67f, 80f, 86f), icon, ScaleMode.ScaleToFit);
+            }
+
+            string kind = item.Kind == ItemKind.Weapon ? "Arma" : item.Kind == ItemKind.Potion ? "Poción" : "Material";
+            GUI.Label(Part(panel, scale, 155f, 62f, 300f, 50f), item.Name, _darkTitleStyle);
+            GUI.Label(Part(panel, scale, 155f, 112f, 300f, 40f), kind, _darkSmallStyle);
+
+            var lines = new List<KeyValuePair<string, string>>();
+            if (item.Kind == ItemKind.Weapon)
+            {
+                lines.Add(new KeyValuePair<string, string>("Daño", item.Damage.ToString()));
+                lines.Add(new KeyValuePair<string, string>("Alcance", item.Range.ToString("0.0")));
+                lines.Add(new KeyValuePair<string, string>("Recarga", item.CooldownSeconds.ToString("0.0") + " s"));
+            }
+            else if (item.Kind == ItemKind.Potion)
+            {
+                lines.Add(new KeyValuePair<string, string>("Cura", item.Heal + " de vida"));
+            }
+
+            lines.Add(new KeyValuePair<string, string>("Pila máxima", item.MaxStack.ToString()));
+            for (int i = 0; i < lines.Count && i < 4; i++)
+            {
+                Rect row = Part(panel, scale, 33f, 192f + (i * 32f), 410f, 30f);
+                GUI.Label(row, lines[i].Key, _darkTextStyle);
+                GUI.Label(row, lines[i].Value, _darkRightStyle);
+            }
+        }
+
+        /// <summary>
+        /// Panel del personaje (C, I-09b): equipo a la izquierda, nivel, experiencia, vida y números a
+        /// la derecha, y abajo el reparto de puntos. «+» aparta un punto; Confirmar lo manda y el
+        /// servidor decide. Todos los números vienen del último Stats.
         /// </summary>
         private void DrawStats()
         {
-            const float width = 270f;
-            const float pad = 18f;
-            const float row = 22f;
-
             EnsureGuiArt();
+
+            float scale = Mathf.Min(0.62f, (Screen.height - 168f - 90f) / CharacterHeight);
+            _statsPanel = new Rect(10f, 168f, CharacterWidth * scale, CharacterHeight * scale); // bajo el recuadro de depuración
+            GUI.DrawTexture(_statsPanel, _darkCharacter);
+            if (GUI.Button(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
+            {
+                _showStats = false;
+            }
+
+            Vector2 mouse = Event.current.mousePosition;
+
+            // Hueco del arma (x 328, y 449, 91×91): el arma equipada tapa la silueta dibujada.
+            Rect weaponSlot = Part(_statsPanel, scale, 328f, 449f, 91f, 91f);
+            if (_equippedItemId != 0)
+            {
+                GUI.DrawTexture(new Rect(weaponSlot.x + 3f, weaponSlot.y + 3f, weaponSlot.width - 6f, weaponSlot.height - 6f), _darkSlotFill);
+                DrawItemSlot(weaponSlot, _equippedItemId, 1, drawFrame: false);
+            }
+
+            // Columna derecha: «NIVEL» y «EXP» vienen pintados; aquí van los números y el relleno.
+            GUI.Label(Part(_statsPanel, scale, 565f, 104f, 120f, 30f), _stats.Level.ToString(), _darkTitleStyle);
+            // Primera barra: vida (con su valor en la fila de NIVEL); segunda: experiencia (fila de EXP).
+            int health = Mathf.RoundToInt(_stats.MaxHealth * _ownHealthPercent / 100f);
+            GUI.Label(Part(_statsPanel, scale, 620f, 104f, 243f, 30f), "Vida " + health + " / " + _stats.MaxHealth, _darkRightStyle);
+            FillBar(Part(_statsPanel, scale, 479f, 144f, 384f, 10f), _ownHealthPercent / 100f, new Color(0.8f, 0.15f, 0.15f, 1f));
+            GUI.Label(
+                Part(_statsPanel, scale, 560f, 168f, 303f, 26f),
+                _experienceToNext == 0 ? "máx." : _experience + " / " + _experienceToNext,
+                _darkRightStyle);
+            float xpFill = _experienceToNext == 0 ? 1f : (float)_experience / _experienceToNext;
+            FillBar(Part(_statsPanel, scale, 479f, 205f, 384f, 10f), xpFill, new Color(0.95f, 0.8f, 0.2f, 1f));
 
             int pending = _pendingPoints[0] + _pendingPoints[1] + _pendingPoints[2] + _pendingPoints[3];
             int free = _stats.FreePoints - pending;
-            bool anyAllocated = _stats.AllocStr + _stats.AllocDex + _stats.AllocInt + _stats.AllocVit > 0;
-
-            _statsPanel = new Rect(10f, 168f, width, 370f); // bajo el recuadro de depuración
-            GUI.Box(_statsPanel, GUIContent.none, _panelStyle);
-            GUI.Box(new Rect(_statsPanel.x + 40f, _statsPanel.y - 18f, width - 80f, 44f), "Personaje (C)", _ribbonStyle);
-
-            float x = _statsPanel.x + pad;
-            float y = _statsPanel.y + 34f;
-            GUI.Label(new Rect(x, y, width, row), "Clase " + _stats.ClassId + " · Nivel " + _stats.Level, _panelTextStyle);
-            y += row;
-            GUI.Label(new Rect(x, y, width, row), "Puntos libres: " + free, _panelTextStyle);
-            y += row + 4f;
+            float y = 232f;
+            const float line = 38f;
+            StatLine(scale, y, 0, "Vida máxima", _stats.MaxHealth.ToString());
+            StatLine(scale, y += line, 1, "Recurso", _stats.Resource + " / " + _stats.MaxResource);
+            StatLine(scale, y += line, 2, "Daño", _stats.AttackDamage + (_stats.DamageType == 1 ? " mágico" : " físico"));
+            StatLine(scale, y += line, 3, "Defensa", _stats.Defense.ToString());
+            StatLine(scale, y += line, 8, "Res. mágica", _stats.MagicResist.ToString());
 
             string[] names = { "Fuerza", "Destreza", "Inteligencia", "Vitalidad" };
             ushort[] totals = { _stats.Str, _stats.Dex, _stats.Int, _stats.Vit };
-            ushort[] allocated = { _stats.AllocStr, _stats.AllocDex, _stats.AllocInt, _stats.AllocVit };
-            for (int i = 0; i < 4; i++)
+            y += line + 8f;
+            for (int i = 0; i < 4; i++, y += line)
             {
-                string pendingText = _pendingPoints[i] > 0 ? "  +" + _pendingPoints[i] : string.Empty;
-                GUI.Label(
-                    new Rect(x, y, 190f, row),
-                    names[i] + " " + (totals[i] + _pendingPoints[i]) + " (" + allocated[i] + " rep.)" + pendingText,
-                    _panelTextStyle);
+                Rect row = Part(_statsPanel, scale, 479f, y, 330f, 34f);
+                GUI.Label(row, names[i], _darkTextStyle);
+                GUI.Label(row, (totals[i] + _pendingPoints[i]) + (_pendingPoints[i] > 0 ? "  (+" + _pendingPoints[i] + ")" : string.Empty), _darkRightStyle);
 
                 GUI.enabled = free > 0 && !_ownDead;
-                if (GUI.Button(new Rect(x + 200f, y, 30f, row - 2f), "+"))
+                if (GUI.Button(Part(_statsPanel, scale, 825f, y + 2f, 38f, 30f), "+", _darkButtonStyle))
                 {
                     _pendingPoints[i]++;
                 }
 
                 GUI.enabled = true;
-                y += row;
             }
 
-            y += 4f;
+            // Recuadro inferior (x 31–886, y 673–773): puntos libres y botones.
+            GUI.Label(Part(_statsPanel, scale, 45f, 686f, 270f, 34f), "Clase " + _stats.ClassId + " · Libres: " + free, _darkTextStyle);
+            bool anyAllocated = _stats.AllocStr + _stats.AllocDex + _stats.AllocInt + _stats.AllocVit > 0;
             GUI.enabled = pending > 0 && !_ownDead;
-            if (GUI.Button(new Rect(x, y, 112f, row + 2f), "Confirmar"))
+            if (GUI.Button(Part(_statsPanel, scale, 330f, 682f, 170f, 40f), "Confirmar", _darkButtonStyle))
             {
                 SendAllocatePoints();
             }
 
-            if (GUI.Button(new Rect(x + 118f, y, 112f, row + 2f), "Cancelar"))
+            if (GUI.Button(Part(_statsPanel, scale, 510f, 682f, 160f, 40f), "Cancelar", _darkButtonStyle))
             {
                 System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
             }
 
-            y += row + 6f;
             GUI.enabled = anyAllocated && pending == 0 && !_ownDead;
-            if (GUI.Button(new Rect(x, y, 230f, row + 2f), _stats.FreeReset != 0 ? "Reajustar (gratis)" : "Reajustar (piedra de reajuste)"))
+            if (GUI.Button(Part(_statsPanel, scale, 680f, 682f, 195f, 40f), _stats.FreeReset != 0 ? "Reajustar" : "Reajustar (piedra)", _darkButtonStyle))
             {
                 byte[] bytes = MessageCodec.EncodeResetPoints(new ResetPointsMessage());
                 _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             }
 
             GUI.enabled = true;
-            y += row + 10f;
-
-            string damage = _stats.AttackDamage + (_stats.DamageType == 1 ? " mágico" : " físico");
             GUI.Label(
-                new Rect(x, y, width - (pad * 2f), 110f),
-                "Vida máxima: " + _stats.MaxHealth +
-                "\nDaño: " + damage +
-                "\nDefensa: " + _stats.Defense + " · Res. mágica: " + _stats.MagicResist +
-                "\nRecurso: " + _stats.Resource + "/" + _stats.MaxResource,
-                _panelTextStyle);
+                Part(_statsPanel, scale, 45f, 728f, 830f, 34f),
+                _stats.FreeReset != 0 ? "Reajuste gratis hasta el nivel 10" : "Reajustar cuesta una piedra de reajuste",
+                _darkSmallStyle);
+
+            if (_equippedItemId != 0 && weaponSlot.Contains(mouse))
+            {
+                DrawItemTooltip(_equippedItemId, mouse);
+            }
+        }
+
+        private void StatLine(float scale, float y, int icon, string label, string value)
+        {
+            GUI.DrawTexture(Part(_statsPanel, scale, 479f, y + 2f, 30f, 30f), _statIcons[icon], ScaleMode.ScaleToFit);
+            Rect row = Part(_statsPanel, scale, 520f, y, 343f, 34f);
+            GUI.Label(row, label, _darkTextStyle);
+            GUI.Label(row, value, _darkRightStyle);
+        }
+
+        private static void FillBar(Rect bar, float fill, Color color)
+        {
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(fill), bar.height), Texture2D.whiteTexture);
+            GUI.color = previous;
         }
 
         private void SendAllocatePoints()
@@ -1750,8 +1898,8 @@ namespace Avelora.Client
                 (byte)_pendingPoints[3]));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
 
-            // Se limpia al llegar el Stats de respuesta; si el servidor lo rechaza, no llega ninguno y
-            // el jugador vuelve a ver sus puntos libres reales al limpiar aquí.
+            // Si el servidor lo acepta llega un Stats con los números nuevos; si lo rechaza, al limpiar
+            // aquí el jugador vuelve a ver sus puntos libres reales.
             System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
         }
 
@@ -1783,6 +1931,36 @@ namespace Avelora.Client
             _ribbonStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
             _panelTextStyle = new GUIStyle(_overlayStyle);
             _panelTextStyle.normal.textColor = new Color(0.25f, 0.16f, 0.06f);
+
+            _darkWindow = Resources.Load<Texture2D>("GUI/Dark/Window");
+            _darkSlot = Resources.Load<Texture2D>("GUI/Dark/Slot");
+            _darkHotbar = Resources.Load<Texture2D>("GUI/Dark/Hotbar");
+            _darkCharacter = Resources.Load<Texture2D>("GUI/Dark/Character");
+            _darkTooltip = Resources.Load<Texture2D>("GUI/Dark/Tooltip");
+            for (int i = 0; i < _statIcons.Length; i++)
+            {
+                _statIcons[i] = Resources.Load<Texture2D>("GUI/Dark/StatIcon_" + i);
+            }
+
+            // Fondo liso del color de los huecos, para tapar las siluetas pintadas del panel.
+            _darkSlotFill = new Texture2D(1, 1);
+            _darkSlotFill.SetPixel(0, 0, new Color(0.09f, 0.11f, 0.13f, 1f));
+            _darkSlotFill.Apply();
+
+            var light = new Color(0.86f, 0.88f, 0.9f);
+            _darkTextStyle = new GUIStyle(_overlayStyle) { fontSize = 14, wordWrap = false, alignment = TextAnchor.MiddleLeft };
+            _darkTextStyle.normal.textColor = light;
+            _darkRightStyle = new GUIStyle(_darkTextStyle) { alignment = TextAnchor.MiddleRight };
+            _darkSmallStyle = new GUIStyle(_darkTextStyle) { fontSize = 11, wordWrap = true };
+            _darkSmallStyle.normal.textColor = new Color(0.68f, 0.71f, 0.75f);
+            _darkTitleStyle = new GUIStyle(_darkTextStyle) { fontSize = 16, fontStyle = FontStyle.Bold };
+            _darkButtonStyle = new GUIStyle(GUI.skin.button) { fontSize = 13, border = new RectOffset(20, 20, 20, 20) };
+            _darkButtonStyle.normal.background = _darkSlot;
+            _darkButtonStyle.hover.background = _darkSlot;
+            _darkButtonStyle.active.background = _darkSlot;
+            _darkButtonStyle.normal.textColor = light;
+            _darkButtonStyle.hover.textColor = Color.white;
+            _darkButtonStyle.active.textColor = new Color(0.95f, 0.8f, 0.2f);
         }
 
         private Texture2D ItemIcon(ushort itemId)
@@ -1806,7 +1984,8 @@ namespace Avelora.Client
         {
             const float width = 300f;
             const float height = 16f;
-            var back = new Rect((Screen.width - width) / 2f, Screen.height - 50f, width, height);
+            // Encima de la barra rápida (unos 64 px de alto abajo del todo).
+            var back = new Rect((Screen.width - width) / 2f, Screen.height - 112f, width, height);
 
             // Marco de madera tallada alrededor de las dos barras.
             EnsureGuiArt();
@@ -1835,14 +2014,16 @@ namespace Avelora.Client
                 : string.Empty;
             GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), level + health, _overlayStyle);
 
-            if (_showInventory)
-            {
-                DrawInventory();
-            }
+            DrawHotbar();
 
             if (_showStats && _statsReceived)
             {
                 DrawStats();
+            }
+
+            if (_showInventory)
+            {
+                DrawInventory();
             }
 
             if (_ownDead)
