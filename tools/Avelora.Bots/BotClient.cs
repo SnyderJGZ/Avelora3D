@@ -234,6 +234,13 @@ namespace Avelora.Bots
         private bool _hasProgress;
         private long _levelUps;
         private byte _maxLevelReached = 1;
+        private long _pointsAllocated;
+        private long _statsReceived;
+        private byte _classId;
+        private ushort _lastFreePoints;
+        private ushort _pendingAllocationPoints;
+        private int _primaryAttribute = -1;
+        private bool _hasStats;
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -431,6 +438,14 @@ namespace Avelora.Bots
 
         /// <summary>Nivel máximo confirmado por el servidor.</summary>
         public byte MaxLevelReached => _maxLevelReached;
+
+        /// <summary>Puntos cuya asignación confirmó el servidor en Stats.</summary>
+        public long PointsAllocated => Interlocked.Read(ref _pointsAllocated);
+
+        /// <summary>Mensajes Stats procesados por el bot.</summary>
+        public long StatsReceived => Interlocked.Read(ref _statsReceived);
+
+        public byte ClassId => _classId;
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
         public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood && behavior != BotBehavior.Chat;
@@ -930,6 +945,11 @@ namespace Avelora.Bots
             _itemDecisionPending = false;
             _level = 1;
             _hasProgress = false;
+            _hasStats = false;
+            _classId = 0;
+            _lastFreePoints = 0;
+            _pendingAllocationPoints = 0;
+            _primaryAttribute = -1;
             _nextChatAt = 0;
         }
 
@@ -1467,6 +1487,40 @@ namespace Avelora.Bots
                 return;
             }
 
+            if (MessageCodec.TryReadStats(buffer, offset, length, out StatsMessage stats))
+            {
+                Interlocked.Increment(ref _statsReceived);
+                _classId = stats.ClassId;
+
+                if (_hasStats && stats.FreePoints < _lastFreePoints)
+                {
+                    Interlocked.Add(ref _pointsAllocated, _lastFreePoints - stats.FreePoints);
+                }
+
+                if (_pendingAllocationPoints > 0 && stats.FreePoints < _pendingAllocationPoints)
+                {
+                    _pendingAllocationPoints = 0;
+                }
+
+                _lastFreePoints = stats.FreePoints;
+                _hasStats = true;
+
+                if (_primaryAttribute < 0 && stats.AllocStr == 0 && stats.AllocDex == 0 &&
+                    stats.AllocInt == 0 && stats.AllocVit == 0)
+                {
+                    _primaryAttribute = stats.Str >= stats.Dex && stats.Str >= stats.Int
+                        ? 0
+                        : stats.Dex >= stats.Int ? 1 : 2;
+                }
+
+                if (_behavior == BotBehavior.Fight && stats.FreePoints > 0 && _pendingAllocationPoints == 0)
+                {
+                    SendAllocatePoints(stats.FreePoints);
+                }
+
+                return;
+            }
+
             if (MessageCodec.TryReadChat(buffer, offset, length, out _))
             {
                 Interlocked.Increment(ref _receivedChat);
@@ -1869,6 +1923,30 @@ namespace Avelora.Bots
             byte[] chat = MessageCodec.EncodeChatSend(new ChatSendMessage("Hola-" + Index));
             _transport!.Send(chat, chat.Length, DeliveryMode.ReliableOrdered);
             Interlocked.Increment(ref _sentChat);
+        }
+
+        /// <summary>Reparte los puntos nuevos entre el atributo base principal y VIT.</summary>
+        private void SendAllocatePoints(ushort freePoints)
+        {
+            if (_primaryAttribute < 0 || _transport == null)
+            {
+                return;
+            }
+
+            int primary = (freePoints + 1) / 2;
+            int vit = freePoints / 2;
+            if (primary > byte.MaxValue || vit > byte.MaxValue)
+            {
+                return;
+            }
+
+            byte str = _primaryAttribute == 0 ? (byte)primary : (byte)0;
+            byte dex = _primaryAttribute == 1 ? (byte)primary : (byte)0;
+            byte intelligence = _primaryAttribute == 2 ? (byte)primary : (byte)0;
+            byte[] message = MessageCodec.EncodeAllocatePoints(
+                new AllocatePointsMessage(str, dex, intelligence, (byte)vit));
+            _transport.Send(message, message.Length, DeliveryMode.ReliableOrdered);
+            _pendingAllocationPoints = freePoints;
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>

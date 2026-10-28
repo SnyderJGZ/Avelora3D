@@ -32,8 +32,11 @@ namespace Avelora.Shared.Protocol
         private const int UseItemSize = 1 + 1;
         private const int EquipSize = 1 + 1;
         private const int UnequipSize = 1;
+        private const int AllocatePointsSize = 1 + 4;
+        private const int ResetPointsSize = 1;
         private const int RejectSize = 1 + 1;
         private const int ProgressSize = 1 + 1 + 4 + 4 + 4;
+        private const int StatsSize = 37;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
@@ -568,6 +571,66 @@ namespace Avelora.Shared.Protocol
             }
         }
 
+        /// <summary>Codifica el reparto solicitado: tipo y cuatro valores u8.</summary>
+        public static byte[] EncodeAllocatePoints(in AllocatePointsMessage message)
+        {
+            var buffer = new byte[AllocatePointsSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.AllocatePoints);
+            writer.WriteByte(message.Str);
+            writer.WriteByte(message.Dex);
+            writer.WriteByte(message.Int);
+            writer.WriteByte(message.Vit);
+            return buffer;
+        }
+
+        /// <summary>Lee un reparto y exige exactamente cuatro bytes de atributos.</summary>
+        public static bool TryReadAllocatePoints(
+            byte[] buffer,
+            int offset,
+            int length,
+            out AllocatePointsMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.AllocatePoints, AllocatePointsSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                message = new AllocatePointsMessage(
+                    reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
+                return reader.Remaining == 0;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica el reajuste, que no lleva cuerpo.</summary>
+        public static byte[] EncodeResetPoints(in ResetPointsMessage message) =>
+            new[] { (byte)MessageType.ResetPoints };
+
+        /// <summary>Lee el reajuste y exige exactamente un byte.</summary>
+        public static bool TryReadResetPoints(
+            byte[] buffer,
+            int offset,
+            int length,
+            out ResetPointsMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.ResetPoints, ResetPointsSize))
+            {
+                return false;
+            }
+
+            message = new ResetPointsMessage();
+            return true;
+        }
+
         // ---------------------------------------------------------------- servidor → cliente
         /// <summary>Codifica la aceptación del saludo: 69 bytes.</summary>
         public static byte[] EncodeWelcome(in WelcomeMessage message)
@@ -1097,6 +1160,106 @@ namespace Avelora.Shared.Protocol
                 }
 
                 message = new ProgressMessage(level, experience, experienceToNext, maxHealth);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica Stats en sus 37 bytes fijos.</summary>
+        public static byte[] EncodeStats(in StatsMessage message)
+        {
+            if (message.ClassId == 0 || message.Level == 0 || message.MaxHealth == 0 ||
+                message.DamageType > 1 || message.FreeReset > 1 || message.Resource > message.MaxResource)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "Stats contiene un campo fuera de rango.");
+            }
+
+            var buffer = new byte[StatsSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Stats);
+            writer.WriteByte(message.ClassId);
+            writer.WriteByte(message.Level);
+            writer.WriteUInt16(message.Str);
+            writer.WriteUInt16(message.Dex);
+            writer.WriteUInt16(message.Int);
+            writer.WriteUInt16(message.Vit);
+            writer.WriteUInt16(message.AllocStr);
+            writer.WriteUInt16(message.AllocDex);
+            writer.WriteUInt16(message.AllocInt);
+            writer.WriteUInt16(message.AllocVit);
+            writer.WriteUInt16(message.FreePoints);
+            writer.WriteUInt32(message.MaxHealth);
+            writer.WriteUInt16(message.AttackDamage);
+            writer.WriteByte(message.DamageType);
+            writer.WriteUInt16(message.Defense);
+            writer.WriteUInt16(message.MagicResist);
+            writer.WriteUInt16(message.Resource);
+            writer.WriteUInt16(message.MaxResource);
+            writer.WriteByte(message.FreeReset);
+            return buffer;
+        }
+
+        /// <summary>Lee Stats y valida la longitud, el tipo de daño y los indicadores de rango.</summary>
+        public static bool TryReadStats(byte[] buffer, int offset, int length, out StatsMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.Stats, StatsSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte classId = reader.ReadByte();
+                byte level = reader.ReadByte();
+                ushort str = reader.ReadUInt16();
+                ushort dex = reader.ReadUInt16();
+                ushort intelligence = reader.ReadUInt16();
+                ushort vit = reader.ReadUInt16();
+                ushort allocStr = reader.ReadUInt16();
+                ushort allocDex = reader.ReadUInt16();
+                ushort allocInt = reader.ReadUInt16();
+                ushort allocVit = reader.ReadUInt16();
+                ushort freePoints = reader.ReadUInt16();
+                uint maxHealth = reader.ReadUInt32();
+                ushort attackDamage = reader.ReadUInt16();
+                byte damageType = reader.ReadByte();
+                ushort defense = reader.ReadUInt16();
+                ushort magicResist = reader.ReadUInt16();
+                ushort resource = reader.ReadUInt16();
+                ushort maxResource = reader.ReadUInt16();
+                byte freeReset = reader.ReadByte();
+
+                if (classId == 0 || level == 0 || maxHealth == 0 || damageType > 1 || freeReset > 1 ||
+                    resource > maxResource || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new StatsMessage(
+                    classId,
+                    level,
+                    str,
+                    dex,
+                    intelligence,
+                    vit,
+                    allocStr,
+                    allocDex,
+                    allocInt,
+                    allocVit,
+                    freePoints,
+                    maxHealth,
+                    attackDamage,
+                    damageType,
+                    defense,
+                    magicResist,
+                    resource,
+                    maxResource,
+                    freeReset);
                 return true;
             }
             catch (ProtocolException)

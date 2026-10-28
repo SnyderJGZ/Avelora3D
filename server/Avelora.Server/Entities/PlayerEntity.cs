@@ -73,6 +73,9 @@ namespace Avelora.Server.Entities
         /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
         internal bool ProgressChanged { get; set; }
 
+        /// <summary>Las estadísticas deben publicarse después de una subida de nivel.</summary>
+        internal bool StatsChanged { get; set; }
+
         /// <summary>
         /// Tick del último ataque <b>válido</b> (I-02); <c>-1</c> si aún no ha atacado. La recarga
         /// se mide contra este valor, siempre en ticks de la zona.

@@ -12,7 +12,7 @@
   "persistenceEnabled": true,
   "databasePath": "avelora-carga.db",
   "npcsPath": "npcs-carga.json",
-  "itemsPath": "..\\..\\server\\Avelora.Server\\items.json",
+  "itemsPath": "items-carga.json",
   "levelsPath": "levels-carga.json",
   "classesPath": "classes-carga.json",
   "inventorySlots": 20,

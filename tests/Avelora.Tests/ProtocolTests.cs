@@ -836,6 +836,83 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void AllocatePoints_Va_Y_Vuelve_Y_Usa_Cuatro_Bytes_U8()
+        {
+            var original = new AllocatePointsMessage(1, 2, 3, 4);
+            byte[] bytes = MessageCodec.EncodeAllocatePoints(original);
+
+            Assert.Equal(new byte[] { 9, 1, 2, 3, 4 }, bytes);
+            Assert.True(MessageCodec.TryReadAllocatePoints(bytes, 0, bytes.Length, out AllocatePointsMessage decoded));
+            Assert.Equal(original.Str, decoded.Str);
+            Assert.Equal(original.Dex, decoded.Dex);
+            Assert.Equal(original.Int, decoded.Int);
+            Assert.Equal(original.Vit, decoded.Vit);
+            Assert.False(MessageCodec.TryReadAllocatePoints(bytes, 0, bytes.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadAllocatePoints(bytes, 0, bytes.Length + 1, out _));
+        }
+
+        [Fact]
+        public void ResetPoints_Va_Y_Vuelve_Sin_Cuerpo()
+        {
+            byte[] bytes = MessageCodec.EncodeResetPoints(new ResetPointsMessage());
+
+            Assert.Equal(new byte[] { 19 }, bytes);
+            Assert.True(MessageCodec.TryReadResetPoints(bytes, 0, bytes.Length, out _));
+            Assert.False(MessageCodec.TryReadResetPoints(new byte[] { 19, 0 }, 0, 2, out _));
+            Assert.False(MessageCodec.TryReadResetPoints(Array.Empty<byte>(), 0, 0, out _));
+        }
+
+        [Fact]
+        public void Stats_Va_Y_Vuelve_Con_Todos_Los_Campos_Y_Rechaza_Datos_Invalidos()
+        {
+            var original = new StatsMessage(
+                4, 25, 11, 12, 13, 14, 1, 2, 3, 4, 65, 123456, 567, 1, 321, 654, 987, 1234, 0);
+            byte[] bytes = MessageCodec.EncodeStats(original);
+
+            Assert.Equal(37, bytes.Length);
+            Assert.Equal((byte)18, bytes[0]);
+            Assert.True(MessageCodec.TryReadStats(bytes, 0, bytes.Length, out StatsMessage decoded));
+            Assert.Equal(original.ClassId, decoded.ClassId);
+            Assert.Equal(original.Level, decoded.Level);
+            Assert.Equal(original.Str, decoded.Str);
+            Assert.Equal(original.Dex, decoded.Dex);
+            Assert.Equal(original.Int, decoded.Int);
+            Assert.Equal(original.Vit, decoded.Vit);
+            Assert.Equal(original.AllocStr, decoded.AllocStr);
+            Assert.Equal(original.AllocDex, decoded.AllocDex);
+            Assert.Equal(original.AllocInt, decoded.AllocInt);
+            Assert.Equal(original.AllocVit, decoded.AllocVit);
+            Assert.Equal(original.FreePoints, decoded.FreePoints);
+            Assert.Equal(original.MaxHealth, decoded.MaxHealth);
+            Assert.Equal(original.AttackDamage, decoded.AttackDamage);
+            Assert.Equal(original.DamageType, decoded.DamageType);
+            Assert.Equal(original.Defense, decoded.Defense);
+            Assert.Equal(original.MagicResist, decoded.MagicResist);
+            Assert.Equal(original.Resource, decoded.Resource);
+            Assert.Equal(original.MaxResource, decoded.MaxResource);
+            Assert.Equal(original.FreeReset, decoded.FreeReset);
+            Assert.False(MessageCodec.TryReadStats(bytes, 0, bytes.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadStats(bytes, 0, bytes.Length + 1, out _));
+
+            byte[] unknownDamage = (byte[])bytes.Clone();
+            unknownDamage[27] = 2;
+            Assert.False(MessageCodec.TryReadStats(unknownDamage, 0, unknownDamage.Length, out _));
+
+            byte[] invalidResetFlag = (byte[])bytes.Clone();
+            invalidResetFlag[36] = 2;
+            Assert.False(MessageCodec.TryReadStats(invalidResetFlag, 0, invalidResetFlag.Length, out _));
+
+            byte[] zeroClass = (byte[])bytes.Clone();
+            zeroClass[1] = 0;
+            Assert.False(MessageCodec.TryReadStats(zeroClass, 0, zeroClass.Length, out _));
+
+            byte[] resourceAboveMaximum = (byte[])bytes.Clone();
+            resourceAboveMaximum[32] = 0xD3;
+            resourceAboveMaximum[33] = 0x04;
+            Assert.False(MessageCodec.TryReadStats(resourceAboveMaximum, 0, resourceAboveMaximum.Length, out _));
+        }
+
+        [Fact]
         public void ChatSend_Va_Y_Vuelve_Y_Rechaza_Texto_Excesivo_O_Longitudes_Invalidas()
         {
             var original = new ChatSendMessage("  Hola, mundo  ");

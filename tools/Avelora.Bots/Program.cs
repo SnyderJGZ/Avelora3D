@@ -231,6 +231,8 @@ namespace Avelora.Bots
             long sentPickups = 0;
             long sentPotions = 0;
             long equipped = 0;
+            long pointsAllocated = 0;
+            long statsReceived = 0;
             long levelUps = 0;
             byte maxLevelReached = 1;
             var welcomeTimes = new List<long>(bots.Count);
@@ -272,6 +274,8 @@ namespace Avelora.Bots
                 sentPickups += bot.SentPickups;
                 sentPotions += bot.SentPotions;
                 equipped += bot.Equipped;
+                pointsAllocated += bot.PointsAllocated;
+                statsReceived += bot.StatsReceived;
                 levelUps += bot.LevelUps;
                 sentChat += bot.SentChat;
                 receivedChat += bot.ReceivedChat;
@@ -318,10 +322,12 @@ namespace Avelora.Bots
                     " saltos=" + bot.Snaps +
                     " muertes_propias=" + bot.OwnDeaths +
                     " reapariciones=" + bot.OwnRespawns +
-                    " nivel=" + bot.Level +
-                    " subidas_nivel=" + bot.LevelUps +
-                    " nivel_max=" + bot.MaxLevelReached +
-                    " snapshots=" + bot.Snapshots);
+                     " nivel=" + bot.Level +
+                     " subidas_nivel=" + bot.LevelUps +
+                     " nivel_max=" + bot.MaxLevelReached +
+                     " puntos_repartidos=" + bot.PointsAllocated +
+                     " stats_recibidos=" + bot.StatsReceived +
+                     " snapshots=" + bot.Snapshots);
 
                 if (options.Behavior == BotBehavior.Fight)
                 {
@@ -330,7 +336,9 @@ namespace Avelora.Bots
                         " muertes_vistas=" + bot.DeathsSeen +
                         " recogidas=" + bot.SentPickups +
                         " pociones=" + bot.SentPotions +
-                        " equipados=" + bot.Equipped);
+                        " equipados=" + bot.Equipped +
+                        " puntos_repartidos=" + bot.PointsAllocated +
+                        " stats_recibidos=" + bot.StatsReceived);
                 }
 
                 if (options.Behavior == BotBehavior.Chat)
@@ -388,7 +396,8 @@ namespace Avelora.Bots
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
                     deathsSeen + " muertes vistas, " + sentPickups + " recogidas, " +
                     sentPotions + " pociones usadas, " + equipped + " equipados, " +
-                        "subidas_nivel=" + levelUps + ", nivel_max=" + maxLevelReached);
+                    "puntos_repartidos=" + pointsAllocated + ", stats_recibidos=" + statsReceived + ", " +
+                    "subidas_nivel=" + levelUps + ", nivel_max=" + maxLevelReached);
             }
 
             if (options.Behavior == BotBehavior.Chat)

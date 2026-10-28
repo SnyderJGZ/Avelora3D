@@ -1,16 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Net;
 using Avelora.Server.Npcs;
+using Avelora.Server.Persistence;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
 using Avelora.Shared.Protocol;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Avelora.Tests
@@ -24,6 +28,15 @@ namespace Avelora.Tests
         private static string MapPath =>
             Path.Combine(AppContext.BaseDirectory, "maps", "avelora-etapa-a.avmap");
 
+        private static int QuerySchemaVersion(string database)
+        {
+            using var connection = new SqliteConnection("Data Source=" + database);
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA user_version;";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
+
         private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
@@ -35,6 +48,7 @@ namespace Avelora.Tests
                         new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 99 },
                         new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
                         new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                        new ItemType { Id = 3201, Name = "Piedra de reajuste", Kind = "material", MaxStack = 10 },
                     },
                 }
                 : null;
@@ -55,7 +69,7 @@ namespace Avelora.Tests
                 combat: new CombatSettings(config.AttackRangeTolerance),
                 playerVitals: config.PlayerVitals,
                 items: items,
-                itemActions: withItems ? new ItemActionQueue(config.MaxQueuedItemActions) : null,
+                itemActions: new ItemActionQueue(config.MaxQueuedItemActions),
                 inventorySlots: config.InventorySlots,
                 maxGroundItems: config.MaxGroundItems,
                 groundItemTicks: (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate),
@@ -72,14 +86,24 @@ namespace Avelora.Tests
                 Action<ServerConfig>? configure = null,
                 Func<long>? clock = null,
                 bool withItems = false,
-                NpcCatalog? npcs = null)
+                NpcCatalog? npcs = null,
+                IPlayerRepository? repository = null,
+                CharacterSaveService? saves = null)
             {
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
                 Zone = NewZone(Config, withItems, npcs);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
-                Server = new NetworkServer(Zone, Config, Transport, MapHash, clock: clock);
+                Server = new NetworkServer(
+                    Zone,
+                    Config,
+                    Transport,
+                    MapHash,
+                    repository,
+                    saves,
+                    repository == null ? null : "avelora-dev",
+                    clock: clock);
             }
 
             public ServerConfig Config { get; }
@@ -167,7 +191,7 @@ namespace Avelora.Tests
             harness.Pump();
 
             Assert.Equal(1, harness.Zone.Entities.Count);
-            Assert.Equal(4, harness.Transport.Sent.Count);
+            Assert.Equal(5, harness.Transport.Sent.Count);
 
             SentMessage sent = harness.Transport.Sent[0];
             Assert.Equal(1, sent.ConnectionId);
@@ -209,7 +233,44 @@ namespace Avelora.Tests
             Assert.Equal(0u, progress.Experience);
             Assert.Equal(100u, progress.ExperienceToNext);
             Assert.Equal(100u, progress.MaxHealth);
+            Assert.True(MessageCodec.TryReadStats(
+                harness.Transport.Sent[4].Data,
+                0,
+                harness.Transport.Sent[4].Data.Length,
+                out StatsMessage stats));
+            Assert.Equal((byte)1, stats.ClassId);
+            Assert.Equal((byte)1, stats.Level);
+            Assert.Equal((ushort)3, stats.FreePoints);
+            Assert.Equal((uint)100, stats.MaxHealth);
+            Assert.Equal((ushort)12, stats.AttackDamage);
+            Assert.Equal((byte)0, stats.DamageType);
+            Assert.Equal((byte)1, stats.FreeReset);
             Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void Repartir_Puntos_Se_Resuelve_En_El_Tick_Y_Devuelve_Stats()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeAllocatePoints(
+                new AllocatePointsMessage(0, 0, 0, 2)));
+            harness.Server.PollOnce();
+            Assert.Equal(0, harness.Zone.StatsAllocations);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage sent = Assert.Single(harness.Transport.Sent);
+            Assert.True(MessageCodec.TryReadStats(sent.Data, 0, sent.Data.Length, out StatsMessage stats));
+            Assert.Equal((ushort)2, stats.AllocVit);
+            Assert.Equal((ushort)1, stats.FreePoints);
+            Assert.Equal((uint)110, stats.MaxHealth);
+            Assert.Equal(1, harness.Zone.StatsAllocations);
+            Assert.Equal(2, harness.Zone.StatsPointsAllocated);
         }
 
         [Fact]
@@ -249,6 +310,7 @@ namespace Avelora.Tests
             harness.Pump();
             PlayerEntity player = Assert.IsType<PlayerEntity>(
                 harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Experience = 90;
 
             harness.Transport.Sent.Clear();
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(
@@ -262,9 +324,138 @@ namespace Avelora.Tests
                 sent => MessageCodec.TryReadProgress(sent.Data, 0, sent.Data.Length, out _));
             Assert.True(MessageCodec.TryReadProgress(
                 progressSent.Data, 0, progressSent.Data.Length, out ProgressMessage progress));
-            Assert.Equal(20u, progress.Experience);
-            Assert.Equal(100u, progress.ExperienceToNext);
+            Assert.Equal(10u, progress.Experience);
+            Assert.Equal(150u, progress.ExperienceToNext);
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadStats(sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.Level == 2);
             Assert.Equal(1, harness.Zone.NpcDeaths);
+        }
+
+        [Fact]
+        public void Equipar_Actualiza_Stats_Con_El_Daño_Del_Arma()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Inventory[0] = new InventorySlot(3101, 1);
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeEquip(new EquipMessage(0)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadInventory(
+                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) && inventory.EquippedItemId == 3101);
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 16);
+
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUnequip(new UnequipMessage()));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadInventory(
+                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) && inventory.EquippedItemId == 0);
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 12);
+        }
+
+        [Fact]
+        public void Reajuste_Con_Piedra_Envia_Inventario_Y_Stats()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Level = 11;
+            player.AllocStr = 1;
+            player.Inventory[0] = new InventorySlot(3201, 1);
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeResetPoints(new ResetPointsMessage()));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.Equal(0, player.AllocStr);
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadInventory(
+                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) && inventory.ItemIds[0] == 0);
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.Level == 11);
+        }
+
+        [Fact]
+        public void Reparto_Se_Persiste_Al_Desconectar_Y_Reconectar_De_Inmediato()
+        {
+            using var folder = new TemporaryFolder();
+            string database = Path.Combine(folder.Path, "avelora.db");
+            MapCollisionGrid map = MapFile.Load(MapPath);
+            byte[] mapHash = MapFile.ComputeContentHashBytes(map);
+            ItemCatalog items = new ItemCatalog
+            {
+                Items = new List<ItemType>
+                {
+                    new ItemType { Id = 3201, Name = "Piedra de reajuste", Kind = "material", MaxStack = 10 },
+                },
+            };
+
+            using var repository = new SqlitePlayerRepository(
+                database,
+                passwordIterations: 1_000,
+                items: items,
+                levels: LevelTable.Default,
+                classes: Avelora.Server.Progression.ClassCatalog.Default);
+            repository.Initialize();
+            AccountLoginResult account = repository.Login("dev", "avelora-dev", "avelora-dev", "avelora-dev");
+            Assert.True(account.Success);
+            CharacterRecord character = repository.GetOrCreateCharacter(
+                account.AccountId, "dev", 1, new Vec2(-1.5f, -2.5f), mapHash)!;
+            repository.SaveCharacter(character);
+
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves);
+            harness.Connect(1);
+            harness.Handshake(1);
+            for (int i = 0; i < 100 && harness.Zone.Players.Count == 0; i++)
+            {
+                harness.Pump();
+                harness.Zone.Tick();
+                Thread.Sleep(5);
+            }
+
+            PlayerEntity firstPlayer = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeAllocatePoints(
+                new AllocatePointsMessage(2, 0, 0, 1)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Zone.Tick();
+            Assert.True(saves.TryGetLatest(firstPlayer.CharacterId, out CharacterRecord saved));
+            Assert.Equal(2, saved.AllocStr);
+            Assert.Equal(1, saved.AllocVit);
+
+            harness.Connect(2);
+            harness.Handshake(2);
+            for (int i = 0; i < 100 && harness.Zone.Players.Count == 0; i++)
+            {
+                harness.Pump();
+                harness.Zone.Tick();
+                Thread.Sleep(5);
+            }
+
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
+            Assert.Equal(2, reconnected.AllocStr);
+            Assert.Equal(1, reconnected.AllocVit);
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(2)));
+            Assert.Equal(SqlitePlayerRepository.SchemaVersion, QuerySchemaVersion(database));
         }
 
         [Fact]
@@ -1408,6 +1599,30 @@ namespace Avelora.Tests
 
             public void RaiseReceived(int connectionId, byte[] data) =>
                 Received?.Invoke(connectionId, data, 0, data.Length);
+        }
+
+        private sealed class TemporaryFolder : IDisposable
+        {
+            public TemporaryFolder()
+            {
+                Path = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "avelora-i09-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(Path);
+            }
+
+            public string Path { get; }
+
+            public void Dispose()
+            {
+                try
+                {
+                    Directory.Delete(Path, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // SQLite podría tardar un instante en liberar el archivo en Windows.
+                }
+            }
         }
 
         /// <summary>Un mensaje tal como lo entregó el transporte falso.</summary>

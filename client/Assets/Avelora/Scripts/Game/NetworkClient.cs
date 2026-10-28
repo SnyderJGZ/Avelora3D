@@ -155,6 +155,14 @@ namespace Avelora.Client
         private uint _experienceToNext;
         private uint _maxHealth;
 
+        // Atributos que manda el servidor (I-09). El reparto pendiente vive solo en el cliente hasta
+        // que se confirma: el servidor valida el total y contesta con otro Stats.
+        private StatsMessage _stats;
+        private bool _statsReceived;
+        private bool _showStats;
+        private readonly int[] _pendingPoints = new int[4];
+        private Rect _statsPanel;
+
         // Catálogo que manda el servidor tras el Welcome (I-05): nombres, tipos, armas, alcance para
         // recoger y los valores de los puños. Hasta que llega, no se ataca ni se recoge.
         private readonly Dictionary<ushort, ItemCatalogEntry> _catalog = new Dictionary<ushort, ItemCatalogEntry>();
@@ -392,6 +400,11 @@ namespace Avelora.Client
                 _showInventory = !_showInventory;
             }
 
+            if (!_chatOpen && Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
+            {
+                _showStats = !_showStats;
+            }
+
             double frame = Time.deltaTime;
             if (frame > MaxFrameSeconds)
             {
@@ -519,7 +532,11 @@ namespace Avelora.Client
             Camera cam = Camera.main;
             Keyboard keyboard = Keyboard.current;
 
-            if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame)
+            // Un clic en el panel de atributos es para sus botones, no para elegir objetivo.
+            bool overPanel = mouse != null && _showStats &&
+                _statsPanel.Contains(new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y));
+
+            if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
             {
                 Vector2 screen = mouse.position.ReadValue();
                 Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
@@ -994,6 +1011,22 @@ namespace Avelora.Client
                         _experience = progress.Experience;
                         _experienceToNext = progress.ExperienceToNext;
                         _maxHealth = progress.MaxHealth;
+                    }
+
+                    break;
+
+                case MessageType.Stats:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadStats(buffer, offset, length, out StatsMessage stats))
+                    {
+                        if (_statsReceived && stats.FreePoints > _stats.FreePoints)
+                        {
+                            ShowHint("Puntos de atributo libres: " + stats.FreePoints + " (C)");
+                        }
+
+                        _stats = stats;
+                        _statsReceived = true;
+                        System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
                     }
 
                     break;
@@ -1562,7 +1595,7 @@ namespace Avelora.Client
                 : "puños";
             GUI.Label(
                 new Rect(box.x + pad, box.y + 28f, width - (pad * 2f), header - 28f),
-                "Arma: " + weapon + "\nE recoger · Q poción · 1-9 usar · U guardar",
+                "Arma: " + weapon + "\nE recoger · Q poción · 1-9 usar · U guardar · C atributos",
                 _panelTextStyle);
 
             string hovered = null;
@@ -1625,6 +1658,101 @@ namespace Avelora.Client
                 GUI.Box(new Rect(mouse.x - 170f, mouse.y + 12f, 170f, 34f), GUIContent.none, _panelStyle);
                 GUI.Label(new Rect(mouse.x - 160f, mouse.y + 19f, 150f, 22f), hovered, _panelTextStyle);
             }
+        }
+
+        /// <summary>
+        /// Panel de atributos (I-09b), arriba a la izquierda. «+» aparta un punto; Confirmar manda el
+        /// reparto y el servidor decide. Todos los números vienen del último Stats.
+        /// </summary>
+        private void DrawStats()
+        {
+            const float width = 270f;
+            const float pad = 18f;
+            const float row = 22f;
+
+            EnsureGuiArt();
+
+            int pending = _pendingPoints[0] + _pendingPoints[1] + _pendingPoints[2] + _pendingPoints[3];
+            int free = _stats.FreePoints - pending;
+            bool anyAllocated = _stats.AllocStr + _stats.AllocDex + _stats.AllocInt + _stats.AllocVit > 0;
+
+            _statsPanel = new Rect(10f, 168f, width, 370f); // bajo el recuadro de depuración
+            GUI.Box(_statsPanel, GUIContent.none, _panelStyle);
+            GUI.Box(new Rect(_statsPanel.x + 40f, _statsPanel.y - 18f, width - 80f, 44f), "Personaje (C)", _ribbonStyle);
+
+            float x = _statsPanel.x + pad;
+            float y = _statsPanel.y + 34f;
+            GUI.Label(new Rect(x, y, width, row), "Clase " + _stats.ClassId + " · Nivel " + _stats.Level, _panelTextStyle);
+            y += row;
+            GUI.Label(new Rect(x, y, width, row), "Puntos libres: " + free, _panelTextStyle);
+            y += row + 4f;
+
+            string[] names = { "Fuerza", "Destreza", "Inteligencia", "Vitalidad" };
+            ushort[] totals = { _stats.Str, _stats.Dex, _stats.Int, _stats.Vit };
+            ushort[] allocated = { _stats.AllocStr, _stats.AllocDex, _stats.AllocInt, _stats.AllocVit };
+            for (int i = 0; i < 4; i++)
+            {
+                string pendingText = _pendingPoints[i] > 0 ? "  +" + _pendingPoints[i] : string.Empty;
+                GUI.Label(
+                    new Rect(x, y, 190f, row),
+                    names[i] + " " + (totals[i] + _pendingPoints[i]) + " (" + allocated[i] + " rep.)" + pendingText,
+                    _panelTextStyle);
+
+                GUI.enabled = free > 0 && !_ownDead;
+                if (GUI.Button(new Rect(x + 200f, y, 30f, row - 2f), "+"))
+                {
+                    _pendingPoints[i]++;
+                }
+
+                GUI.enabled = true;
+                y += row;
+            }
+
+            y += 4f;
+            GUI.enabled = pending > 0 && !_ownDead;
+            if (GUI.Button(new Rect(x, y, 112f, row + 2f), "Confirmar"))
+            {
+                SendAllocatePoints();
+            }
+
+            if (GUI.Button(new Rect(x + 118f, y, 112f, row + 2f), "Cancelar"))
+            {
+                System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
+            }
+
+            y += row + 6f;
+            GUI.enabled = anyAllocated && pending == 0 && !_ownDead;
+            if (GUI.Button(new Rect(x, y, 230f, row + 2f), _stats.FreeReset != 0 ? "Reajustar (gratis)" : "Reajustar (piedra de reajuste)"))
+            {
+                byte[] bytes = MessageCodec.EncodeResetPoints(new ResetPointsMessage());
+                _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            }
+
+            GUI.enabled = true;
+            y += row + 10f;
+
+            string damage = _stats.AttackDamage + (_stats.DamageType == 1 ? " mágico" : " físico");
+            GUI.Label(
+                new Rect(x, y, width - (pad * 2f), 110f),
+                "Vida máxima: " + _stats.MaxHealth +
+                "\nDaño: " + damage +
+                "\nDefensa: " + _stats.Defense + " · Res. mágica: " + _stats.MagicResist +
+                "\nRecurso: " + _stats.Resource + "/" + _stats.MaxResource,
+                _panelTextStyle);
+        }
+
+        private void SendAllocatePoints()
+        {
+            byte[] bytes = MessageCodec.EncodeAllocatePoints(new AllocatePointsMessage(
+                (byte)_pendingPoints[0],
+                (byte)_pendingPoints[1],
+                (byte)_pendingPoints[2],
+                (byte)_pendingPoints[3]));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+
+            // Se limpia al llegar el Stats de respuesta; si el servidor lo rechaza, no llega ninguno y
+            // el jugador vuelve a ver sus puntos libres reales al limpiar aquí.
+            System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
         }
 
         /// <summary>
@@ -1710,6 +1838,11 @@ namespace Avelora.Client
             if (_showInventory)
             {
                 DrawInventory();
+            }
+
+            if (_showStats && _statsReceived)
+            {
+                DrawStats();
             }
 
             if (_ownDead)

@@ -39,6 +39,7 @@ namespace Avelora.Server.Simulation
         private readonly CombatSystem? _combat;
         private readonly PlayerVitalsSystem? _vitals;
         private readonly ItemSystem? _items;
+        private readonly StatsSystem _stats;
         private readonly ItemCatalog? _itemCatalog;
         private readonly List<ItemAction> _itemInbox = new List<ItemAction>(64);
         private readonly System.Random _random;
@@ -125,11 +126,6 @@ namespace Avelora.Server.Simulation
                     "La cola de ataques y las reglas de combate se configuran juntas o no se configuran.");
             }
 
-            if (items == null && itemActions != null)
-            {
-                throw new ArgumentException("La cola de acciones de objeto requiere un catálogo de objetos.");
-            }
-
             Id = id;
             Map = map;
             Entities = entities;
@@ -141,6 +137,7 @@ namespace Avelora.Server.Simulation
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
             _classes = classes ?? ClassCatalog.Default;
+            _stats = new StatsSystem(_levels, _classes, items);
             _random = new System.Random(npcSeed);
             _movement = movement;
 
@@ -239,6 +236,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Progreso que cambió al resolver el combate del tick.</summary>
         public event Action<PlayerEntity>? ProgressChanged;
 
+        /// <summary>Notificación de atributos actualizados para enviar Stats por la red.</summary>
+        public event Action<PlayerEntity>? StatsChanged;
+
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
 
@@ -299,6 +299,16 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Niveles subidos por los jugadores desde el arranque.</summary>
         public long LevelUps { get; private set; }
+
+        public long StatsAllocations => _stats.Allocations;
+        public long StatsPointsAllocated => _stats.PointsAllocated;
+        public long RejectedStatsDead => _stats.RejectedAllocateDead;
+        public long RejectedStatsEmpty => _stats.RejectedAllocateEmpty;
+        public long RejectedStatsExcess => _stats.RejectedAllocateExcess;
+        public long PointResets => _stats.Resets;
+        public long RejectedResetDead => _stats.RejectedResetDead;
+        public long RejectedResetEmpty => _stats.RejectedResetEmpty;
+        public long RejectedResetItem => _stats.RejectedResetItem;
 
         /// <summary>Golpes de enemigos a jugadores desde el arranque (I-03).</summary>
         public long NpcHits => _npcs?.Hits ?? 0;
@@ -443,6 +453,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Notifica al anfitrión de red que cambió el inventario de este jugador.</summary>
         public void NotifyInventoryChanged(PlayerEntity player) => InventoryChanged?.Invoke(player);
 
+        /// <summary>Notifica a la red un cambio de atributos o estadísticas.</summary>
+        public void NotifyStatsChanged(PlayerEntity player) => StatsChanged?.Invoke(player);
+
         /// <summary>Un tick: leer intenciones, simular el mundo y publicar el estado.</summary>
         public void Tick()
         {
@@ -459,18 +472,22 @@ namespace Avelora.Server.Simulation
             }
 
             // Acciones y caducidades se resuelven tras el combate y antes de la IA de los PNJ.
+            if (ItemActions != null)
+            {
+                ItemActions.DrainInto(_itemInbox);
+            }
+            else
+            {
+                _itemInbox.Clear();
+            }
+
             if (_items != null)
             {
-                if (ItemActions != null)
-                {
-                    ItemActions.DrainInto(_itemInbox);
-                }
-                else
-                {
-                    _itemInbox.Clear();
-                }
-
-                _items.Tick(this, _itemInbox, _tickCount);
+                _items.Tick(this, _itemInbox, _tickCount, _stats);
+            }
+            else
+            {
+                _stats.Tick(this, _itemInbox);
             }
 
             // Los enemigos se mueven después de los jugadores y antes de reindexar: así el área de
@@ -530,10 +547,19 @@ namespace Avelora.Server.Simulation
         {
             for (int i = 0; i < Entities.Count; i++)
             {
-                if (Entities[i] is PlayerEntity player && player.ProgressChanged)
+                if (Entities[i] is PlayerEntity player)
                 {
-                    player.ProgressChanged = false;
-                    ProgressChanged?.Invoke(player);
+                    if (player.ProgressChanged)
+                    {
+                        player.ProgressChanged = false;
+                        ProgressChanged?.Invoke(player);
+                    }
+
+                    if (player.StatsChanged)
+                    {
+                        player.StatsChanged = false;
+                        StatsChanged?.Invoke(player);
+                    }
                 }
             }
         }

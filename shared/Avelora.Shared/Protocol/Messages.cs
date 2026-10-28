@@ -285,6 +285,28 @@ namespace Avelora.Shared.Protocol
         public string Text { get; }
     }
 
+    /// <summary>Petición de añadir puntos a los cuatro atributos (I-09).</summary>
+    public readonly struct AllocatePointsMessage
+    {
+        public AllocatePointsMessage(byte str, byte dex, byte intelligence, byte vit)
+        {
+            Str = str;
+            Dex = dex;
+            Int = intelligence;
+            Vit = vit;
+        }
+
+        public byte Str { get; }
+        public byte Dex { get; }
+        public byte Int { get; }
+        public byte Vit { get; }
+    }
+
+    /// <summary>Petición de devolver todos los puntos repartidos (I-09).</summary>
+    public readonly struct ResetPointsMessage
+    {
+    }
+
     /// <summary>Tipos de objeto anunciados por el servidor.</summary>
     public enum ItemKind : byte
     {
@@ -598,6 +620,73 @@ namespace Avelora.Shared.Protocol
         public uint Experience { get; }
         public uint ExperienceToNext { get; }
         public uint MaxHealth { get; }
+    }
+
+    /// <summary>Atributos y estadísticas actuales del personaje (I-09).</summary>
+    public readonly struct StatsMessage
+    {
+        public StatsMessage(
+            byte classId,
+            byte level,
+            ushort str,
+            ushort dex,
+            ushort intelligence,
+            ushort vit,
+            ushort allocStr,
+            ushort allocDex,
+            ushort allocInt,
+            ushort allocVit,
+            ushort freePoints,
+            uint maxHealth,
+            ushort attackDamage,
+            byte damageType,
+            ushort defense,
+            ushort magicResist,
+            ushort resource,
+            ushort maxResource,
+            byte freeReset)
+        {
+            ClassId = classId;
+            Level = level;
+            Str = str;
+            Dex = dex;
+            Int = intelligence;
+            Vit = vit;
+            AllocStr = allocStr;
+            AllocDex = allocDex;
+            AllocInt = allocInt;
+            AllocVit = allocVit;
+            FreePoints = freePoints;
+            MaxHealth = maxHealth;
+            AttackDamage = attackDamage;
+            DamageType = damageType;
+            Defense = defense;
+            MagicResist = magicResist;
+            Resource = resource;
+            MaxResource = maxResource;
+            FreeReset = freeReset;
+        }
+
+        public byte ClassId { get; }
+        public byte Level { get; }
+        public ushort Str { get; }
+        public ushort Dex { get; }
+        public ushort Int { get; }
+        public ushort Vit { get; }
+        public ushort AllocStr { get; }
+        public ushort AllocDex { get; }
+        public ushort AllocInt { get; }
+        public ushort AllocVit { get; }
+        public ushort FreePoints { get; }
+        public uint MaxHealth { get; }
+        public ushort AttackDamage { get; }
+        /// <summary>0 = físico; 1 = mágico.</summary>
+        public byte DamageType { get; }
+        public ushort Defense { get; }
+        public ushort MagicResist { get; }
+        public ushort Resource { get; }
+        public ushort MaxResource { get; }
+        public byte FreeReset { get; }
     }
 
     /// <summary>Mensaje del chat de zona aceptado por el servidor (I-07).</summary>

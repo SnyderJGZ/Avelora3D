@@ -193,6 +193,17 @@ namespace Avelora.Server.Diagnostics
                 " acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
 
             Console.WriteLine(
+                "            atributos: stats_repartos=" + zone.StatsAllocations +
+                " stats_puntos=" + zone.StatsPointsAllocated +
+                " stats_rech_muerto=" + zone.RejectedStatsDead +
+                " stats_rech_vacio=" + zone.RejectedStatsEmpty +
+                " stats_rech_exceso=" + zone.RejectedStatsExcess +
+                " reajustes=" + zone.PointResets +
+                " reajuste_rech_muerto=" + zone.RejectedResetDead +
+                " reajuste_rech_vacio=" + zone.RejectedResetEmpty +
+                " reajuste_rech_objeto=" + zone.RejectedResetItem);
+
+            Console.WriteLine(
                 "            cuenta: login_ok=" + network.LoginsSucceeded +
                 " login_rech=" + network.LoginsRejected +
                 " guardados=" + network.CharactersSaved +
@@ -332,6 +343,16 @@ namespace Avelora.Server.Diagnostics
                 ", equipar_rech_lleno=" + zone.RejectedEquipFull +
                 ", equipar_rech_vacio=" + zone.RejectedEquipEmpty +
                 ", acciones_objeto_cola_llena=" + zone.RejectedItemActionQueueFull);
+            Console.WriteLine(
+                "  Atributos       : stats_repartos=" + zone.StatsAllocations +
+                ", stats_puntos=" + zone.StatsPointsAllocated +
+                ", stats_rech_muerto=" + zone.RejectedStatsDead +
+                ", stats_rech_vacio=" + zone.RejectedStatsEmpty +
+                ", stats_rech_exceso=" + zone.RejectedStatsExcess +
+                ", reajustes=" + zone.PointResets +
+                ", reajuste_rech_muerto=" + zone.RejectedResetDead +
+                ", reajuste_rech_vacio=" + zone.RejectedResetEmpty +
+                ", reajuste_rech_objeto=" + zone.RejectedResetItem);
             Console.WriteLine(
                 "  Persistencia    : " + network.LoginsSucceeded + " login(s) correctos, " +
                 network.LoginsRejected + " rechazados, " + network.CharactersSaved +

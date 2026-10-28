@@ -32,6 +32,9 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: enviar texto al chat de la zona (I-07).</summary>
         ChatSend = 8,
 
+        /// <summary>Cliente → servidor: añadir puntos a los atributos (I-09).</summary>
+        AllocatePoints = 9,
+
         /// <summary>Servidor → cliente: aceptación del saludo con la identidad y el punto de aparición.</summary>
         Welcome = 10,
 
@@ -58,5 +61,11 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: mensaje del chat de la zona (I-07).</summary>
         Chat = 17,
+
+        /// <summary>Servidor → cliente: atributos y estadísticas actuales (I-09).</summary>
+        Stats = 18,
+
+        /// <summary>Cliente → servidor: devolver todos los puntos repartidos (I-09).</summary>
+        ResetPoints = 19,
     }
 }

@@ -4,6 +4,7 @@ using System.IO;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Shared;
+using Avelora.Shared.Maps;
 using Xunit;
 
 namespace Avelora.Tests
@@ -105,6 +106,24 @@ namespace Avelora.Tests
             Assert.True(catalog.Find(3002)!.IsPotion);
             Assert.True(catalog.Find(3101)!.IsWeapon);
             Assert.Equal(14, catalog.Find(3101)!.Damage);
+        }
+
+        [Fact]
+        public void Datos_De_I09_Declaran_La_Piedra_Y_El_Drop_Del_Orco_Guerrero()
+        {
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            items.Validate();
+            ItemType stone = Assert.IsType<ItemType>(items.Find(3201));
+            Assert.Equal("Piedra de reajuste", stone.Name);
+            Assert.True(stone.IsMaterial);
+            Assert.Equal(10, stone.MaxStack);
+
+            NpcCatalog npcs = NpcCatalog.Load(Path.Combine(AppContext.BaseDirectory, "npcs.json"));
+            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-valle.avmap")), items);
+            LootEntry drop = Assert.Single(npcs.FindType(2002)!.Loot!, loot => loot.ItemId == 3201);
+            Assert.Equal(0.03, drop.Chance);
+            Assert.Equal(1, drop.Min);
+            Assert.Equal(1, drop.Max);
         }
 
         [Theory]

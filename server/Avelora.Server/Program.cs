@@ -120,7 +120,7 @@ namespace Avelora.Server
             LevelTable levels;
             try
             {
-                levels = LevelTable.Load(config.ResolveLevelsPath(configPath));
+                levels = LevelTable.Load(config.ResolveLevelsPath(configPath), items);
             }
             catch (Exception ex) when (
                 ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)

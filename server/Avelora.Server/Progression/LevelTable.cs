@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 
 namespace Avelora.Server.Progression
 {
@@ -20,6 +21,8 @@ namespace Avelora.Server.Progression
         public static LevelTable Default => new LevelTable
         {
             PointsPerLevel = 3,
+            FreeResetMaxLevel = 10,
+            ResetItemId = 3201,
             ExperienceToNext = new[]
             {
                 100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200,
@@ -30,6 +33,12 @@ namespace Avelora.Server.Progression
         /// <summary>Puntos repartibles que se ganan en cada nivel, incluido el primero.</summary>
         public int PointsPerLevel { get; set; } = -1;
 
+        /// <summary>Nivel máximo hasta el que el reajuste no consume la piedra (I-09).</summary>
+        public int FreeResetMaxLevel { get; set; } = 10;
+
+        /// <summary>Objeto que consume el reajuste por encima del nivel gratuito (I-09).</summary>
+        public int ResetItemId { get; set; } = 3201;
+
         /// <summary>Umbrales para pasar del nivel índice+1 al siguiente.</summary>
         public int[]? ExperienceToNext { get; set; }
 
@@ -37,7 +46,7 @@ namespace Avelora.Server.Progression
         public int MaxLevel => (ExperienceToNext?.Length ?? 0) + 1;
 
         /// <summary>Carga y valida el archivo de niveles.</summary>
-        public static LevelTable Load(string path)
+        public static LevelTable Load(string path, ItemCatalog? items = null)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -68,12 +77,12 @@ namespace Avelora.Server.Progression
 
             LevelTable table = JsonSerializer.Deserialize<LevelTable>(json, JsonOptions)
                 ?? throw new InvalidOperationException("levels.json está vacío o no contiene un objeto.");
-            table.Validate();
+            table.Validate(items);
             return table;
         }
 
         /// <summary>Valida todos los campos de la tabla.</summary>
-        public void Validate()
+        public void Validate(ItemCatalog? items = null)
         {
             if (PointsPerLevel < 0 || PointsPerLevel > 100)
             {
@@ -83,6 +92,22 @@ namespace Avelora.Server.Progression
             if (ExperienceToNext == null || ExperienceToNext.Length != 24)
             {
                 throw new InvalidOperationException("levels.json: experienceToNext debe tener exactamente 24 valores (nivel máximo 25).");
+            }
+
+            if (FreeResetMaxLevel < 1 || FreeResetMaxLevel > byte.MaxValue)
+            {
+                throw new InvalidOperationException("levels.json: freeResetMaxLevel debe estar entre 1 y 255.");
+            }
+
+            if (ResetItemId < 1 || ResetItemId > ushort.MaxValue)
+            {
+                throw new InvalidOperationException("levels.json: resetItemId debe estar entre 1 y 65535.");
+            }
+
+            if (items != null && items.Find(ResetItemId) == null)
+            {
+                throw new InvalidOperationException(
+                    "levels.json: resetItemId " + ResetItemId + " no existe en items.json.");
             }
 
             for (int i = 0; i < ExperienceToNext.Length; i++)
@@ -151,6 +176,7 @@ namespace Avelora.Server.Progression
 
             player.Experience = player.Level == MaxLevel ? 0 : checked((int)experience);
             player.ProgressChanged = true;
+            player.StatsChanged |= levelsGained > 0;
             return levelsGained;
         }
 

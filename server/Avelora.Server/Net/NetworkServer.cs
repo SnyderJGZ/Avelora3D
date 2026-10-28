@@ -214,6 +214,7 @@ namespace Avelora.Server.Net
             _transport.Received += OnReceived;
             _zone.InventoryChanged += OnInventoryChanged;
             _zone.ProgressChanged += OnProgressChanged;
+            _zone.StatsChanged += OnStatsChanged;
         }
 
         /// <summary>Puerto UDP efectivo.</summary>
@@ -560,6 +561,35 @@ namespace Avelora.Server.Net
                 if (_zone.ItemActions != null)
                 {
                     _zone.ItemActions.TryEnqueue(ItemAction.Unequip(entityId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadAllocatePoints(buffer, offset, length, out AllocatePointsMessage allocation))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.AllocatePoints(
+                        entityId, allocation.Str, allocation.Dex, allocation.Int, allocation.Vit));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadResetPoints(buffer, offset, length, out _))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.ResetPoints(entityId));
                 }
                 else
                 {
@@ -1161,6 +1191,7 @@ namespace Avelora.Server.Net
             Enqueue(connectionId, EncodeItemCatalog(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Enqueue(connectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
         private void RemovePlayer(int connectionId) => RemoveSession(connectionId, null);
@@ -1292,6 +1323,15 @@ namespace Avelora.Server.Net
             }
         }
 
+        private void OnStatsChanged(PlayerEntity player)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
+                session.EntityId == player.Id)
+            {
+                Enqueue(player.ConnectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            }
+        }
+
         private byte[] EncodeProgress(PlayerEntity player)
         {
             int threshold = _zone.Levels.GetExperienceToNext(player.Level);
@@ -1300,6 +1340,58 @@ namespace Avelora.Server.Net
                 checked((uint)player.Experience),
                 checked((uint)threshold),
                 checked((uint)player.MaxHealth)));
+        }
+
+        private byte[] EncodeStats(PlayerEntity player)
+        {
+            DerivedCharacterStats derived = CharacterStats.Calculate(
+                _zone.Classes,
+                player.ClassId,
+                player.Level,
+                player.AllocStr,
+                player.AllocDex,
+                player.AllocInt,
+                player.AllocVit);
+            int? weaponDamage = _zone.Items?.Find(player.EquippedWeaponId) is ItemType weapon && weapon.IsWeapon
+                ? weapon.Damage
+                : (int?)null;
+            int attackDamage = CharacterStats.GetAttackDamage(
+                _zone.Classes,
+                player.ClassId,
+                player.Level,
+                player.AllocStr,
+                player.AllocDex,
+                player.AllocInt,
+                player.AllocVit,
+                weaponDamage,
+                out string damageType);
+
+            return MessageCodec.EncodeStats(new StatsMessage(
+                checked((byte)player.ClassId),
+                checked((byte)player.Level),
+                checked((ushort)derived.Str),
+                checked((ushort)derived.Dex),
+                checked((ushort)derived.Int),
+                checked((ushort)derived.Vit),
+                checked((ushort)player.AllocStr),
+                checked((ushort)player.AllocDex),
+                checked((ushort)player.AllocInt),
+                checked((ushort)player.AllocVit),
+                checked((ushort)CharacterStats.GetFreePoints(
+                    _zone.Levels.PointsPerLevel,
+                    player.Level,
+                    player.AllocStr,
+                    player.AllocDex,
+                    player.AllocInt,
+                    player.AllocVit)),
+                checked((uint)derived.MaxHealth),
+                checked((ushort)attackDamage),
+                damageType == "magical" ? (byte)1 : (byte)0,
+                checked((ushort)derived.Defense),
+                checked((ushort)derived.MagicResist),
+                checked((ushort)player.Mana),
+                checked((ushort)player.MaxMana),
+                player.Level <= _zone.Levels.FreeResetMaxLevel ? (byte)1 : (byte)0));
         }
 
         private void HandleChatSend(int connectionId, int senderEntityId, byte[] buffer, int offset, int length)

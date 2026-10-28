@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Progression;
 using Xunit;
 
@@ -39,6 +40,8 @@ namespace Avelora.Tests
                 Assert.Equal(150, table.GetExperienceToNext(1));
                 Assert.Equal(0, table.GetExperienceToNext(25));
                 Assert.Equal(3, table.PointsPerLevel);
+                Assert.Equal(10, table.FreeResetMaxLevel);
+                Assert.Equal(3201, table.ResetItemId);
             }
             finally
             {
@@ -55,6 +58,55 @@ namespace Avelora.Tests
             try
             {
                 Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(256)]
+        public void Levels_Json_Rechaza_FreeResetMaxLevel_Fuera_De_Rango(int level)
+        {
+            string path = WriteLevels(ValidLevels().Replace("\"experienceToNext\"", "\"freeResetMaxLevel\": " + level + ", \"experienceToNext\""));
+            try
+            {
+                Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(65536)]
+        public void Levels_Json_Rechaza_ResetItemId_Fuera_De_Rango(int itemId)
+        {
+            string path = WriteLevels(ValidLevels().Replace("\"experienceToNext\"", "\"resetItemId\": " + itemId + ", \"experienceToNext\""));
+            try
+            {
+                Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
+        public void Levels_Json_Exige_Que_El_Objeto_De_Reajuste_Exista_En_El_Catalogo()
+        {
+            string path = WriteLevels(ValidLevels());
+            try
+            {
+                var items = new ItemCatalog { Items = new System.Collections.Generic.List<ItemType>() };
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => LevelTable.Load(path, items));
+                Assert.Contains("resetItemId 3201", error.Message);
+                Assert.Contains("items.json", error.Message);
             }
             finally
             {
@@ -132,7 +184,7 @@ namespace Avelora.Tests
 
             limits.ExperienceToNext = new int[255];
             Array.Fill(limits.ExperienceToNext, 1);
-            Assert.Throws<InvalidOperationException>(limits.Validate);
+            Assert.Throws<InvalidOperationException>(() => limits.Validate());
         }
 
         [Fact]

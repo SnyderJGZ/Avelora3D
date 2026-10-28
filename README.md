@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-08 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b pendientes).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-09 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b/I-09b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -19,10 +19,11 @@ calcular igual (movimiento y colisión).
 > atributos, defensa y nivel máximo 25 con **esquema SQLite v4**, sin cambiar el protocolo. La vida y el
 > daño dependen de la clase y de los puntos repartidos, no crecen automáticamente al subir nivel.
 > Desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
+> Desde I-09 (**protocolo v11**) los jugadores reparten atributos y pueden reajustarlos con la piedra 3201.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
-> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04) e
-> [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08) e
-> [I-07](#chat-i-07-protocolo-v10).
+> [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
+> [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
+> [I-07](#chat-i-07-protocolo-v10) e [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -31,7 +32,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **522/522 en verde** |
+| `dotnet test Avelora.slnx` | **541/541 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -346,12 +347,16 @@ pueden discrepar** del formato.
 | `Progress` | 16 | S → C | **14 B** | nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo), vida máxima (u32) |
 | `ChatSend` | 8 | C → S | 3 B + texto | texto UTF-8 con longitud u16; máximo 120 bytes |
 | `Chat` | 17 | S → C | 9 B + nombre + texto | emisor (i32), nombre UTF-8 (≤24 B) y texto UTF-8 (≤120 B), ambos con longitud u16 |
+| `AllocatePoints` | 9 | C → S | **5 B** | puntos a añadir a FUE, DES, INT y VIT (u8 cada uno) |
+| `Stats` | 18 | S → C | **37 B** | clase/nivel (u8), atributos efectivos y repartidos, puntos libres, vida, daño/tipo, defensa/resistencia, recurso y reajuste gratis |
+| `ResetPoints` | 19 | C → S | **1 B** | sin cuerpo; devuelve todos los puntos repartidos |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
-  `Unequip`, `ChatSend`, `ItemCatalog`, `Inventory`, `Progress` y `Chat`.
+  `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
+  `Stats` y `Chat`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
@@ -360,7 +365,7 @@ Canales:
 > I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
 > `PickUp`, `UseItem` e `Inventory`; I-05 sube a **v8** por `Equip`, `Unequip`, `ItemCatalog` y el campo
 > `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
-> `ChatSend` y `Chat`. El snapshot no cambia.
+> `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`. El snapshot no cambia.
 
 ### Handshake
 
@@ -1048,13 +1053,14 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases y chat | ⏳ I-01 a I-08 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos y chat | ⏳ I-01 a I-09 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
 | **I-06** | Experiencia y niveles (protocolo v9; esquema SQLite v3) | ✅ servidor; I-06b implementa el cliente |
 | **I-07** | Chat básico de zona (protocolo v10) | ✅ servidor y bots; I-07b implementa el cliente |
-| **I-08** | Clases, atributos y nivel 25 (sin protocolo; esquema SQLite v4) | ✅ servidor; puntos libres y selección de clase quedan para I-09/I-10 |
+| **I-08** | Clases, atributos y nivel 25 (sin protocolo; esquema SQLite v4) | ✅ servidor; reparto I-09 y selección de clase I-10 |
+| **I-09** | Reparto y reajuste de puntos (protocolo v11; esquema SQLite v4) | ✅ servidor y bots; interfaz I-09b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1323,8 +1329,8 @@ jugadores murieron/reaparecieron **9/8** veces. El servidor envió **27 633 309 
 I-06 añadió el mensaje `Progress` (protocolo v9, `MessageType = 16`, 14 bytes, fiable y ordenado): nivel
 (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo) y vida máxima (u32). Tras `Welcome`
 llega después de `ItemCatalog` e `Inventory`; tras las muertes se publica el progreso después del
-combate, como máximo una vez por jugador y tick. El protocolo de servidor actual sigue siendo **v10**;
-I-08 no cambia ningún mensaje.
+combate, como máximo una vez por jugador y tick. I-08 no cambia ningún mensaje; I-09 añade `Stats` y
+sube la versión actual a **v11**.
 
 `levels.json` contiene `pointsPerLevel` (0–100; defecto 3) y los **24 umbrales** hasta el nivel máximo
 25: `100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200, 8000, 10000, 12500, 15500,
@@ -1338,7 +1344,7 @@ La información detallada de atributos, clases, mitigación y el esquema actual 
 La verificación histórica de la carga de I-06 fue p99 **0,054 ms**, **5845** de experiencia y **32**
 subidas en 50 bots/120 s; I-08 vuelve a medir la misma carga con las reglas nuevas.
 
-El mensaje `Progress` sigue siendo parte del protocolo v10. Los contadores `experiencia_otorgada` y
+El mensaje `Progress` sigue sin cambios en el protocolo actual v11. Los contadores `experiencia_otorgada` y
 `subidas_nivel` aparecen en los informes; `fight` procesa el progreso y muestra subidas y nivel máximo.
 
 **Verificación y carga I-06:**
@@ -1355,10 +1361,11 @@ y reaparecieron **287/287 PNJ** y **7/6 jugadores**. Hubo **134 ataques con arma
 `classes.json` es la fuente de verdad para las clases. Incluye guerrero (1), mago (2), ranger (3) y
 sanador (4); el código no selecciona fórmulas por id, así que agregar otra clase es agregar una entrada
 con sus atributos, defensa, recurso y ataque sin arma. Todo personaje nuevo nace como clase 1; la
-selección de clase y el reparto de puntos pertenecen a tareas posteriores.
+selección de clase queda para I-10 y el reparto se describe en I-09.
 
 Los atributos efectivos son `base + alloc_*` (el equipo suma 0 hasta I-14). No hay columna de puntos
-libres: se derivan como `pointsPerLevel × nivel − (alloc_str + alloc_dex + alloc_int + alloc_vit)`.
+libres: se derivan como `pointsPerLevel × nivel − (alloc_str + alloc_dex + alloc_int + alloc_vit)`;
+desde I-09 el jugador puede repartirlos y reajustarlos.
 Fórmulas enteras:
 
 - vida máxima = `baseHealth + VIT × healthPerVit`;
@@ -1374,9 +1381,8 @@ el daño bruto (con mínimo 1).
 
 Valores nivel 1 de los datos iniciales: vida máxima **100/80/90/90** (guerrero/mago/ranger/sanador),
 daño sin arma **12/14/13/13**, espada corta del guerrero **16**, recurso máximo **100/92/100/88**.
-VIT +4 añade 20 de vida; FUE +4 añade 2 de daño del guerrero. Los puntos aún no se pueden repartir;
-por ello subir de nivel no altera atributos. Los personajes existentes se migran a guerrero con todos
-los puntos sin gastar.
+VIT +4 añade 20 de vida; FUE +4 añade 2 de daño del guerrero. Los personajes existentes se migran
+a guerrero con todos los puntos sin gastar; al subir de nivel ganan 3 puntos repartibles.
 
 SQLite está en **esquema v4**. La migración v3→v4, transaccional, agrega `class_id` (defecto 1) y
 `alloc_str`, `alloc_dex`, `alloc_int`, `alloc_vit` (defecto 0); una base nueva se crea directamente en
@@ -1399,6 +1405,54 @@ lo que el tráfico depende de la distribución de los bots dentro del área de i
 **636 ataques válidos** con 12 de daño sin arma del guerrero (I-07 usó 10); el menor número de bajas
 en esta pasada no permite aislar el efecto del daño frente a la variación de rutas/objetivos. Detalles,
 incluida una segunda pasada, en el [informe I-08](docs/agentes/informes/I-08.md).
+
+### Reparto y reajuste de atributos (I-09, protocolo v11)
+
+`levels.json` asigna `pointsPerLevel` puntos por nivel (3 por defecto, incluido el nivel 1). Los puntos
+libres siguen siendo derivados: `pointsPerLevel × nivel − suma(alloc_*)`; la base SQLite permanece en
+**esquema v4**, pues I-08 ya guarda los cuatro contadores repartidos. `freeResetMaxLevel` (1–255, defecto
+10) determina hasta qué nivel el reajuste es gratis; `resetItemId` (1–65535, defecto **3201**) identifica
+el objeto que debe existir en `items.json` al arrancar.
+
+`AllocatePoints` (cliente→servidor, tipo 9, 5 bytes) lleva los incrementos FUE/DES/INT/VIT como cuatro
+u8. La cola acotada de acciones los aplica solo en el hilo de simulación. El servidor exige jugador vivo,
+suma mayor que cero y no superior a los puntos libres; el reparto es atómico. Al añadir VIT, la vida
+máxima aumenta según `healthPerVit` y la vida actual aumenta exactamente lo mismo. También se actualiza
+el recurso máximo derivado de INT sin reponer el recurso actual. No se implementa el tope de atributo de
+`10 + 4 × nivel`: con los 3 puntos por nivel de los datos actuales nunca se alcanza.
+
+`ResetPoints` (tipo 19, un byte) devuelve los cuatro contadores a cero. Sin puntos repartidos o con el
+personaje muerto se rechaza. Por encima del nivel gratuito consume una unidad del objeto 3201; si no la
+tiene, no cambia nada. El reajuste recalcula máximos y recorta vida/recurso actuales a esos máximos, sin
+curar ni regenerar recurso. La **Piedra de reajuste** es `material`, `maxStack: 10`, y el Orco guerrero
+(2002) la suelta con probabilidad **0,03**; `items-carga.json`, `levels-carga.json` y `npcs-carga.json`
+replican los datos necesarios para la carga.
+
+`Stats` (servidor→cliente, tipo 18, 37 bytes, fiable y ordenado) contiene classId/nivel, atributos
+efectivos, puntos asignados/libres, vida máxima, daño bruto actual y su tipo (0 físico, 1 mágico),
+defensa/resistencia, recurso actual/máximo y si el reajuste siguiente es gratis. Se envía después de
+`Welcome`, en el orden `Welcome`, `ItemCatalog`, `Inventory`, `Progress`, `Stats`; también tras un reparto
+o reajuste válido, al subir de nivel y al equipar/desequipar. No se emite cada tick. El bot `fight` lee
+`Stats` y reparte los puntos de forma que la mitad (redondeando hacia su atributo principal) vaya al
+mayor atributo base de su primera muestra sin puntos, y el resto a VIT; no contiene nombres de clase en
+el código.
+
+Los informes incluyen `stats_repartos`, `stats_puntos`, `stats_rech_muerto`, `stats_rech_vacio`,
+`stats_rech_exceso`, `reajustes` y `reajuste_rech_muerto`, `reajuste_rech_vacio`, `reajuste_rech_objeto`.
+El protocolo sube a **v11**; el esquema de persistencia no cambia. Los puntos ya viajan en la foto de
+guardado y `TryGetLatest`, incluida la reconexión inmediata.
+
+**Verificación y carga I-09:** `dotnet build -c Release` acabó con **0 errores y 0 advertencias**. En la
+pasada de 50 bots/120 s con `fight`, `-LogCorrections` y `-NuevaBase` (servidor 160 s) se conectaron
+**50/50**; hubo **3201 ticks**, p99 **0,061 ms**, peor **11,341 ms** y **0** ticks por encima de 50 ms.
+No hubo correcciones ni líneas `[corrección]`. El servidor contó **74 repartos / 222 puntos**, 0 rechazos,
+**239** muertes/reapariciones de PNJ y **6** muertes/reapariciones de jugador. Los bots confirmaron
+**222 puntos** y recibieron **157 `Stats`** en total. El servidor envió **38 027 637 B (38,0 MB)**,
+frente a 31 256 232 B de I-08; los snapshots incluyeron 2 447 123 entidades frente a 1 995 696. Hubo
+36 muertes de PNJ más que en la pasada histórica de I-08 (203), con el mismo número de muertes de
+jugador; el aumento es compatible con el daño extra de FUE, pero una sola pasada no aísla el efecto de
+la variación de rutas y objetivos. Los bots llegaron como máximo al nivel 2, así que no necesitaron
+reajustar ni consumir piedras.
 
 ### Chat (I-07, protocolo v10)
 
@@ -1490,6 +1544,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 ## Próximo paso
 
 La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
-la desconexión. El backend de **I-04 a I-08** añade botín, inventario, equipo, progreso, clases y
-atributos, con persistencia actual en esquema v4; **I-07** añade chat en protocolo v10. Siguen pendientes
-los clientes **I-04b/I-05b/I-06b/I-07b** y los trabajos de seguridad de H que no forman parte de esta tarea.
+la desconexión. El backend de **I-04 a I-09** añade botín, inventario, equipo, progreso, clases, puntos
+de atributo y chat, con persistencia actual en esquema v4 y protocolo v11. Siguen pendientes los
+clientes **I-04b/I-05b/I-06b/I-07b/I-09b** y los trabajos de seguridad de H que no forman parte de esta tarea.

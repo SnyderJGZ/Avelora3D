@@ -59,7 +59,7 @@ namespace Avelora.Server.Simulation
         public int GroundItemCount => _groundItemCount;
 
         /// <summary>Procesa caducidades y acciones en el orden en que llegaron.</summary>
-        public void Tick(Zone zone, List<ItemAction> actions, long tick)
+        public void Tick(Zone zone, List<ItemAction> actions, long tick, StatsSystem? stats = null)
         {
             _expired.Clear();
             for (int i = 0; i < zone.Entities.Count; i++)
@@ -97,6 +97,10 @@ namespace Avelora.Server.Simulation
                 else if (action.Kind == ItemActionKind.Unequip)
                 {
                     ResolveUnequip(zone, action.PlayerEntityId);
+                }
+                else if (action.Kind == ItemActionKind.AllocatePoints || action.Kind == ItemActionKind.ResetPoints)
+                {
+                    stats?.ProcessAction(zone, action);
                 }
             }
         }
@@ -247,6 +251,7 @@ namespace Avelora.Server.Simulation
                 : new InventorySlot(previousWeaponId, 1);
             Equipped++;
             zone.NotifyInventoryChanged(player);
+            zone.NotifyStatsChanged(player);
         }
 
         private void ResolveUnequip(Zone zone, int playerId)
@@ -282,6 +287,7 @@ namespace Avelora.Server.Simulation
             player.EquippedWeaponId = 0;
             Unequipped++;
             zone.NotifyInventoryChanged(player);
+            zone.NotifyStatsChanged(player);
         }
 
         private static bool CanFit(InventorySlot[] inventory, int itemId, int count, int maxStack)
