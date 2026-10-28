@@ -1607,6 +1607,62 @@ namespace Avelora.Client
         private static Rect Part(Rect panel, float scale, float x, float y, float width, float height) =>
             new Rect(panel.x + (x * scale), panel.y + (y * scale), width * scale, height * scale);
 
+        /// <summary>GUI.Button que solo responde al clic izquierdo (IMGUI acepta cualquier botón del ratón).</summary>
+        private static bool LeftButton(Rect rect, GUIContent content, GUIStyle style) =>
+            GUI.Button(rect, content, style) && Event.current.button == 0;
+
+        private static bool LeftButton(Rect rect, string text, GUIStyle style) =>
+            LeftButton(rect, new GUIContent(text), style);
+
+        // Paneles movibles (como en Lineage 2): se arrastran con el clic izquierdo por la barra del
+        // título y la posición se guarda en PlayerPrefs. 0 = ninguno, 1 = personaje, 2 = inventario.
+        private int _draggedPanel;
+        private Vector2 _dragOffset;
+        private Vector2? _statsPosition;
+        private Vector2? _inventoryPosition;
+
+        /// <summary>
+        /// Coloca un panel: en su sitio guardado (o el de por defecto) y, si se arrastra por la barra
+        /// del título (alto <paramref name="titleHeight"/>, sin la X de la derecha), lo mueve sin
+        /// dejar que se salga de la pantalla.
+        /// </summary>
+        private Rect PlacePanel(int id, ref Vector2? position, Vector2 fallback, Vector2 size, float titleHeight)
+        {
+            string key = "avelora.panel" + id;
+            if (position == null)
+            {
+                position = PlayerPrefs.HasKey(key + ".x")
+                    ? new Vector2(PlayerPrefs.GetFloat(key + ".x"), PlayerPrefs.GetFloat(key + ".y"))
+                    : fallback;
+            }
+
+            Event e = Event.current;
+            var title = new Rect(position.Value.x, position.Value.y, size.x - titleHeight - 10f, titleHeight);
+            if (e.type == EventType.MouseDown && e.button == 0 && title.Contains(e.mousePosition))
+            {
+                _draggedPanel = id;
+                _dragOffset = e.mousePosition - position.Value;
+                e.Use();
+            }
+            else if (_draggedPanel == id && e.type == EventType.MouseDrag)
+            {
+                position = e.mousePosition - _dragOffset;
+                e.Use();
+            }
+            else if (_draggedPanel == id && e.rawType == EventType.MouseUp)
+            {
+                _draggedPanel = 0;
+                PlayerPrefs.SetFloat(key + ".x", position.Value.x);
+                PlayerPrefs.SetFloat(key + ".y", position.Value.y);
+            }
+
+            // Siempre entero en pantalla, también si la ventana se achica después de moverlo.
+            position = new Vector2(
+                Mathf.Clamp(position.Value.x, 0f, Mathf.Max(0f, Screen.width - size.x)),
+                Mathf.Clamp(position.Value.y, 0f, Mathf.Max(0f, Screen.height - size.y)));
+            return new Rect(position.Value, size);
+        }
+
         /// <summary>
         /// Inventario (I): ventana con la rejilla de 5 columnas; cantidad abajo a la derecha y la ficha
         /// del objeto al pasar el ratón. La X o la tecla I lo cierran.
@@ -1618,11 +1674,16 @@ namespace Avelora.Client
 
             EnsureGuiArt();
 
-            // Centrado en la mitad derecha de la pantalla (el personaje va en la izquierda).
+            // Por defecto, centrado en la mitad derecha de la pantalla (el personaje va en la izquierda).
             float panelWidth = WindowWidth * scale;
-            _inventoryPanel = new Rect((Screen.width * 0.5f) + Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f, panelWidth, WindowHeight * scale);
+            _inventoryPanel = PlacePanel(
+                2,
+                ref _inventoryPosition,
+                new Vector2((Screen.width * 0.5f) + Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f),
+                new Vector2(panelWidth, WindowHeight * scale),
+                75f * scale);
             GUI.DrawTexture(_inventoryPanel, _darkWindow);
-            if (GUI.Button(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
+            if (LeftButton(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
             {
                 _showInventory = false;
             }
@@ -1780,12 +1841,17 @@ namespace Avelora.Client
         {
             EnsureGuiArt();
 
-            // Tamaño fijo, centrado en la mitad izquierda de la pantalla.
+            // Tamaño fijo; por defecto, centrado en la mitad izquierda de la pantalla.
             const float scale = 0.62f;
             float panelWidth = CharacterWidth * scale;
-            _statsPanel = new Rect(Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f, panelWidth, CharacterHeight * scale);
+            _statsPanel = PlacePanel(
+                1,
+                ref _statsPosition,
+                new Vector2(Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f),
+                new Vector2(panelWidth, CharacterHeight * scale),
+                75f * scale);
             GUI.DrawTexture(_statsPanel, _darkCharacter);
-            if (GUI.Button(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
+            if (LeftButton(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
             {
                 _showStats = false;
             }
@@ -1833,7 +1899,7 @@ namespace Avelora.Client
                 GUI.Label(row, (totals[i] + _pendingPoints[i]) + (_pendingPoints[i] > 0 ? "  (+" + _pendingPoints[i] + ")" : string.Empty), _darkRightStyle);
 
                 GUI.enabled = free > 0 && !_ownDead;
-                if (GUI.Button(Part(_statsPanel, scale, 825f, y + 2f, 38f, 30f), "+", _darkButtonStyle))
+                if (LeftButton(Part(_statsPanel, scale, 825f, y + 2f, 38f, 30f), "+", _darkButtonStyle))
                 {
                     _pendingPoints[i]++;
                 }
@@ -1845,18 +1911,18 @@ namespace Avelora.Client
             GUI.Label(Part(_statsPanel, scale, 45f, 686f, 270f, 34f), "Clase " + _stats.ClassId + " · Libres: " + free, _darkTextStyle);
             bool anyAllocated = _stats.AllocStr + _stats.AllocDex + _stats.AllocInt + _stats.AllocVit > 0;
             GUI.enabled = pending > 0 && !_ownDead;
-            if (GUI.Button(Part(_statsPanel, scale, 330f, 682f, 170f, 40f), "Confirmar", _darkButtonStyle))
+            if (LeftButton(Part(_statsPanel, scale, 330f, 682f, 170f, 40f), "Confirmar", _darkButtonStyle))
             {
                 SendAllocatePoints();
             }
 
-            if (GUI.Button(Part(_statsPanel, scale, 510f, 682f, 160f, 40f), "Cancelar", _darkButtonStyle))
+            if (LeftButton(Part(_statsPanel, scale, 510f, 682f, 160f, 40f), "Cancelar", _darkButtonStyle))
             {
                 System.Array.Clear(_pendingPoints, 0, _pendingPoints.Length);
             }
 
             GUI.enabled = anyAllocated && pending == 0 && !_ownDead;
-            if (GUI.Button(Part(_statsPanel, scale, 680f, 682f, 195f, 40f), _stats.FreeReset != 0 ? "Reajustar" : "Reajustar (piedra)", _darkButtonStyle))
+            if (LeftButton(Part(_statsPanel, scale, 680f, 682f, 195f, 40f), _stats.FreeReset != 0 ? "Reajustar" : "Reajustar (piedra)", _darkButtonStyle))
             {
                 byte[] bytes = MessageCodec.EncodeResetPoints(new ResetPointsMessage());
                 _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
