@@ -71,8 +71,7 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cliente → servidor: mover, dividir, juntar o intercambiar objetos (I-14).</summary>
         MoveItem = 20,
 
-        /// <summary>Cliente → servidor: tirar objetos al suelo (I-14).</summary>
-        DropItem = 21,
+        // El tipo 21 se retiró en I-21. No reutilizarlo para evitar interpretar clientes antiguos.
 
         /// <summary>Cliente → servidor: destruir objetos explícitamente (I-14).</summary>
         DestroyItem = 22,

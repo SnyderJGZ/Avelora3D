@@ -261,13 +261,6 @@ namespace Avelora.Server.Items
         {
             Items ??= new List<ItemType>();
 
-            if (Items.Count > 512)
-            {
-                throw new InvalidOperationException("items.json no puede declarar más de 512 objetos para ItemCatalog.");
-            }
-
-            int catalogBytes = 1 + 4 + 4 + 4 + 4 + 2;
-
             for (int i = 0; i < Items.Count; i++)
             {
                 ItemType item = Items[i];
@@ -312,14 +305,6 @@ namespace Avelora.Server.Items
                 {
                     throw new InvalidOperationException(
                         "items.json: " + where + " (id " + item.Id + ") debe tener un nombre no vacío de hasta 48 bytes UTF-8.");
-                }
-
-                catalogBytes += 32 + nameBytes;
-                if (catalogBytes > Avelora.Shared.Protocol.ProtocolConstants.MaxMessageSize)
-                {
-                    throw new InvalidOperationException(
-                        "items.json no cabe en un ItemCatalog de " +
-                        Avelora.Shared.Protocol.ProtocolConstants.MaxMessageSize + " bytes.");
                 }
 
                 if (item.MaxStack < 1 || item.MaxStack > 999)

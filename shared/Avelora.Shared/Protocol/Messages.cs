@@ -300,19 +300,6 @@ namespace Avelora.Shared.Protocol
         public ushort Count { get; }
     }
 
-    /// <summary>Intención de tirar objetos al suelo (I-14).</summary>
-    public readonly struct DropItemMessage
-    {
-        public DropItemMessage(byte slot, ushort count)
-        {
-            Slot = slot;
-            Count = count;
-        }
-
-        public byte Slot { get; }
-        public ushort Count { get; }
-    }
-
     /// <summary>Intención de destruir objetos del inventario (I-14).</summary>
     public readonly struct DestroyItemMessage
     {
@@ -419,7 +406,11 @@ namespace Avelora.Shared.Protocol
         public byte Vit { get; }
     }
 
-    /// <summary>Catálogo completo de objetos y reglas de puños que envía el servidor (I-05).</summary>
+    /// <summary>
+    /// Parte del catálogo de objetos y reglas de puños que envía el servidor (I-05/I-21). Los
+    /// clientes vacían el catálogo al recibir <see cref="WelcomeMessage"/> y añaden los objetos de
+    /// cada mensaje <c>ItemCatalog</c>; un mensaje puede contener solo una parte del catálogo total.
+    /// </summary>
     public readonly struct ItemCatalogMessage
     {
         public ItemCatalogMessage(

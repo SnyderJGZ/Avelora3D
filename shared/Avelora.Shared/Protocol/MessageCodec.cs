@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace Avelora.Shared.Protocol
@@ -33,7 +34,6 @@ namespace Avelora.Shared.Protocol
         private const int EquipSize = 1 + 1;
         private const int UnequipSize = 1 + 1 + 1;
         private const int MoveItemSize = 1 + 1 + 1 + 2;
-        private const int DropItemSize = 1 + 1 + 2;
         private const int DestroyItemSize = 1 + 1 + 2;
         private const int AllocatePointsSize = 1 + 4;
         private const int ResetPointsSize = 1;
@@ -706,46 +706,6 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica DropItem: tipo, hueco y cantidad.</summary>
-        public static byte[] EncodeDropItem(in DropItemMessage message)
-        {
-            RequireInventorySlot(message.Slot, nameof(message));
-            var buffer = new byte[DropItemSize];
-            var writer = new WireWriter(buffer);
-            writer.WriteByte((byte)MessageType.DropItem);
-            writer.WriteByte(message.Slot);
-            writer.WriteUInt16(message.Count);
-            return buffer;
-        }
-
-        /// <summary>Lee DropItem; comprueba tamaño exacto y hueco.</summary>
-        public static bool TryReadDropItem(byte[] buffer, int offset, int length, out DropItemMessage message)
-        {
-            message = default;
-            if (!HasExactHeader(buffer, offset, length, MessageType.DropItem, DropItemSize))
-            {
-                return false;
-            }
-
-            try
-            {
-                var reader = new WireReader(buffer, offset + 1, length - 1);
-                byte slot = reader.ReadByte();
-                ushort count = reader.ReadUInt16();
-                if (slot >= ProtocolConstants.MaxInventorySlots || reader.Remaining != 0)
-                {
-                    return false;
-                }
-
-                message = new DropItemMessage(slot, count);
-                return true;
-            }
-            catch (ProtocolException)
-            {
-                return false;
-            }
-        }
-
         /// <summary>Codifica DestroyItem: tipo, hueco y cantidad.</summary>
         public static byte[] EncodeDestroyItem(in DestroyItemMessage message)
         {
@@ -1162,16 +1122,73 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica el catálogo: cabecera fija de 19 bytes y, por objeto, 32 bytes más el nombre
-        /// UTF-8 (con su prefijo de longitud de dos bytes).
+        /// Codifica una parte del catálogo: cabecera fija de 19 bytes y, por objeto, 32 bytes más el
+        /// nombre UTF-8 (con su prefijo de longitud de dos bytes).
         /// </summary>
+        public static byte[][] EncodeItemCatalogChunks(in ItemCatalogMessage message)
+        {
+            ItemCatalogEntry[] items = message.Items ?? Array.Empty<ItemCatalogEntry>();
+            var chunks = new List<byte[]>();
+            var currentItems = new List<ItemCatalogEntry>();
+            int currentSize = ItemCatalogHeaderSize;
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                ItemCatalogEntry item = items[i];
+                if (!IsValidItemCatalogEntry(item))
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(message), "El catálogo contiene un tipo o hueco de equipo inválido.");
+                }
+
+                int nameBytes = Encoding.UTF8.GetByteCount(item.Name ?? string.Empty);
+                if (nameBytes > 48)
+                {
+                    throw new ArgumentException(
+                        "El nombre del objeto supera los 48 bytes UTF-8.", nameof(message));
+                }
+
+                int itemSize = 32 + nameBytes;
+                if (ItemCatalogHeaderSize + itemSize > ProtocolConstants.MaxMessageSize)
+                {
+                    throw new ArgumentException(
+                        "El objeto " + item.Id + " ocupa " + itemSize +
+                        " bytes y no cabe solo en un mensaje ItemCatalog.", nameof(message));
+                }
+
+                if (currentItems.Count > 0 && currentSize + itemSize > ProtocolConstants.MaxMessageSize)
+                {
+                    chunks.Add(EncodeItemCatalog(new ItemCatalogMessage(
+                        message.PickupRange,
+                        message.FistDamage,
+                        message.FistRange,
+                        message.FistCooldownSeconds,
+                        currentItems.ToArray())));
+                    currentItems.Clear();
+                    currentSize = ItemCatalogHeaderSize;
+                }
+
+                currentItems.Add(item);
+                currentSize += itemSize;
+            }
+
+            if (currentItems.Count > 0 || chunks.Count == 0)
+            {
+                chunks.Add(EncodeItemCatalog(new ItemCatalogMessage(
+                    message.PickupRange,
+                    message.FistDamage,
+                    message.FistRange,
+                    message.FistCooldownSeconds,
+                    currentItems.ToArray())));
+            }
+
+            return chunks.ToArray();
+        }
+
+        /// <summary>Codifica una parte del catálogo y exige que quepa en un único mensaje.</summary>
         public static byte[] EncodeItemCatalog(in ItemCatalogMessage message)
         {
             ItemCatalogEntry[] items = message.Items ?? Array.Empty<ItemCatalogEntry>();
-            if (items.Length > 512)
-            {
-                throw new ArgumentOutOfRangeException(nameof(message), "El catálogo no puede tener más de 512 objetos.");
-            }
 
             int size = ItemCatalogHeaderSize;
             for (int i = 0; i < items.Length; i++)
@@ -1250,11 +1267,6 @@ namespace Avelora.Shared.Protocol
                 float fistRange = reader.ReadSingle();
                 float fistCooldownSeconds = reader.ReadSingle();
                 int count = reader.ReadUInt16();
-                if (count > 512)
-                {
-                    return false;
-                }
-
                 var items = count == 0 ? Array.Empty<ItemCatalogEntry>() : new ItemCatalogEntry[count];
                 for (int i = 0; i < count; i++)
                 {

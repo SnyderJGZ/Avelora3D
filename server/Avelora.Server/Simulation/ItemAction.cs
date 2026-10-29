@@ -11,8 +11,7 @@ namespace Avelora.Server.Simulation
         AllocatePoints = 4,
         ResetPoints = 5,
         MoveItem = 6,
-        DropItem = 7,
-        DestroyItem = 8,
+        DestroyItem = 7,
     }
 
     /// <summary>Intención validada sintácticamente en la red y pendiente de resolver en el tick.</summary>
@@ -67,9 +66,6 @@ namespace Avelora.Server.Simulation
 
         public static ItemAction MoveItem(int playerEntityId, byte fromSlot, byte toSlot, ushort count) =>
             new ItemAction(ItemActionKind.MoveItem, playerEntityId, 0, fromSlot, toSlot, count, 0, 0, 0, 0);
-
-        public static ItemAction DropItem(int playerEntityId, byte slot, ushort count) =>
-            new ItemAction(ItemActionKind.DropItem, playerEntityId, 0, slot, 0, count, 0, 0, 0, 0);
 
         public static ItemAction DestroyItem(int playerEntityId, byte slot, ushort count) =>
             new ItemAction(ItemActionKind.DestroyItem, playerEntityId, 0, slot, 0, count, 0, 0, 0, 0);

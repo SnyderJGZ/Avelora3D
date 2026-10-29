@@ -586,20 +586,6 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            if (MessageCodec.TryReadDropItem(buffer, offset, length, out DropItemMessage dropItem))
-            {
-                if (_zone.ItemActions != null)
-                {
-                    _zone.ItemActions.TryEnqueue(ItemAction.DropItem(entityId, dropItem.Slot, dropItem.Count));
-                }
-                else
-                {
-                    Interlocked.Increment(ref _messagesRejected);
-                }
-
-                return;
-            }
-
             if (MessageCodec.TryReadDestroyItem(buffer, offset, length, out DestroyItemMessage destroyItem))
             {
                 if (_zone.ItemActions != null)
@@ -1243,7 +1229,12 @@ namespace Avelora.Server.Net
                 _mapHash));
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
-            Enqueue(connectionId, EncodeItemCatalog(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            byte[][] itemCatalogChunks = EncodeItemCatalog(_zone, _config, player);
+            for (int i = 0; i < itemCatalogChunks.Length; i++)
+            {
+                Enqueue(connectionId, itemCatalogChunks[i], DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            }
+
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
@@ -1549,13 +1540,19 @@ namespace Avelora.Server.Net
             return result.ToString();
         }
 
-        private byte[] EncodeItemCatalog(PlayerEntity player)
+        internal static void ValidateItemCatalogEncoding(Zone zone, ServerConfig config)
+        {
+            var defaultPlayer = new PlayerEntity(0, 0, config.MaxQueuedIntents, config.InventorySlots);
+            EncodeItemCatalog(zone, config, defaultPlayer);
+        }
+
+        private static byte[][] EncodeItemCatalog(Zone zone, ServerConfig config, PlayerEntity player)
         {
             // El ataque sin arma depende de la clase (I-08): el cliente lo usa para acercarse y
             // marcar el ritmo del ataque automático, así que tiene que ser el mismo que valida el combate.
-            UnarmedAttack unarmed =_zone.Classes.Find(player.ClassId)!.Unarmed!;
+            UnarmedAttack unarmed = zone.Classes.Find(player.ClassId)!.Unarmed!;
             int unarmedDamage = CharacterStats.GetAttackDamage(
-                _zone.Classes,
+                zone.Classes,
                 player.ClassId,
                 player.Level,
                 player.AllocStr,
@@ -1564,10 +1561,10 @@ namespace Avelora.Server.Net
                 player.AllocVit,
                 null,
                 out _,
-                _zone.Items,
+                zone.Items,
                 player.Equipment);
 
-            ItemCatalog? catalog = _zone.Items;
+            ItemCatalog? catalog = zone.Items;
             var entries = new ItemCatalogEntry[catalog?.Items.Count ?? 0];
             for (int i = 0; i < entries.Length; i++)
             {
@@ -1595,8 +1592,8 @@ namespace Avelora.Server.Net
                     checked((byte)item.Vit));
             }
 
-            return MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
-                _config.PickupRange,
+            return MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
+                config.PickupRange,
                 (uint)unarmedDamage,
                 unarmed.Range,
                 (float)unarmed.CooldownSeconds,

@@ -21,14 +21,15 @@ calcular igual (movimiento y colisión).
 > Desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
 > Desde I-09 (**protocolo v11**) los jugadores reparten atributos y pueden reajustarlos con la piedra 3201.
 > Desde I-14 (**protocolo v12**, esquema v5) hay 10 huecos de equipo, armaduras e inventario interactivo.
-> Desde I-20 (**protocolo v13**) los PNJ pueden aparecer con rangos definidos por datos, con multiplicadores
-> de estadísticas y tiradas adicionales de botín; la persistencia sigue en esquema v5.
+> Desde I-20 los PNJ pueden aparecer con rangos definidos por datos, con multiplicadores de estadísticas
+> y tiradas adicionales de botín. I-21 fija el protocolo actual en **v14**: el catálogo de objetos se
+> reparte entre varios mensajes y tirar un objeto lo destruye; la persistencia sigue en esquema v5.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
 > [I-07](#chat-i-07-protocolo-v10) [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11) e
-> [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5) e
-> [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13).
+> [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5),
+> [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13) e [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -348,7 +349,7 @@ pueden discrepar** del formato.
 | `Inventory` | 14 | S → C | 4 B + 4 B/hueco | número de huecos (u8), itemId y cantidad (u16 cada uno; 0/0 = vacío), arma equipada (u16; 0 = puños) |
 | `Equip` | 6 | C → S | 2 B | hueco que contiene el arma (u8) |
 | `Unequip` | 7 | C → S | 1 B | sin carga útil |
-| `ItemCatalog` | 15 | S → C | 19 B + 23 B/objeto + nombre | reglas de puños y recogida, más datos de cada objeto (nombre UTF-8 de hasta 48 B) |
+| `ItemCatalog` | 15 | S → C | 19 B + 32 B/objeto + nombre | reglas de puños y recogida, más datos de cada objeto (nombre UTF-8 de hasta 48 B) |
 | `Progress` | 16 | S → C | **14 B** | nivel (u8), experiencia (u32), umbral siguiente (u32; 0 en el máximo), vida máxima (u32) |
 | `ChatSend` | 8 | C → S | 3 B + texto | texto UTF-8 con longitud u16; máximo 120 bytes |
 | `Chat` | 17 | S → C | 9 B + nombre + texto | emisor (i32), nombre UTF-8 (≤24 B) y texto UTF-8 (≤120 B), ambos con longitud u16 |
@@ -372,8 +373,9 @@ Canales:
 > `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
 > `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`; I-14 sube a **v12** por `MoveItem`,
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
-> `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot. El tamaño
-> de `EntityState` se mantiene en 15 B.
+> `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot y I-21 a
+> **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. El tamaño de
+> `EntityState` se mantiene en 15 B.
 
 ### Handshake
 
@@ -1071,6 +1073,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-09** | Reparto y reajuste de puntos (protocolo v11; esquema SQLite v4) | ✅ servidor y bots; interfaz I-09b pendiente |
 | **I-14** | Equipo de 10 huecos, armaduras e inventario interactivo (protocolo v12; esquema SQLite v5) | ✅ servidor, bots y cliente I-14b |
 | **I-20** | Rangos de PNJ configurables y multiplicadores (protocolo v13; esquema SQLite v5) | ✅ servidor y bots; cliente I-20b pendiente |
+| **I-21** | Catálogo troceado y tirar objetos = destruir (protocolo v14; esquema SQLite v5) | ✅ servidor y bots; cliente I-21b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1304,12 +1307,13 @@ alcance igual que con los puños, y convierte la recarga en `ceil(cooldownSecond
 (`classes.json`, I-08), que es también lo que el `ItemCatalog` le manda al cliente. La autoridad de daño, alcance, recarga y equipo
 permanece en el servidor.
 
-Tras `Welcome`, el servidor entrega una sola vez `ItemCatalog` y luego `Inventory`, ambos por el canal
+Tras `Welcome`, el servidor entrega uno o más mensajes `ItemCatalog` y luego `Inventory`, por el canal
 fiable y ordenado. El catálogo incluye `pickupRange`, daño/alcance/recarga de los puños y todos los
 objetos: id, tipo, pila máxima, curación o estadísticas de arma y nombre. `Inventory` añade al final
 `equippedItemId` (u16). `Equip` (byte de ranura) y `Unequip` (sin carga útil) usan los bytes 6 y 7 de
-cliente a servidor; `ItemCatalog` usa el 15 de servidor a cliente. El catálogo admite como máximo 512
-objetos y cada mensaje respeta el tope de 1400 bytes.
+cliente a servidor; `ItemCatalog` usa el 15 de servidor a cliente. Cada mensaje lleva una cabecera de
+19 B y objetos de 32 B más el nombre; el servidor divide el catálogo en el orden original en trozos
+de hasta 1400 bytes.
 
 En I-05 la base subió a **esquema v3** (el esquema actual es v4 desde I-08). V2→v3 añade
 `characters.equipped_item_id INTEGER NOT NULL DEFAULT 0` en
@@ -1486,7 +1490,6 @@ Mensajes (todos fiables y ordenados, resueltos en el hilo de simulación y atóm
 | `Equip` | 6 | hueco de inventario (u8) | El servidor deduce el hueco de equipo; si está ocupado, **intercambia** (el viejo ocupa el hueco del nuevo), así que funciona con el inventario lleno. |
 | `Unequip` | 7 | hueco de equipo (u8), destino (u8, 255 = primero libre) | Sin hueco libre se rechaza. Destino vacío: va ahí; con un objeto del mismo hueco de equipo: intercambio; con otra cosa: rechazo. |
 | `MoveItem` | 20 | origen, destino (u8), cantidad (u16, 0 = todo) | A vacío mueve (dividir si es parte); al mismo objeto junta hasta `maxStack` y el resto se queda; a otro objeto intercambia solo con la pila entera. |
-| `DropItem` | 21 | hueco (u8), cantidad (u16) | Lo deja en el suelo a los pies; con el suelo en su tope se rechaza sin pérdida. |
 | `DestroyItem` | 22 | hueco (u8), cantidad (u16) | Lo borra. |
 
 `Inventory` (14) sustituye el arma equipada por los **10** ids de equipo (u16). `ItemCatalog` (15) añade
@@ -1497,20 +1500,20 @@ los cuatro bonus (u8). Todo se rechaza con el jugador muerto.
 `equipped_item_id` al hueco 0 y la columna deja de usarse. Equipo e inventario se guardan en la misma
 transacción; al cargar, un objeto inexistente o que no va en ese hueco se descarta con aviso.
 
-Métricas: `intercambios_equipo`, `movidos`, `divididos`, `juntados`, `intercambiados`, `tirados`,
+Métricas: `intercambios_equipo`, `movidos`, `divididos`, `juntados`, `intercambiados`,
 `destruidos` y los rechazos `equipo_rech_{muerto,vacio,hueco,lleno,destino}`, `equip_rech_{objeto,vacio}`,
-`mover_rech_{muerto,hueco,mismo,vacio,cantidad,objeto,lleno}`,
-`tirar_rech_{muerto,hueco,vacio,cantidad,lleno,objeto}` y
+`mover_rech_{muerto,hueco,mismo,vacio,cantidad,objeto,lleno}` y
 `destruir_rech_{muerto,hueco,vacio,cantidad,objeto}`. Bots: `fight` equipa armaduras si el hueco está
 vacío (`armaduras_equipadas`); el comportamiento nuevo **`inventory`** (9) recoge botín y cada 0,5 s manda
 una acción de inventario al azar.
 
 Cliente (I-14b): arrastrar entre huecos del inventario o la barra rápida mueve, intercambia o junta
 (con Shift, media pila); arrastrar al panel de personaje (C) equipa y del panel al inventario quita;
-doble clic usa o quita; clic derecho equipa o quita; soltar fuera de los paneles pregunta si tirar al
-suelo o destruir.
+doble clic usa o quita; clic derecho equipa o quita. Desde I-21 tirar destruye el objeto: los objetos
+del suelo quedan reservados al botín de PNJ, porque permitir soltar unidades llenaba el tope global
+de 500 y bloqueaba el botín de todos durante 60 s. El tipo 21 queda retirado y no se reutiliza.
 
-**Verificación y carga I-14:** 0 advertencias, **565** pruebas en verde. 50 bots `fight` (120 s): p99
+**Verificación y carga histórica I-14, anterior a I-21:** 0 advertencias, **565** pruebas en verde. 50 bots `fight` (120 s): p99
 **0,082 ms**, 0 correcciones, 56 armaduras equipadas. 30 bots `inventory` (120 s): p99 **0,078 ms**,
 0 correcciones; 58 equipados, 40 desequipados, 56 movidos, 7 divididos, 9 intercambiados, 71 tirados y
 54 destruidos; balance exacto (267 soltados por PNJ + 71 tirados = 338 recogidos) y ninguna pila fuera
@@ -1554,6 +1557,29 @@ sumaron **352 `elites_vistos`** (conteo por cliente de ids distintos, no ids glo
 la pasada histórica I-14 (11 muertes de jugador), esta ejecución tuvo 4 más; una pasada con rutas y
 combates variables no basta para atribuir esa diferencia causalmente a los rangos. Salidas guardadas en
 `tools/carga/resultados/20261028-221016-fight-50-redund4-corr/`.
+
+### Catálogo troceado y fuera `DropItem` (I-21, protocolo v14)
+
+El catálogo puede superar el tamaño de un datagrama. El servidor conserva la cabecera y el formato de
+cada entrada y lo reparte, en orden, en mensajes `ItemCatalog` de hasta 1400 B. Todos repiten las
+reglas de recogida y puños. Los manda por el canal fiable entre `Welcome` e `Inventory`, y al arrancar
+valida la codificación con las reglas de la clase 1. El cliente vacía el catálogo al recibir `Welcome`,
+añade las entradas de cada parte y actualiza con cada una el alcance de recogida y las reglas de puños.
+Un catálogo vacío también produce una parte válida con cero objetos.
+
+Los jugadores no pueden dejar objetos en el suelo: tirar destruye la cantidad seleccionada, igual que
+`DestroyItem` (22). El suelo queda para el botín de PNJ; permitir soltar unidades podía llenar en
+segundos el tope de 500 objetos y bloquear durante 60 s el botín de todos. El mensaje tipo 21 está
+retirado y no se reutiliza. No cambia el esquema SQLite v5.
+
+**Verificación y carga I-21:** `dotnet build Avelora.slnx -v q --nologo` pasó sin advertencias y
+`dotnet test Avelora.slnx` pasó **586/586**. La carga prescrita de 30 bots `inventory` durante 120 s con
+`-LogCorrections -NuevaBase` conectó **30/30**; el servidor completó **3120 ticks** en 156 s, tick p99
+**0,112 ms**, peor **9,039 ms**, 0 sobre 50 ms. Hubo **0 correcciones**, **0 saltos**, **0** rechazos de
+red y ninguna línea `[corrección]`. Acciones válidas: 80 equipados, 53 desequipados, 60 movidos y 80
+destruidos; las divisiones (10) e intercambios (3) son subconjuntos de los movimientos. Hubo 6805
+rechazos semánticos de acciones, sin saturación de cola. El botín generó/recogió **281/281** objetos y
+`objetos_descartados=0`; terminó con el suelo vacío. Logs: `tools/carga/resultados/20261028-224633-inventory-30-redund4-corr/`.
 
 ### Chat (I-07, protocolo v10)
 

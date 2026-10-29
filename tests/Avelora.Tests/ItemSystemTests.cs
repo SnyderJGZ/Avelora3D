@@ -623,31 +623,6 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void DropItem_Crea_Botin_Recogible_Y_El_Tope_Rechaza_Sin_Perdida()
-        {
-            Zone zone = NewZone(slots: 1, maxGroundItems: 1);
-            PlayerEntity player = SpawnPlayer(zone);
-            player.Inventory[0] = new InventorySlot(3001, 5);
-
-            zone.ItemActions!.TryEnqueue(ItemAction.DropItem(player.Id, 0, 2));
-            zone.Tick();
-            GroundItemEntity dropped = Assert.Single(GroundItems(zone));
-            Assert.Equal(3001, dropped.ItemId);
-            Assert.Equal(2, dropped.Count);
-            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
-
-            zone.ItemActions.TryEnqueue(ItemAction.DropItem(player.Id, 0, 0));
-            zone.Tick();
-            Assert.Equal(1, zone.RejectedDropFull);
-            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
-
-            zone.ItemActions.TryEnqueue(ItemAction.PickUp(player.Id, dropped.Id));
-            zone.Tick();
-            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[0]);
-            Assert.False(zone.Entities.TryGet(dropped.Id, out _));
-        }
-
-        [Fact]
         public void DestroyItem_Destruye_Parcial_Y_Totalmente()
         {
             Zone zone = NewZone(slots: 1);

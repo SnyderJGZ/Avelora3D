@@ -1075,7 +1075,7 @@ namespace Avelora.Client
                     if (_welcomeReceived &&
                         MessageCodec.TryReadItemCatalog(buffer, offset, length, out ItemCatalogMessage catalog))
                     {
-                        _catalog.Clear();
+                        // El catálogo llega en trozos (I-21): cada uno añade; se vació al conectar.
                         for (int i = 0; i < catalog.Items.Length; i++)
                         {
                             _catalog[catalog.Items[i].Id] = catalog.Items[i];
@@ -1730,7 +1730,7 @@ namespace Avelora.Client
 
             GUI.Label(
                 new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
-                "Arrastra para mover (Shift: media pila) · doble clic usar · clic dcho. equipar · fuera: tirar",
+                "Arrastra para mover (Shift: media pila) · doble clic usar · clic dcho. equipar · fuera: destruir",
                 _darkSmallStyle);
 
             if (hovered != 0)
@@ -1842,7 +1842,7 @@ namespace Avelora.Client
 
         /// <summary>
         /// Arrastre en curso: dibuja el icono bajo el ratón y, al soltar, pide mover, dividir (Shift),
-        /// equipar o quitar. Soltar fuera de los paneles abre el aviso de tirar o destruir.
+        /// equipar o quitar. Soltar fuera de los paneles pregunta si destruirlo.
         /// </summary>
         private void HandleDrag()
         {
@@ -1915,7 +1915,10 @@ namespace Avelora.Client
             }
         }
 
-        /// <summary>Aviso al soltar un objeto fuera de los paneles: tirarlo al suelo o destruirlo.</summary>
+        /// <summary>
+        /// Aviso al soltar un objeto fuera de los paneles: tirarlo lo destruye (I-21; los jugadores no
+        /// dejan objetos en el suelo, así nadie llena el tope de botín de la zona).
+        /// </summary>
         private void DrawDiscardDialog()
         {
             // Si el hueco cambió mientras tanto (lo recogió otro mensaje), se olvida.
@@ -1931,28 +1934,19 @@ namespace Avelora.Client
             GUI.DrawTexture(_discardDialog, _darkSlotFill);
             GUI.Label(
                 new Rect(_discardDialog.x + 14f, _discardDialog.y + 12f, 332f, 30f),
-                "¿Qué hacer con " + name + (count > 1 ? " ×" + count : string.Empty) + "?",
+                "¿Destruir " + name + (count > 1 ? " ×" + count : string.Empty) + "? No se puede deshacer.",
                 _darkTextStyle);
 
-            byte[] bytes = null;
-            if (LeftButton(new Rect(_discardDialog.x + 14f, _discardDialog.y + 60f, 120f, 34f), "Tirar al suelo", _darkButtonStyle))
+            if (LeftButton(new Rect(_discardDialog.x + 60f, _discardDialog.y + 60f, 110f, 34f), "Destruir", _darkButtonStyle) &&
+                _transport != null)
             {
-                bytes = MessageCodec.EncodeDropItem(new DropItemMessage((byte)_discardSlot, 0));
-            }
-
-            if (LeftButton(new Rect(_discardDialog.x + 142f, _discardDialog.y + 60f, 100f, 34f), "Destruir", _darkButtonStyle))
-            {
-                bytes = MessageCodec.EncodeDestroyItem(new DestroyItemMessage((byte)_discardSlot, 0));
-            }
-
-            if (LeftButton(new Rect(_discardDialog.x + 250f, _discardDialog.y + 60f, 96f, 34f), "Cancelar", _darkButtonStyle))
-            {
+                byte[] bytes = MessageCodec.EncodeDestroyItem(new DestroyItemMessage((byte)_discardSlot, 0));
+                _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
                 _discardSlot = -1;
             }
 
-            if (bytes != null && _transport != null)
+            if (LeftButton(new Rect(_discardDialog.x + 190f, _discardDialog.y + 60f, 110f, 34f), "Cancelar", _darkButtonStyle))
             {
-                _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
                 _discardSlot = -1;
             }
         }

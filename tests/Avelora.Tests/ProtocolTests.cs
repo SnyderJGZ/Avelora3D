@@ -690,11 +690,55 @@ namespace Avelora.Tests
             oversized[0] = (byte)MessageType.ItemCatalog;
             Assert.False(MessageCodec.TryReadItemCatalog(oversized, 0, oversized.Length, out _));
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeItemCatalog(
-                new ItemCatalogMessage(1, 10, 1, 1, new ItemCatalogEntry[513])));
             Assert.Throws<ArgumentException>(() => MessageCodec.EncodeItemCatalog(
                 new ItemCatalogMessage(1, 10, 1, 1,
                     new[] { new ItemCatalogEntry(1, ItemKind.Material, 1, 0, 0, 0, 0, new string('x', 49)) })));
+        }
+
+        [Fact]
+        public void ItemCatalog_Se_Divide_En_Trozos_Que_Conservan_Todo_El_Orden()
+        {
+            var entries = new ItemCatalogEntry[300];
+            for (int i = 0; i < entries.Length; i++)
+            {
+                entries[i] = new ItemCatalogEntry(
+                    (ushort)(i + 1), ItemKind.Material, 99, 0, 0, 0, 0, new string('x', 48));
+            }
+
+            byte[][] chunks = MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
+                1.5f, 10, 1.2f, 0.8f, entries));
+
+            Assert.True(chunks.Length > 1);
+            int decodedCount = 0;
+            for (int i = 0; i < chunks.Length; i++)
+            {
+                Assert.True(chunks[i].Length <= ProtocolConstants.MaxMessageSize);
+                Assert.True(MessageCodec.TryReadItemCatalog(
+                    chunks[i], 0, chunks[i].Length, out ItemCatalogMessage decoded));
+                Assert.Equal(1.5f, decoded.PickupRange);
+                Assert.Equal(10u, decoded.FistDamage);
+                for (int j = 0; j < decoded.Items.Length; j++)
+                {
+                    Assert.Equal((ushort)(decodedCount + 1), decoded.Items[j].Id);
+                    Assert.Equal(new string('x', 48), decoded.Items[j].Name);
+                    decodedCount++;
+                }
+            }
+
+            Assert.Equal(entries.Length, decodedCount);
+        }
+
+        [Fact]
+        public void ItemCatalog_Vacio_Genera_Un_Trozo_Vacio()
+        {
+            byte[][] chunks = MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
+                1.5f, 10, 1.2f, 0.8f, Array.Empty<ItemCatalogEntry>()));
+
+            byte[] chunk = Assert.Single(chunks);
+            Assert.True(MessageCodec.TryReadItemCatalog(chunk, 0, chunk.Length, out ItemCatalogMessage decoded));
+
+            Assert.Empty(decoded.Items);
+            Assert.Equal(19, chunks[0].Length);
         }
 
         [Fact]

@@ -353,7 +353,6 @@ namespace Avelora.Server.Simulation
         public long ItemsSplit => _items?.Split ?? 0;
         public long ItemsMerged => _items?.Merged ?? 0;
         public long ItemsSwapped => _items?.Swapped ?? 0;
-        public long ItemsDroppedByPlayer => _items?.DroppedFromInventory ?? 0;
         public long ItemsDestroyed => _items?.DestroyedFromInventory ?? 0;
         public long RejectedUnequipEmpty => _items?.RejectedUnequipEmpty ?? 0;
         public long RejectedEquipmentDestination => _items?.RejectedEquipmentDestination ?? 0;
@@ -365,12 +364,6 @@ namespace Avelora.Server.Simulation
         public long RejectedMoveCount => _items?.RejectedMoveCount ?? 0;
         public long RejectedMoveItem => _items?.RejectedMoveItem ?? 0;
         public long RejectedMoveFull => _items?.RejectedMoveFull ?? 0;
-        public long RejectedDropDead => _items?.RejectedDropDead ?? 0;
-        public long RejectedDropSlot => _items?.RejectedDropSlot ?? 0;
-        public long RejectedDropEmpty => _items?.RejectedDropEmpty ?? 0;
-        public long RejectedDropCount => _items?.RejectedDropCount ?? 0;
-        public long RejectedDropFull => _items?.RejectedDropFull ?? 0;
-        public long RejectedDropItem => _items?.RejectedDropItem ?? 0;
         public long RejectedDestroyDead => _items?.RejectedDestroyDead ?? 0;
         public long RejectedDestroySlot => _items?.RejectedDestroySlot ?? 0;
         public long RejectedDestroyEmpty => _items?.RejectedDestroyEmpty ?? 0;

@@ -250,6 +250,54 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Al_Saludar_El_Catalogo_Grande_Llega_Troceado_Entre_Welcome_E_Inventory()
+        {
+            using var harness = new Harness(withItems: true);
+            for (int i = 0; i < 80; i++)
+            {
+                harness.Zone.Items!.Items.Add(new ItemType
+                {
+                    Id = 4000 + i,
+                    Name = new string('x', 48),
+                    Kind = "material",
+                    MaxStack = 99,
+                });
+            }
+
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            Assert.True(MessageCodec.TryReadWelcome(
+                harness.Transport.Sent[0].Data, 0, harness.Transport.Sent[0].Data.Length, out _));
+            int messageIndex = 1;
+            int chunkCount = 0;
+            int itemCount = 0;
+            while (harness.Transport.Sent[messageIndex].Data[0] == (byte)MessageType.ItemCatalog)
+            {
+                byte[] data = harness.Transport.Sent[messageIndex].Data;
+                Assert.True(data.Length <= ProtocolConstants.MaxMessageSize);
+                Assert.True(MessageCodec.TryReadItemCatalog(data, 0, data.Length, out ItemCatalogMessage chunk));
+                itemCount += chunk.Items.Length;
+                chunkCount++;
+                messageIndex++;
+            }
+
+            Assert.True(chunkCount > 1);
+            Assert.Equal(85, itemCount);
+            Assert.True(MessageCodec.TryReadInventory(
+                harness.Transport.Sent[messageIndex].Data, 0,
+                harness.Transport.Sent[messageIndex].Data.Length, out _));
+            Assert.True(MessageCodec.TryReadProgress(
+                harness.Transport.Sent[messageIndex + 1].Data, 0,
+                harness.Transport.Sent[messageIndex + 1].Data.Length, out _));
+            Assert.True(MessageCodec.TryReadStats(
+                harness.Transport.Sent[messageIndex + 2].Data, 0,
+                harness.Transport.Sent[messageIndex + 2].Data.Length, out _));
+            Assert.Equal(messageIndex + 3, harness.Transport.Sent.Count);
+        }
+
+        [Fact]
         public void Repartir_Puntos_Se_Resuelve_En_El_Tick_Y_Devuelve_Stats()
         {
             using var harness = new Harness();
@@ -649,7 +697,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void La_Red_Encola_Mover_Tirar_Destruir_Equipar_Y_Desequipar_En_La_Cola_Del_Tick()
+        public void La_Red_Encola_Mover_Destruir_Equipar_Y_Desequipar_En_La_Cola_Del_Tick()
         {
             using var harness = new Harness(withItems: true);
             harness.Connect(1);
@@ -671,13 +719,6 @@ namespace Avelora.Tests
             harness.Zone.Tick();
             Assert.Equal(new InventorySlot(3001, 4), player.Inventory[1]);
 
-            harness.Transport.RaiseReceived(1, MessageCodec.EncodeDropItem(new DropItemMessage(1, 1)));
-            harness.Server.PollOnce();
-            harness.Zone.Tick();
-            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[1]);
-            Assert.Equal(1, harness.Zone.ItemsDroppedByPlayer);
-            Assert.Equal(1, harness.Zone.GroundItemCount);
-
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeEquip(new EquipMessage(2)));
             harness.Server.PollOnce();
             harness.Zone.Tick();
@@ -692,6 +733,24 @@ namespace Avelora.Tests
             Assert.Equal(1, harness.Zone.ItemsUnequipped);
             Assert.Equal(1, harness.Zone.ItemsDestroyed);
             Assert.Equal(1, harness.Zone.ItemsMoved);
+        }
+
+        [Fact]
+        public void Tipo_21_Retirado_Se_Rechaza_Sin_Cambiar_El_Inventario()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            player.Inventory[0] = new InventorySlot(3001, 5);
+
+            harness.Transport.RaiseReceived(1, new byte[] { 21, 0, 1, 0 });
+            harness.Server.PollOnce();
+
+            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[0]);
+            Assert.Equal(0, harness.Zone.GroundItemCount);
+            Assert.Equal(1, harness.Server.Snapshot().MessagesRejected);
         }
 
         [Fact]

@@ -61,7 +61,6 @@ namespace Avelora.Server.Simulation
         public long Split { get; private set; }
         public long Merged { get; private set; }
         public long Swapped { get; private set; }
-        public long DroppedFromInventory { get; private set; }
         public long DestroyedFromInventory { get; private set; }
         public long RejectedEquipmentDestination { get; private set; }
         public long RejectedEquipmentSlot { get; private set; }
@@ -73,12 +72,6 @@ namespace Avelora.Server.Simulation
         public long RejectedMoveCount { get; private set; }
         public long RejectedMoveItem { get; private set; }
         public long RejectedMoveFull { get; private set; }
-        public long RejectedDropDead { get; private set; }
-        public long RejectedDropSlot { get; private set; }
-        public long RejectedDropEmpty { get; private set; }
-        public long RejectedDropCount { get; private set; }
-        public long RejectedDropFull { get; private set; }
-        public long RejectedDropItem { get; private set; }
         public long RejectedDestroyDead { get; private set; }
         public long RejectedDestroySlot { get; private set; }
         public long RejectedDestroyEmpty { get; private set; }
@@ -133,10 +126,6 @@ namespace Avelora.Server.Simulation
                 else if (action.Kind == ItemActionKind.MoveItem)
                 {
                     ResolveMoveItem(zone, action.PlayerEntityId, action.Slot, action.TargetSlot, action.Count);
-                }
-                else if (action.Kind == ItemActionKind.DropItem)
-                {
-                    ResolveDropItem(zone, action.PlayerEntityId, action.Slot, action.Count, tick);
                 }
                 else if (action.Kind == ItemActionKind.DestroyItem)
                 {
@@ -473,62 +462,6 @@ namespace Avelora.Server.Simulation
             }
 
             Moved++;
-            zone.NotifyInventoryChanged(player);
-        }
-
-        private void ResolveDropItem(Zone zone, int playerId, byte slotIndex, ushort requestedCount, long tick)
-        {
-            if (!TryGetLivingPlayer(zone, playerId, out PlayerEntity player))
-            {
-                RejectedDropDead++;
-                return;
-            }
-
-            if (slotIndex >= player.Inventory.Length)
-            {
-                RejectedDropSlot++;
-                return;
-            }
-
-            InventorySlot source = player.Inventory[slotIndex];
-            if (source.ItemId == 0 || source.Count == 0)
-            {
-                RejectedDropEmpty++;
-                return;
-            }
-
-            ItemType? item = _catalog.Find(source.ItemId);
-            if (item == null || source.Count > item.MaxStack)
-            {
-                RejectedDropItem++;
-                return;
-            }
-
-            int count = requestedCount == 0 ? source.Count : requestedCount;
-            if (count > source.Count)
-            {
-                RejectedDropCount++;
-                return;
-            }
-
-            if (_groundItemCount >= _maxGroundItems)
-            {
-                RejectedDropFull++;
-                return;
-            }
-
-            var groundItem = new GroundItemEntity(
-                zone.Ids.Allocate(), source.ItemId, count, tick + _groundItemTicks)
-            {
-                Position = player.Position,
-            };
-            zone.AddEntity(groundItem);
-
-            source.Count = (ushort)(source.Count - count);
-            if (source.Count == 0) source.ItemId = 0;
-            player.Inventory[slotIndex] = source;
-            _groundItemCount++;
-            DroppedFromInventory++;
             zone.NotifyInventoryChanged(player);
         }
 

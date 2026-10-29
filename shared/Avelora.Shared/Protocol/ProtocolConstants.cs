@@ -25,9 +25,10 @@ namespace Avelora.Shared.Protocol
         /// I-06 a 9 por el mensaje <c>Progress</c>; I-07 a 10 por <c>ChatSend</c> y <c>Chat</c>;
         /// I-09 a 11 por <c>AllocatePoints</c>, <c>ResetPoints</c> y <c>Stats</c>; I-14 a 12
         /// por los mensajes y datos de equipo e inventario interactivo; I-20 a 13 porque el byte
-        /// de acción de <c>EntityState</c> también transporta el rango de los PNJ.
+        /// de acción de <c>EntityState</c> también transporta el rango de los PNJ; I-21 a 14 por
+        /// trocear <c>ItemCatalog</c> y retirar el mensaje <c>DropItem</c>.
         /// </summary>
-        public const ushort Version = 13;
+        public const ushort Version = 14;
 
         /// <summary>Rango máximo representable en los dos bits asignados en el snapshot.</summary>
         public const byte MaxEntityRank = 3;

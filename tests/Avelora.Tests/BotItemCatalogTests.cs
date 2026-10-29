@@ -144,8 +144,16 @@ namespace Avelora.Tests
                         0.8f,
                         new[]
                         {
-                            new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0),
                             new ItemCatalogEntry(3102, ItemKind.Weapon, 1, 0, 22, 1.3f, 1.2f, "Hacha de orco", 0),
+                        })));
+                    _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                        1.5f,
+                        10,
+                        1.2f,
+                        0.8f,
+                        new[]
+                        {
+                            new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0),
                             new ItemCatalogEntry(3301, ItemKind.Armor, 1, 0, 0, 0, 0, "Casco", 2, 2),
                         })));
                     _incoming.Enqueue(MessageCodec.EncodeInventory(
@@ -287,7 +295,6 @@ namespace Avelora.Tests
                 else if (data[0] == (byte)MessageType.MoveItem ||
                     data[0] == (byte)MessageType.Equip ||
                     data[0] == (byte)MessageType.Unequip ||
-                    data[0] == (byte)MessageType.DropItem ||
                     data[0] == (byte)MessageType.DestroyItem)
                 {
                     InventoryActionCount++;

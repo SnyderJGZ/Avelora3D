@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
+using Avelora.Shared.Protocol;
 using Xunit;
 
 namespace Avelora.Tests
@@ -395,7 +397,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Catalogo_Que_Supera_La_Cantidad_O_El_Tope_De_Mensaje_Se_Rechaza()
+        public void Catalogo_Grande_Es_Valido_Y_Nombre_Que_Supera_El_Tope_Se_Rechaza()
         {
             var tooMany = new List<ItemType>();
             for (int i = 1; i <= 513; i++)
@@ -403,7 +405,7 @@ namespace Avelora.Tests
                 tooMany.Add(Material(id: i));
             }
 
-            Assert.Throws<InvalidOperationException>(() => Catalog(tooMany.ToArray()).Validate());
+            Catalog(tooMany.ToArray()).Validate();
 
             var tooLarge = new List<ItemType>();
             for (int i = 1; i <= 20; i++)
@@ -412,9 +414,66 @@ namespace Avelora.Tests
                 tooLarge[i - 1].Name = new string('x', 48);
             }
 
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                () => Catalog(tooLarge.ToArray()).Validate());
-            Assert.Contains("ItemCatalog", error.Message);
+            Catalog(tooLarge.ToArray()).Validate();
+
+            ItemType invalidName = Material(id: 1000);
+            invalidName.Name = new string('x', 49);
+            Assert.Throws<InvalidOperationException>(() => Catalog(invalidName).Validate());
+        }
+
+        [Fact]
+        public void Catalogo_Real_Se_Codifica_En_Trozos_Dentro_Del_Tope()
+        {
+            ItemCatalog catalog = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            ClassCatalog classes = ClassCatalog.Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
+            var entries = new ItemCatalogEntry[catalog.Items.Count];
+            for (int i = 0; i < entries.Length; i++)
+            {
+                ItemType item = catalog.Items[i];
+                ItemKind kind = item.IsPotion
+                    ? ItemKind.Potion
+                    : item.IsWeapon ? ItemKind.Weapon
+                    : item.IsArmor ? ItemKind.Armor : ItemKind.Material;
+                item.TryGetEquipSlot(out byte equipSlot);
+                entries[i] = new ItemCatalogEntry(
+                    (ushort)item.Id,
+                    kind,
+                    (ushort)item.MaxStack,
+                    item.IsPotion ? (uint)item.Heal : 0u,
+                    item.IsWeapon ? (uint)item.Damage : 0u,
+                    item.IsWeapon ? item.Range : 0f,
+                    item.IsWeapon ? (float)item.CooldownSeconds : 0f,
+                    item.Name,
+                    equipSlot,
+                    checked((ushort)item.Defense),
+                    checked((ushort)item.MagicResist),
+                    checked((byte)item.Str),
+                    checked((byte)item.Dex),
+                    checked((byte)item.Int),
+                    checked((byte)item.Vit));
+            }
+
+            UnarmedAttack unarmed = classes.Find(1)!.Unarmed!;
+            int fistDamage = CharacterStats.GetAttackDamage(
+                classes, 1, 1, 0, 0, 0, 0, null, out _, catalog, new ushort[ProtocolConstants.EquipSlotCount]);
+            byte[][] chunks = MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
+                1.5f, (uint)fistDamage, unarmed.Range, (float)unarmed.CooldownSeconds, entries));
+
+            Assert.NotEmpty(chunks);
+            Assert.All(chunks, chunk => Assert.True(chunk.Length <= ProtocolConstants.MaxMessageSize));
+            int decodedCount = 0;
+            for (int i = 0; i < chunks.Length; i++)
+            {
+                Assert.True(MessageCodec.TryReadItemCatalog(
+                    chunks[i], 0, chunks[i].Length, out ItemCatalogMessage decoded));
+                for (int j = 0; j < decoded.Items.Length; j++)
+                {
+                    Assert.Equal((ushort)catalog.Items[decodedCount].Id, decoded.Items[j].Id);
+                    decodedCount++;
+                }
+            }
+
+            Assert.Equal(catalog.Items.Count, decodedCount);
         }
 
         [Fact]

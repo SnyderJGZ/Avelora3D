@@ -19,7 +19,7 @@ namespace Avelora.Tests
             Assert.Equal((byte)7, (byte)EquipSlot.Ring);
             Assert.Equal((byte)8, (byte)EquipSlot.Neck);
             Assert.Equal((byte)9, (byte)EquipSlot.Accessory);
-            Assert.Equal((ushort)13, ProtocolConstants.Version);
+            Assert.Equal((ushort)14, ProtocolConstants.Version);
             Assert.Equal(10, ProtocolConstants.EquipSlotCount);
         }
 
@@ -45,7 +45,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Move_Drop_Y_Destroy_Van_Y_Vuelven_Y_Rechazan_Campos_Fuera_De_Rango()
+        public void Move_Y_Destroy_Van_Y_Vuelven_Y_Rechazan_Campos_Fuera_De_Rango()
         {
             byte[] move = MessageCodec.EncodeMoveItem(new MoveItemMessage(4, 59, 125));
             Assert.Equal(5, move.Length);
@@ -57,19 +57,11 @@ namespace Avelora.Tests
             move[2] = 60;
             Assert.False(MessageCodec.TryReadMoveItem(move, 0, move.Length, out _));
 
-            byte[] drop = MessageCodec.EncodeDropItem(new DropItemMessage(3, 42));
-            Assert.True(MessageCodec.TryReadDropItem(drop, 0, drop.Length, out DropItemMessage dropRead));
-            Assert.Equal((byte)3, dropRead.Slot);
-            Assert.Equal((ushort)42, dropRead.Count);
-            Assert.False(MessageCodec.TryReadDropItem(drop, 0, drop.Length + 1, out _));
-
             byte[] destroy = MessageCodec.EncodeDestroyItem(new DestroyItemMessage(5, 0));
             Assert.True(MessageCodec.TryReadDestroyItem(destroy, 0, destroy.Length, out DestroyItemMessage destroyRead));
             Assert.Equal((byte)5, destroyRead.Slot);
             Assert.Equal((ushort)0, destroyRead.Count);
             Assert.False(MessageCodec.TryReadDestroyItem(destroy, 0, destroy.Length - 1, out _));
-            Assert.Throws<System.ArgumentOutOfRangeException>(() =>
-                MessageCodec.EncodeDropItem(new DropItemMessage(60, 1)));
         }
 
         [Fact]

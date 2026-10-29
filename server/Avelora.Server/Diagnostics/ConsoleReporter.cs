@@ -195,7 +195,6 @@ namespace Avelora.Server.Diagnostics
                 " divididos=" + zone.ItemsSplit +
                 " juntados=" + zone.ItemsMerged +
                 " intercambiados=" + zone.ItemsSwapped +
-                " tirados=" + zone.ItemsDroppedByPlayer +
                 " destruidos=" + zone.ItemsDestroyed +
                 " equipo_rech_muerto=" + zone.RejectedEquipDead +
                 " equip_rech_vacio=" + zone.RejectedEquipEmpty +
@@ -211,12 +210,6 @@ namespace Avelora.Server.Diagnostics
                 " mover_rech_cantidad=" + zone.RejectedMoveCount +
                 " mover_rech_objeto=" + zone.RejectedMoveItem +
                 " mover_rech_lleno=" + zone.RejectedMoveFull +
-                " tirar_rech_muerto=" + zone.RejectedDropDead +
-                " tirar_rech_hueco=" + zone.RejectedDropSlot +
-                " tirar_rech_vacio=" + zone.RejectedDropEmpty +
-                " tirar_rech_cantidad=" + zone.RejectedDropCount +
-                " tirar_rech_lleno=" + zone.RejectedDropFull +
-                " tirar_rech_objeto=" + zone.RejectedDropItem +
                 " destruir_rech_muerto=" + zone.RejectedDestroyDead +
                 " destruir_rech_hueco=" + zone.RejectedDestroySlot +
                 " destruir_rech_vacio=" + zone.RejectedDestroyEmpty +
@@ -377,7 +370,6 @@ namespace Avelora.Server.Diagnostics
                 ", divididos=" + zone.ItemsSplit +
                 ", juntados=" + zone.ItemsMerged +
                 ", intercambiados=" + zone.ItemsSwapped +
-                ", tirados=" + zone.ItemsDroppedByPlayer +
                 ", destruidos=" + zone.ItemsDestroyed +
                 ", equipo_rech_muerto=" + zone.RejectedEquipDead +
                 ", equip_rech_vacio=" + zone.RejectedEquipEmpty +
@@ -393,12 +385,6 @@ namespace Avelora.Server.Diagnostics
                 ", mover_rech_cantidad=" + zone.RejectedMoveCount +
                 ", mover_rech_objeto=" + zone.RejectedMoveItem +
                 ", mover_rech_lleno=" + zone.RejectedMoveFull +
-                ", tirar_rech_muerto=" + zone.RejectedDropDead +
-                ", tirar_rech_hueco=" + zone.RejectedDropSlot +
-                ", tirar_rech_vacio=" + zone.RejectedDropEmpty +
-                ", tirar_rech_cantidad=" + zone.RejectedDropCount +
-                ", tirar_rech_lleno=" + zone.RejectedDropFull +
-                ", tirar_rech_objeto=" + zone.RejectedDropItem +
                 ", destruir_rech_muerto=" + zone.RejectedDestroyDead +
                 ", destruir_rech_hueco=" + zone.RejectedDestroySlot +
                 ", destruir_rech_vacio=" + zone.RejectedDestroyEmpty +

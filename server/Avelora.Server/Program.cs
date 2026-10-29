@@ -259,6 +259,17 @@ namespace Avelora.Server
                 return 2;
             }
 
+            try
+            {
+                NetworkServer.ValidateItemCatalogEncoding(zone, config);
+            }
+            catch (Exception ex) when (
+                ex is InvalidOperationException || ex is ArgumentException || ex is OverflowException)
+            {
+                ConsoleReporter.WriteError("No se pudo preparar el catálogo de objetos: " + ex.Message);
+                return 2;
+            }
+
             using var network = new NetworkServer(
                 zone,
                 config,

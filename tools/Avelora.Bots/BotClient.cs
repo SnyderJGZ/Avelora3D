@@ -1406,6 +1406,7 @@ namespace Avelora.Bots
             {
                 long now = Environment.TickCount64;
 
+                _itemCatalog.Clear();
                 _welcomed = true;
                 _welcomedAt = now;
                 _lastSnapshotAt = now;
@@ -1465,7 +1466,6 @@ namespace Avelora.Bots
 
             if (MessageCodec.TryReadItemCatalog(buffer, offset, length, out ItemCatalogMessage catalog))
             {
-                _itemCatalog.Clear();
                 for (int i = 0; i < catalog.Items.Length; i++)
                 {
                     _itemCatalog[catalog.Items[i].Id] = catalog.Items[i];
@@ -2138,7 +2138,7 @@ namespace Avelora.Bots
             ushort count = _random.Next(3) == 0 ? (ushort)0 : (ushort)_random.Next(1, 11);
             byte[] bytes;
 
-            switch (_random.Next(5))
+            switch (_random.Next(4))
             {
                 case 0:
                     bytes = MessageCodec.EncodeMoveItem(new MoveItemMessage(first, second, count));
@@ -2152,9 +2152,6 @@ namespace Avelora.Bots
                         ? ProtocolConstants.FirstFreeInventorySlot
                         : first;
                     bytes = MessageCodec.EncodeUnequip(new UnequipMessage(equipSlot, targetSlot));
-                    break;
-                case 3:
-                    bytes = MessageCodec.EncodeDropItem(new DropItemMessage(first, count));
                     break;
                 default:
                     bytes = MessageCodec.EncodeDestroyItem(new DestroyItemMessage(first, count));
