@@ -612,18 +612,20 @@ namespace Avelora.Tests
             Assert.Equal(2, use.Length);
             Assert.Equal((byte)19, useRead.Slot);
 
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Weapon] = 3101;
             var inventory = new InventoryMessage(
                 3,
                 new ushort[] { 3001, 0, 3002 },
                 new ushort[] { 99, 0, 1 },
-                3101);
+                equipment);
             byte[] encodedInventory = MessageCodec.EncodeInventory(inventory);
             Assert.True(MessageCodec.TryReadInventory(
                 encodedInventory, 0, encodedInventory.Length, out InventoryMessage inventoryRead));
             Assert.Equal(34, encodedInventory.Length);
             Assert.Equal(inventory.ItemIds, inventoryRead.ItemIds);
             Assert.Equal(inventory.Counts, inventoryRead.Counts);
-            Assert.Equal((ushort)3101, inventoryRead.EquippedItemId);
+            Assert.Equal((ushort)3101, inventoryRead.Equipment[(int)EquipSlot.Weapon]);
         }
 
         [Fact]

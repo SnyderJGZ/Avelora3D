@@ -1333,17 +1333,24 @@ namespace Avelora.Server.Net
                 }
             }
 
-            session.Character = session.Character
-                .WithState(zone.Id, position, _mapHash, health, player.Mana)
-                .WithInventory(inventory.ToArray())
-                .WithEquipment(player.Equipment)
-                .WithClassAndAllocations(
-                    player.ClassId,
-                    player.AllocStr,
-                    player.AllocDex,
-                    player.AllocInt,
-                    player.AllocVit)
-                .WithProgress(player.Level, player.Experience);
+            session.Character = session.Character with
+            {
+                ZoneId = zone.Id,
+                Position = position,
+                MapHash = (byte[])_mapHash.Clone(),
+                Health = health,
+                Mana = player.Mana,
+                InventoryItems = inventory.ToArray(),
+                Equipment = (ushort[])player.Equipment.Clone(),
+                ClassId = player.ClassId,
+                AllocStr = player.AllocStr,
+                AllocDex = player.AllocDex,
+                AllocInt = player.AllocInt,
+                AllocVit = player.AllocVit,
+                Level = player.Level,
+                Experience = player.Experience,
+                UpdatedUtc = DateTime.UtcNow,
+            };
             _saves.Enqueue(session.Character);
         }
 

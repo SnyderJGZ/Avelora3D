@@ -54,6 +54,69 @@ namespace Avelora.Tests
 
         private string DatabasePath => Path.Combine(_folder, "avelora.db");
 
+        [Fact]
+        public void CharacterRecord_Conserva_Las_Validaciones_Y_Copia_Los_Arrays_Al_Crear()
+        {
+            CharacterRecord Create(
+                int id = 1,
+                int accountId = 1,
+                string name = "Heroe",
+                byte[]? mapHash = null,
+                InventoryItemRecord[]? inventory = null,
+                ushort[]? equipment = null) =>
+                new CharacterRecord(
+                    id,
+                    accountId,
+                    name,
+                    1,
+                    0,
+                    100,
+                    100,
+                    1,
+                    new Vec2(0, 0),
+                    mapHash ?? NewHash(1),
+                    DateTime.UtcNow,
+                    DateTime.UtcNow,
+                    inventory,
+                    equipment: equipment);
+
+            CharacterRecord CreateWithHash(byte[]? mapHash) =>
+                new CharacterRecord(
+                    1,
+                    1,
+                    "Heroe",
+                    1,
+                    0,
+                    100,
+                    100,
+                    1,
+                    new Vec2(0, 0),
+                    mapHash!,
+                    DateTime.UtcNow,
+                    DateTime.UtcNow);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => Create(id: 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Create(accountId: 0));
+            Assert.Throws<ArgumentException>(() => Create(name: " "));
+            Assert.Throws<ArgumentException>(() => CreateWithHash(null));
+            Assert.Throws<ArgumentException>(() => Create(mapHash: new byte[ProtocolConstants.MapHashSize - 1]));
+            Assert.Throws<ArgumentException>(() => Create(equipment: new ushort[ProtocolConstants.EquipSlotCount - 1]));
+
+            byte[] hash = NewHash(2);
+            var inventory = new[] { new InventoryItemRecord(0, 3001, 2) };
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Weapon] = 3101;
+            CharacterRecord record = Create(mapHash: hash, inventory: inventory, equipment: equipment);
+
+            hash[0]++;
+            inventory[0] = new InventoryItemRecord(1, 3002, 1);
+            equipment[(int)EquipSlot.Weapon] = 0;
+
+            Assert.Equal(NewHash(2), record.MapHash);
+            Assert.Equal(new InventoryItemRecord(0, 3001, 2), record.InventoryItems[0]);
+            Assert.Equal((ushort)3101, record.Equipment[(int)EquipSlot.Weapon]);
+        }
+
         private static ItemCatalog ItemCatalogForTests() => new ItemCatalog
         {
             Items = new List<ItemType>
@@ -179,10 +242,13 @@ namespace Avelora.Tests
                 Assert.Equal(1, created.Level);
                 Assert.Equal(new Vec2(-1.5f, -2.5f), created.Position);
 
-                repository.SaveCharacter(created.WithPosition(
-                    1,
-                    new Vec2(3.25f, -4.5f),
-                    NewHash(9)));
+                repository.SaveCharacter(created with
+                {
+                    ZoneId = 1,
+                    Position = new Vec2(3.25f, -4.5f),
+                    MapHash = NewHash(9),
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using (var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
@@ -274,7 +340,12 @@ namespace Avelora.Tests
             CharacterRecord character = repository.GetOrCreateCharacter(
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
 
-            repository.SaveCharacter(character.WithProgress(4, 275));
+            repository.SaveCharacter(character with
+            {
+                Level = 4,
+                Experience = 275,
+                UpdatedUtc = DateTime.UtcNow,
+            });
 
             CharacterRecord loaded = repository.GetOrCreateCharacter(
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
@@ -294,9 +365,20 @@ namespace Avelora.Tests
                 accountId = repository.Login("clase", "secreto1", "inv", "inv").AccountId;
                 CharacterRecord character = repository.GetOrCreateCharacter(
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
-                repository.SaveCharacter(character
-                    .WithClassAndAllocations(2, 0, 0, 2, 0)
-                    .WithState(1, new Vec2(2, 3), mapHash, 75, 95));
+                repository.SaveCharacter(character with
+                {
+                    ClassId = 2,
+                    AllocStr = 0,
+                    AllocDex = 0,
+                    AllocInt = 2,
+                    AllocVit = 0,
+                    ZoneId = 1,
+                    Position = new Vec2(2, 3),
+                    MapHash = (byte[])mapHash.Clone(),
+                    Health = 75,
+                    Mana = 95,
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
@@ -358,11 +440,15 @@ namespace Avelora.Tests
                 AccountLoginResult login = repository.Login("bolsa", "secreto1", "inv", "inv");
                 CharacterRecord character = repository.GetOrCreateCharacter(
                     login.AccountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
-                repository.SaveCharacter(character.WithInventory(new[]
+                repository.SaveCharacter(character with
                 {
-                    new InventoryItemRecord(0, 3001, 5),
-                    new InventoryItemRecord(2, 3002, 1),
-                }));
+                    InventoryItems = new[]
+                    {
+                        new InventoryItemRecord(0, 3001, 5),
+                        new InventoryItemRecord(2, 3002, 1),
+                    },
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using var reopened = new SqlitePlayerRepository(
@@ -391,9 +477,12 @@ namespace Avelora.Tests
                 equipment[(int)EquipSlot.Weapon] = 3101;
                 equipment[(int)EquipSlot.Head] = 3301;
                 equipment[(int)EquipSlot.Ring] = 3308;
-                repository.SaveCharacter(character
-                    .WithInventory(new[] { new InventoryItemRecord(1, 3001, 2) })
-                    .WithEquipment(equipment));
+                repository.SaveCharacter(character with
+                {
+                    InventoryItems = new[] { new InventoryItemRecord(1, 3001, 2) },
+                    Equipment = (ushort[])equipment.Clone(),
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using var reopened = new SqlitePlayerRepository(
@@ -402,7 +491,7 @@ namespace Avelora.Tests
             int loadedAccount = reopened.Login("equipo", "secreto1", "", "").AccountId;
             CharacterRecord loaded = reopened.GetOrCreateCharacter(
                 loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
-            Assert.Equal((ushort)3101, loaded.EquippedItemId);
+            Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)3301, loaded.Equipment[(int)EquipSlot.Head]);
             Assert.Equal((ushort)3308, loaded.Equipment[(int)EquipSlot.Ring]);
             Assert.Contains(loaded.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
@@ -424,9 +513,12 @@ namespace Avelora.Tests
                 equipment[(int)EquipSlot.Ring] = 3308; // +2 VIT = +10 de vida máxima
                 fullHealth = CharacterStats.Calculate(
                     ClassCatalog.Default, character.ClassId, 1, 0, 0, 0, 0, ItemCatalogForTests(), equipment).MaxHealth;
-                repository.SaveCharacter(character
-                    .WithState(character.ZoneId, character.Position, mapHash, fullHealth)
-                    .WithEquipment(equipment));
+                repository.SaveCharacter(character with
+                {
+                    Health = fullHealth,
+                    Equipment = (ushort[])equipment.Clone(),
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using var reopened = new SqlitePlayerRepository(
@@ -472,7 +564,7 @@ namespace Avelora.Tests
             reopened.Initialize();
             CharacterRecord loaded = reopened.GetOrCreateCharacter(
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
-            Assert.Equal((ushort)0, loaded.EquippedItemId);
+            Assert.Equal((ushort)0, loaded.Equipment[(int)EquipSlot.Weapon]);
         }
 
         [Fact]
@@ -535,7 +627,11 @@ namespace Avelora.Tests
                 CharacterRecord character = repository.GetOrCreateCharacter(
                     accountId, "Heroe", 1, new Vec2(2, 3), mapHash)!;
                 characterId = character.Id;
-                repository.SaveCharacter(character.WithInventory(new[] { new InventoryItemRecord(1, 3001, 2) }));
+                repository.SaveCharacter(character with
+                {
+                    InventoryItems = new[] { new InventoryItemRecord(1, 3001, 2) },
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
@@ -562,7 +658,7 @@ namespace Avelora.Tests
                     accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
                 Assert.Equal(characterId, character.Id);
                 Assert.Contains(character.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
-                Assert.Equal((ushort)0, character.EquippedItemId);
+                Assert.Equal((ushort)0, character.Equipment[(int)EquipSlot.Weapon]);
             }
 
             using var verify = new SqliteConnection("Data Source=" + DatabasePath);
@@ -586,11 +682,21 @@ namespace Avelora.Tests
                 CharacterRecord character = repository.GetOrCreateCharacter(
                     accountId, "Heroe", 1, new Vec2(2, 3), mapHash)!;
                 characterId = character.Id;
-                repository.SaveCharacter(character
-                    .WithState(1, new Vec2(4, 5), mapHash, 70, 73)
-                    .WithProgress(4, 275)
-                    .WithInventory(new[] { new InventoryItemRecord(1, 3001, 2) })
-                    .WithEquippedItem(3101));
+                var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                equipment[(int)EquipSlot.Weapon] = 3101;
+                repository.SaveCharacter(character with
+                {
+                    ZoneId = 1,
+                    Position = new Vec2(4, 5),
+                    MapHash = (byte[])mapHash.Clone(),
+                    Health = 70,
+                    Mana = 73,
+                    Level = 4,
+                    Experience = 275,
+                    InventoryItems = new[] { new InventoryItemRecord(1, 3001, 2) },
+                    Equipment = equipment,
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
@@ -620,7 +726,7 @@ namespace Avelora.Tests
                 Assert.Equal(275, loaded.Experience);
                 Assert.Equal(70, loaded.Health);
                 Assert.Equal(73, loaded.Mana);
-                Assert.Equal((ushort)3101, loaded.EquippedItemId);
+                Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
                 Assert.Contains(loaded.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
                 Assert.Equal(1, loaded.ClassId);
                 Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
@@ -751,7 +857,14 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                     hash);
 
                 Assert.NotNull(created);
-                repository.SaveCharacter(created.WithState(1, new Vec2(3.5f, 4.5f), hash, 37));
+                repository.SaveCharacter(created with
+                {
+                    ZoneId = 1,
+                    Position = new Vec2(3.5f, 4.5f),
+                    MapHash = (byte[])hash.Clone(),
+                    Health = 37,
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using (var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
@@ -829,7 +942,14 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                     hash);
 
                 Assert.NotNull(created);
-                repository.SaveCharacter(created.WithState(1, new Vec2(-1.5f, -2.5f), hash, 0));
+                repository.SaveCharacter(created with
+                {
+                    ZoneId = 1,
+                    Position = new Vec2(-1.5f, -2.5f),
+                    MapHash = (byte[])hash.Clone(),
+                    Health = 0,
+                    UpdatedUtc = DateTime.UtcNow,
+                });
             }
 
             using var harness = new ServerHarness(DatabasePath);
@@ -1117,7 +1237,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             Assert.Equal(75, reconnected.Health);
             Assert.Equal(95, reconnected.Mana);
             Assert.True(harness.Saves.TryGetLatest(first.CharacterId, out CharacterRecord latest));
-            Assert.Equal((ushort)3101, latest.EquippedItemId);
+            Assert.Equal((ushort)3101, latest.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)3301, latest.Equipment[(int)EquipSlot.Head]);
             Assert.Equal((ushort)3308, latest.Equipment[(int)EquipSlot.Ring]);
             Assert.Equal(4, latest.Level);

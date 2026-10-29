@@ -12,7 +12,7 @@ namespace Avelora.Server.Persistence
     /// La cola de guardado se queda con esta copia, no con la entidad viva: la simulación puede
     /// seguir moviendo al jugador mientras SQLite escribe, sin carreras ni bloqueos dentro del tick.
     /// </remarks>
-    public sealed class CharacterRecord
+    public sealed record CharacterRecord
     {
         public CharacterRecord(
             int id,
@@ -28,7 +28,6 @@ namespace Avelora.Server.Persistence
             DateTime createdUtc,
             DateTime updatedUtc,
             InventoryItemRecord[]? inventoryItems = null,
-            ushort equippedItemId = 0,
             int classId = 1,
             int allocStr = 0,
             int allocDex = 0,
@@ -81,10 +80,6 @@ namespace Avelora.Server.Persistence
                 throw new ArgumentException("El equipo debe contener exactamente diez huecos.", nameof(equipment));
             }
 
-            if (equippedItemId != 0 && equipment == null)
-            {
-                Equipment[0] = equippedItemId;
-            }
             ClassId = classId;
             AllocStr = allocStr;
             AllocDex = allocDex;
@@ -92,205 +87,42 @@ namespace Avelora.Server.Persistence
             AllocVit = allocVit;
         }
 
-        public int Id { get; }
+        public int Id { get; init; }
 
-        public int AccountId { get; }
+        public int AccountId { get; init; }
 
-        public string Name { get; }
+        public string Name { get; init; }
 
-        public int Level { get; }
+        public int Level { get; init; }
 
-        public int Experience { get; }
+        public int Experience { get; init; }
 
-        public int Health { get; }
+        public int Health { get; init; }
 
-        public int Mana { get; }
+        public int Mana { get; init; }
 
-        public int ZoneId { get; }
+        public int ZoneId { get; init; }
 
-        public Vec2 Position { get; }
+        public Vec2 Position { get; init; }
 
         /// <summary>Mapa en el que se guardó; si el servidor carga otro, la posición no se reutiliza.</summary>
-        public byte[] MapHash { get; }
+        public byte[] MapHash { get; init; }
 
-        public DateTime CreatedUtc { get; }
+        public DateTime CreatedUtc { get; init; }
 
-        public DateTime UpdatedUtc { get; }
+        public DateTime UpdatedUtc { get; init; }
 
         /// <summary>Contenido de inventario guardado por ranura.</summary>
-        public InventoryItemRecord[] InventoryItems { get; }
+        public InventoryItemRecord[] InventoryItems { get; init; }
 
         /// <summary>Ids equipados por hueco; se copia para que la foto sea inmutable.</summary>
-        public ushort[] Equipment { get; }
+        public ushort[] Equipment { get; init; }
 
-        /// <summary>Arma equipada derivada del hueco weapon.</summary>
-        public ushort EquippedItemId => Equipment[0];
-
-        public int ClassId { get; }
-        public int AllocStr { get; }
-        public int AllocDex { get; }
-        public int AllocInt { get; }
-        public int AllocVit { get; }
-
-        /// <summary>Copia el personaje con una posición, zona y mapa nuevos, dejando el resto igual.</summary>
-        public CharacterRecord WithPosition(int zoneId, Vec2 position, byte[] mapHash) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                Level,
-                Experience,
-                Health,
-                Mana,
-                zoneId,
-                position,
-                mapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                InventoryItems,
-                EquippedItemId,
-                ClassId,
-                AllocStr,
-                AllocDex,
-                AllocInt,
-                AllocVit,
-                Equipment);
-
-        /// <summary>
-        /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
-        /// para que la vida viva llegue a SQLite y para normalizar a un jugador muerto.
-        /// </summary>
-        public CharacterRecord WithState(int zoneId, Vec2 position, byte[] mapHash, int health, int? mana = null) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                Level,
-                Experience,
-                health,
-                mana ?? Mana,
-                zoneId,
-                position,
-                mapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                InventoryItems,
-                EquippedItemId,
-                ClassId,
-                AllocStr,
-                AllocDex,
-                AllocInt,
-                AllocVit,
-                Equipment);
-
-        /// <summary>Crea una foto nueva con el inventario completo.</summary>
-        public CharacterRecord WithInventory(InventoryItemRecord[] inventoryItems) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                Level,
-                Experience,
-                Health,
-                Mana,
-                ZoneId,
-                Position,
-                MapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                inventoryItems,
-                EquippedItemId,
-                ClassId,
-                AllocStr,
-                AllocDex,
-                AllocInt,
-                AllocVit,
-                Equipment);
-
-        /// <summary>Crea una foto nueva con el equipo completo.</summary>
-        public CharacterRecord WithEquipment(ushort[] equipment) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                Level,
-                Experience,
-                Health,
-                Mana,
-                ZoneId,
-                Position,
-                MapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                InventoryItems,
-                0,
-                ClassId,
-                AllocStr,
-                AllocDex,
-                AllocInt,
-                AllocVit,
-                equipment);
-
-        /// <summary>Compatibilidad para establecer el arma del hueco weapon.</summary>
-        public CharacterRecord WithEquippedItem(ushort equippedItemId)
-        {
-            var equipment = (ushort[])Equipment.Clone();
-            equipment[0] = equippedItemId;
-            return WithEquipment(equipment);
-        }
-
-        /// <summary>Crea una foto con el nivel y la experiencia vivos de la entidad (I-06).</summary>
-        public CharacterRecord WithProgress(int level, int experience) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                level,
-                experience,
-                Health,
-                Mana,
-                ZoneId,
-                Position,
-                MapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                InventoryItems,
-                EquippedItemId,
-                ClassId,
-                AllocStr,
-                AllocDex,
-                AllocInt,
-                AllocVit,
-                Equipment);
-
-        /// <summary>Crea una foto con clase y puntos repartidos nuevos.</summary>
-        public CharacterRecord WithClassAndAllocations(
-            int classId,
-            int allocStr,
-            int allocDex,
-            int allocInt,
-            int allocVit) =>
-            new CharacterRecord(
-                Id,
-                AccountId,
-                Name,
-                Level,
-                Experience,
-                Health,
-                Mana,
-                ZoneId,
-                Position,
-                MapHash,
-                CreatedUtc,
-                DateTime.UtcNow,
-                InventoryItems,
-                EquippedItemId,
-                classId,
-                allocStr,
-                allocDex,
-                allocInt,
-                allocVit,
-                Equipment);
+        public int ClassId { get; init; }
+        public int AllocStr { get; init; }
+        public int AllocDex { get; init; }
+        public int AllocInt { get; init; }
+        public int AllocVit { get; init; }
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

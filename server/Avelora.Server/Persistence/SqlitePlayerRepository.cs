@@ -806,9 +806,12 @@ CREATE TABLE character_equipment (
 
             }
 
-            return character
-                .WithInventory(LoadInventory(connection, character.Id))
-                .WithEquipment(equipment!);
+            return character with
+            {
+                InventoryItems = LoadInventory(connection, character.Id),
+                Equipment = equipment!,
+                UpdatedUtc = DateTime.UtcNow,
+            };
         }
 
         private ushort[] LoadEquipment(SqliteConnection connection, int characterId)

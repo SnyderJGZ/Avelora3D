@@ -76,7 +76,7 @@ namespace Avelora.Tests
             Assert.Equal(26, bytes.Length);
             Assert.True(MessageCodec.TryReadInventory(bytes, 0, bytes.Length, out InventoryMessage decoded));
             Assert.Equal(equipment, decoded.Equipment);
-            Assert.Equal((ushort)3101, decoded.EquippedItemId);
+            Assert.Equal((ushort)3101, decoded.Equipment[(int)EquipSlot.Weapon]);
             Assert.False(MessageCodec.TryReadInventory(bytes, 0, bytes.Length - 1, out _));
             Assert.Throws<System.ArgumentException>(() => MessageCodec.EncodeInventory(
                 new InventoryMessage(0, System.Array.Empty<ushort>(), System.Array.Empty<ushort>(), new ushort[9])));

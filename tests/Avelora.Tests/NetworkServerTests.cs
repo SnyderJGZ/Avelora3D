@@ -397,7 +397,8 @@ namespace Avelora.Tests
             harness.Server.PollOnce();
 
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadInventory(
-                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) && inventory.EquippedItemId == 3101);
+                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.Equipment[(int)EquipSlot.Weapon] == 3101);
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
                 sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 16);
 
@@ -408,7 +409,8 @@ namespace Avelora.Tests
             harness.Server.PollOnce();
 
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadInventory(
-                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) && inventory.EquippedItemId == 0);
+                sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.Equipment[(int)EquipSlot.Weapon] == 0);
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
                 sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 12);
         }
@@ -693,7 +695,7 @@ namespace Avelora.Tests
                 sent => MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out _));
             Assert.True(MessageCodec.TryReadInventory(
                 inventorySent.Data, 0, inventorySent.Data.Length, out InventoryMessage inventory));
-            Assert.Equal((ushort)3101, inventory.EquippedItemId);
+            Assert.Equal((ushort)3101, inventory.Equipment[(int)EquipSlot.Weapon]);
         }
 
         [Fact]

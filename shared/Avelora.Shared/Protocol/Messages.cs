@@ -651,13 +651,9 @@ namespace Avelora.Shared.Protocol
     /// (0 = vacío) y la cantidad.</summary>
     public readonly struct InventoryMessage
     {
-        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort equippedItemId = 0)
+        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts)
+            : this(slotCount, itemIds, counts, new ushort[ProtocolConstants.EquipSlotCount])
         {
-            SlotCount = slotCount;
-            ItemIds = itemIds ?? Array.Empty<ushort>();
-            Counts = counts ?? Array.Empty<ushort>();
-            Equipment = new ushort[ProtocolConstants.EquipSlotCount];
-            Equipment[0] = equippedItemId;
         }
 
         public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort[] equipment)
@@ -679,9 +675,6 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Objeto equipado por hueco, en orden de <see cref="EquipSlot"/>; 0 significa vacío.</summary>
         public ushort[] Equipment { get; }
-
-        /// <summary>Compatibilidad de lectura del arma, que ocupa el hueco weapon.</summary>
-        public ushort EquippedItemId => Equipment.Length == 0 ? (ushort)0 : Equipment[0];
     }
 
     /// <summary>Progreso del personaje (I-06), enviado de forma fiable y ordenada.</summary>
