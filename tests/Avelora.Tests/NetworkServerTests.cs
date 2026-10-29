@@ -1189,7 +1189,8 @@ namespace Avelora.Tests
                 leashRadius: 8f,
                 attackDamage: 14,
                 attackRange: 1f,
-                attackCooldownTicks: 40)
+                attackCooldownTicks: 40,
+                rank: 1)
             {
                 Position = new Vec2(0.5f, 5f),
                 HalfSize = new Vec2(0.35f, 0.35f),
@@ -1208,11 +1209,13 @@ namespace Avelora.Tests
             EntityState playerState = Assert.Single(snapshot.Entities, e => e.Id == player.Id);
             Assert.Equal(EntityKind.Player, playerState.Kind);
             Assert.Equal((ushort)0, playerState.TypeId);
+            Assert.Equal((byte)0, playerState.Rank);
 
             // El orco 2002 manda su tipo en TypeId.
             EntityState orcState = Assert.Single(snapshot.Entities, e => e.Id == 100);
             Assert.Equal(EntityKind.Npc, orcState.Kind);
             Assert.Equal((ushort)2002, orcState.TypeId);
+            Assert.Equal((byte)1, orcState.Rank);
         }
 
         [Fact]

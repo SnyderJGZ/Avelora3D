@@ -141,6 +141,36 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Rango_Repite_La_Tabla_De_Botin_Y_Respeta_El_Tope_De_Suelo()
+        {
+            NpcCatalog catalog = Npcs(1, Loot(chance: 1));
+            catalog.Ranks = new List<NpcRank>
+            {
+                new NpcRank
+                {
+                    Id = 1,
+                    Name = "Rango",
+                    Chance = 1,
+                    Health = 1,
+                    Damage = 1,
+                    Experience = 1,
+                    LootRolls = 2,
+                },
+            };
+            Zone zone = NewZone(npcs: catalog, maxGroundItems: 1);
+            NpcEntity npc = Assert.IsType<NpcEntity>(zone.Entities[0]);
+            Assert.Equal(2, npc.LootRolls);
+            npc.Action = EntityAction.Dead;
+            npc.Health = 0;
+
+            zone.Tick();
+
+            Assert.Single(GroundItems(zone));
+            Assert.Equal(1, zone.ItemsDropped);
+            Assert.Equal(1, zone.ItemsDiscarded);
+        }
+
+        [Fact]
         public void Tope_De_Suelo_Descarta_Nuevos_Y_Caduca_En_El_Tick_Exacto()
         {
             Zone zone = NewZone(

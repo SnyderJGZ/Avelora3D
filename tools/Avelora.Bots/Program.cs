@@ -226,6 +226,7 @@ namespace Avelora.Bots
             long playedMs = 0;
             long sentAttacks = 0;
             long deathsSeen = 0;
+            long elitesSeen = 0;
             long ownDeaths = 0;
             long ownRespawns = 0;
             long sentPickups = 0;
@@ -270,6 +271,7 @@ namespace Avelora.Bots
                 snaps += bot.Snaps;
                 sentAttacks += bot.SentAttacks;
                 deathsSeen += bot.DeathsSeen;
+                elitesSeen += bot.ElitesSeen;
                 ownDeaths += bot.OwnDeaths;
                 ownRespawns += bot.OwnRespawns;
                 sentPickups += bot.SentPickups;
@@ -336,6 +338,7 @@ namespace Avelora.Bots
                     Console.WriteLine(
                         "      combate: ataques=" + bot.SentAttacks +
                         " muertes_vistas=" + bot.DeathsSeen +
+                        " elites_vistos=" + bot.ElitesSeen +
                         " recogidas=" + bot.SentPickups +
                         " pociones=" + bot.SentPotions +
                         " equipados=" + bot.Equipped +
@@ -397,7 +400,8 @@ namespace Avelora.Bots
             {
                 Console.WriteLine(
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
-                    deathsSeen + " muertes vistas, " + sentPickups + " recogidas, " +
+                    deathsSeen + " muertes vistas, elites_vistos=" + elitesSeen + ", " +
+                    sentPickups + " recogidas, " +
                     sentPotions + " pociones usadas, " + equipped + " armas equipadas, " +
                     armorsEquipped + " armaduras_equipadas, " +
                     "puntos_repartidos=" + pointsAllocated + ", stats_recibidos=" + statsReceived + ", " +

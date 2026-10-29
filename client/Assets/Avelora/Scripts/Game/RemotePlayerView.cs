@@ -77,6 +77,28 @@ namespace Avelora.Client
             transform.localScale = new Vector3(ItemScale, ItemScale, 1f);
         }
 
+        /// <summary>
+        /// Rango del PNJ (I-20b): 1 élite (dorado, un poco más grande), 2 campeón (rojizo, más grande).
+        /// No cambia en la vida de una entidad: al reaparecer el servidor le da otro id.
+        /// </summary>
+        public void SetRank(byte rank)
+        {
+            if (rank == Rank)
+            {
+                return;
+            }
+
+            Rank = rank;
+            _rankColor = rank == 1 ? new Color(1f, 0.85f, 0.45f, 1f)
+                : rank >= 2 ? new Color(1f, 0.5f, 0.45f, 1f)
+                : Color.white;
+            float scale = rank == 1 ? 1.15f : rank >= 2 ? 1.3f : 1f;
+            transform.localScale = new Vector3(scale, scale, 1f);
+        }
+
+        /// <summary>Rango del PNJ: 0 normal, 1 élite, 2 campeón.</summary>
+        public byte Rank { get; private set; }
+
         /// <summary>Tipo de la última muestra aplicada.</summary>
         public EntityKind Kind { get; private set; }
 
@@ -140,7 +162,7 @@ namespace Avelora.Client
             {
                 _renderer.color = sample.Kind == EntityKind.Player ? _playerColor
                     : sample.Kind == EntityKind.Item ? _itemColor
-                    : _npcColor;
+                    : _npcColor * _rankColor;
 
                 if (sample.DirectionX != 0)
                 {
@@ -166,7 +188,7 @@ namespace Avelora.Client
                     : FacingDown;
             }
 
-            _renderer.color = Color.white;
+            _renderer.color = _rankColor;
             _renderer.flipX = false;
 
             // Una sola pasada: la muerte se queda en su último cuadro hasta que el servidor retira
@@ -297,6 +319,7 @@ namespace Avelora.Client
         private Sprite[] _attack;
         private bool _moving;
         private Color _itemColor = Color.white;
+        private Color _rankColor = Color.white;
         private bool _wasAttacking;
         private float _attackStartedAt = -1f;
         private int _facing = FacingDown;

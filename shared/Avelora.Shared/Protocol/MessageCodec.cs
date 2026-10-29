@@ -898,7 +898,7 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica un snapshot: cabecera de 11 bytes más 13 por entidad. El número de entidades
+        /// Codifica un snapshot: cabecera de 11 bytes más 15 por entidad. El número de entidades
         /// debe caber en <see cref="ProtocolConstants.MaxEntitiesPerSnapshot"/>.
         /// </summary>
         public static byte[] EncodeSnapshot(in SnapshotMessage message)
@@ -914,10 +914,12 @@ namespace Avelora.Shared.Protocol
 
             for (int i = 0; i < entities.Length; i++)
             {
-                // La vida y la acción son parte del formato: un valor fuera de rango rompería al
+                // La vida, la acción y el rango son parte del formato: un valor fuera de rango rompería al
                 // cliente, así que se para en el servidor (donde el fallo es un error de código).
                 if (entities[i].HealthPercent > 100 ||
-                    entities[i].Action > EntityAction.Dead)
+                    entities[i].Action > EntityAction.Dead ||
+                    entities[i].Rank > ProtocolConstants.MaxEntityRank ||
+                    (entities[i].Kind != EntityKind.Npc && entities[i].Rank != 0))
                 {
                     throw new ArgumentOutOfRangeException(
                         nameof(message),
@@ -942,7 +944,8 @@ namespace Avelora.Shared.Protocol
                 writer.WriteSByte(state.DirectionY);
                 writer.WriteByte((byte)state.Kind);
                 writer.WriteByte(state.HealthPercent);
-                writer.WriteByte((byte)state.Action);
+                // Bits 0–3: acción; bits 4–5: rango; bits 6–7: reservados (0).
+                writer.WriteByte((byte)((byte)state.Action | (state.Rank << 4)));
                 writer.WriteUInt16(state.TypeId);
             }
 
@@ -999,7 +1002,9 @@ namespace Avelora.Shared.Protocol
                     sbyte directionY = reader.ReadSByte();
                     byte rawKind = reader.ReadByte();
                     byte healthPercent = reader.ReadByte();
-                    byte rawAction = reader.ReadByte();
+                    byte packedAction = reader.ReadByte();
+                    byte rawAction = (byte)(packedAction & 0x0f);
+                    byte rank = (byte)((packedAction >> 4) & 0x03);
 
                     // El códec no conoce el catálogo de PNJ: cualquier tipo es válido aquí y el
                     // cliente dibuja uno desconocido con el aspecto por defecto.
@@ -1011,7 +1016,9 @@ namespace Avelora.Shared.Protocol
                     if (rawKind > (byte)EntityKind.Item ||
                         !MovementSimulator.IsValidDirection(directionX, directionY) ||
                         healthPercent > 100 ||
-                        rawAction > (byte)EntityAction.Dead)
+                        rawAction > (byte)EntityAction.Dead ||
+                        (packedAction & 0xc0) != 0 ||
+                        (rawKind != (byte)EntityKind.Npc && rank != 0))
                     {
                         return false;
                     }
@@ -1025,7 +1032,8 @@ namespace Avelora.Shared.Protocol
                         (EntityKind)rawKind,
                         healthPercent,
                         (EntityAction)rawAction,
-                        typeId);
+                        typeId,
+                        rank);
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);

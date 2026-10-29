@@ -46,6 +46,7 @@ namespace Avelora.Tests
             Assert.Equal(3, bot.PointsAllocated);
             Assert.True(bot.StatsReceived >= 3);
             Assert.Equal((byte)1, bot.ClassId);
+            Assert.Equal(1, bot.ElitesSeen);
         }
 
         [Fact]
@@ -180,14 +181,13 @@ namespace Avelora.Tests
                         _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(3, 0, 0, 130)));
                         _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
                             1, 3, 4, 3, 1, 10, 0, 0, 0, 0, 0, 100, 24, 0, 0, 0, 100, 100, 1)));
-                        _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(
-                            1,
-                            0,
-                            new[]
-                            {
-                                new EntityState(42, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None),
-                                new EntityState(100, 80, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2002),
-                            })));
+                        EntityState[] states =
+                        {
+                            new EntityState(42, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None),
+                            new EntityState(100, 80, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2002, rank: 1),
+                        };
+                        _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(1, 0, states)));
+                        _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(2, 0, states)));
                     }
                 }
                 else if (data[0] == (byte)MessageType.Attack)

@@ -153,36 +153,39 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            for (int i = 0; i < type.Loot.Count; i++)
+            for (int roll = 0; roll < npc.LootRolls; roll++)
             {
-                LootEntry loot = type.Loot[i];
-                if (_random.NextDouble() >= loot.Chance)
+                for (int i = 0; i < type.Loot.Count; i++)
                 {
-                    continue;
+                    LootEntry loot = type.Loot[i];
+                    if (_random.NextDouble() >= loot.Chance)
+                    {
+                        continue;
+                    }
+
+                    if (_groundItemCount >= _maxGroundItems)
+                    {
+                        ItemsDiscarded++;
+                        continue;
+                    }
+
+                    int count = _random.Next(loot.Min, loot.Max + 1);
+                    var item = new GroundItemEntity(
+                        zone.Ids.Allocate(),
+                        loot.ItemId,
+                        count,
+                        tick + _groundItemTicks)
+                    {
+                        MapId = zone.Id,
+                        Position = new Vec2(
+                            npc.Position.X + ((float)_random.NextDouble() * 0.8f) - 0.4f,
+                            npc.Position.Y + ((float)_random.NextDouble() * 0.8f) - 0.4f),
+                    };
+
+                    zone.AddEntity(item);
+                    _groundItemCount++;
+                    ItemsDropped++;
                 }
-
-                if (_groundItemCount >= _maxGroundItems)
-                {
-                    ItemsDiscarded++;
-                    continue;
-                }
-
-                int count = _random.Next(loot.Min, loot.Max + 1);
-                var item = new GroundItemEntity(
-                    zone.Ids.Allocate(),
-                    loot.ItemId,
-                    count,
-                    tick + _groundItemTicks)
-                {
-                    MapId = zone.Id,
-                    Position = new Vec2(
-                        npc.Position.X + ((float)_random.NextDouble() * 0.8f) - 0.4f,
-                        npc.Position.Y + ((float)_random.NextDouble() * 0.8f) - 0.4f),
-                };
-
-                zone.AddEntity(item);
-                _groundItemCount++;
-                ItemsDropped++;
             }
         }
 

@@ -572,8 +572,8 @@ namespace Avelora.Shared.Protocol
 
     /// <summary>Estado de una entidad dentro de un snapshot.</summary>
     /// <remarks>
-    /// Ocupa 15 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1), vida y acción
-    /// (1+1, I-02) y tipo de PNJ (2, I-03c).
+    /// Ocupa 15 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1), vida (1), acción
+    /// y rango empaquetados (1, I-20) y tipo de PNJ (2, I-03c).
     /// </remarks>
     public readonly struct EntityState
     {
@@ -586,7 +586,8 @@ namespace Avelora.Shared.Protocol
             EntityKind kind,
             byte healthPercent,
             EntityAction action,
-            ushort typeId = 0)
+            ushort typeId = 0,
+            byte rank = 0)
         {
             Id = id;
             X = x;
@@ -597,6 +598,7 @@ namespace Avelora.Shared.Protocol
             HealthPercent = healthPercent;
             Action = action;
             TypeId = typeId;
+            Rank = rank;
         }
 
         public int Id { get; }
@@ -624,6 +626,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Tipo de PNJ de <c>npcs.json</c> (2001, 2002…); 0 para los jugadores (I-03c).</summary>
         public ushort TypeId { get; }
+
+        /// <summary>Rango del PNJ (0 = normal); jugadores y objetos llevan 0.</summary>
+        public byte Rank { get; }
     }
 
     /// <summary>

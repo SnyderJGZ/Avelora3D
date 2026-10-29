@@ -1691,7 +1691,8 @@ namespace Avelora.Server.Net
                     healthPercent,
                     entity.Action,
                     entity is NpcEntity typed ? (ushort)typed.TypeId :
-                    entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0);
+                    entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0,
+                    entity is NpcEntity ranked ? ranked.Rank : (byte)0);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

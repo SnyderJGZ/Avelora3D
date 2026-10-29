@@ -294,6 +294,14 @@ namespace Avelora.Server.Simulation
         /// <summary>Enemigos que han reaparecido desde el arranque (I-02).</summary>
         public long NpcRespawns => _npcs?.Respawns ?? 0;
 
+        public long EliteAppearances => _npcs?.EliteAppearances ?? 0;
+
+        public long EliteDeaths => _npcs?.EliteDeaths ?? 0;
+
+        public long RankAppearances(int rank) => _npcs?.RankAppearances(rank) ?? 0;
+
+        public long RankDeaths(int rank) => _npcs?.RankDeaths(rank) ?? 0;
+
         /// <summary>Experiencia otorgada por muertes desde el arranque.</summary>
         public long ExperienceGranted { get; private set; }
 

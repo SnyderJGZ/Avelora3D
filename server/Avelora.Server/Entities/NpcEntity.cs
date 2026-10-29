@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Entities
 {
@@ -37,7 +38,9 @@ namespace Avelora.Server.Entities
             int experienceReward = 0,
             int level = 1,
             int defense = 0,
-            int magicResist = 0)
+            int magicResist = 0,
+            byte rank = 0,
+            int lootRolls = 1)
             : base(id, EntityKind.Npc)
         {
             if (maxHealth < 1)
@@ -78,9 +81,19 @@ namespace Avelora.Server.Entities
                     "La recarga debe ser >= 1 tick.");
             }
 
-            if (experienceReward < 0 || experienceReward > 1_000_000)
+            if (experienceReward < 0 || experienceReward > 20_000_000)
             {
                 throw new ArgumentOutOfRangeException(nameof(experienceReward));
+            }
+
+            if (rank > ProtocolConstants.MaxEntityRank)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rank));
+            }
+
+            if (lootRolls < 1 || lootRolls > 5)
+            {
+                throw new ArgumentOutOfRangeException(nameof(lootRolls));
             }
 
             if (level < 1 || level > byte.MaxValue)
@@ -110,6 +123,8 @@ namespace Avelora.Server.Entities
             Level = level;
             Defense = defense;
             MagicResist = magicResist;
+            Rank = rank;
+            LootRolls = lootRolls;
             Health = maxHealth;
         }
 
@@ -151,6 +166,12 @@ namespace Avelora.Server.Entities
 
         /// <summary>Resistencia mágica del enemigo.</summary>
         public int MagicResist { get; }
+
+        /// <summary>Rango declarado en <c>npcs.json</c>; 0 representa el rango normal implícito.</summary>
+        public byte Rank { get; }
+
+        /// <summary>Número de veces que se tira la tabla de botín al morir.</summary>
+        public int LootRolls { get; }
 
         /// <summary>Id del jugador que dio el golpe mortal, o -1 si no murió por combate de jugador.</summary>
         public int KillerPlayerId { get; internal set; } = -1;

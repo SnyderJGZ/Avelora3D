@@ -21,11 +21,14 @@ calcular igual (movimiento y colisión).
 > Desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
 > Desde I-09 (**protocolo v11**) los jugadores reparten atributos y pueden reajustarlos con la piedra 3201.
 > Desde I-14 (**protocolo v12**, esquema v5) hay 10 huecos de equipo, armaduras e inventario interactivo.
+> Desde I-20 (**protocolo v13**) los PNJ pueden aparecer con rangos definidos por datos, con multiplicadores
+> de estadísticas y tiradas adicionales de botín; la persistencia sigue en esquema v5.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
 > [I-07](#chat-i-07-protocolo-v10) [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11) e
-> [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5).
+> [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5) e
+> [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -34,7 +37,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **541/541 en verde** |
+| `dotnet test Avelora.slnx` | **582/582 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -339,7 +342,7 @@ pueden discrepar** del formato.
 | `Attack` | 3 | C → S | 5 B | objetivo (i32) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
 | `Reject` | 11 | S → C | 2 B | motivo (u8) |
-| `Snapshot` | 12 | S → C | 11 B + 15 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), kind (u8), vida (u8), acción (u8), TypeId (u16) |
+| `Snapshot` | 12 | S → C | 11 B + 15 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), kind (u8), vida (u8), acción/rango (u8; I-20), TypeId (u16) |
 | `PickUp` | 4 | C → S | 5 B | id de entidad del objeto (i32) |
 | `UseItem` | 5 | C → S | 2 B | índice del hueco (u8) |
 | `Inventory` | 14 | S → C | 4 B + 4 B/hueco | número de huecos (u8), itemId y cantidad (u16 cada uno; 0/0 = vacío), arma equipada (u16; 0 = puños) |
@@ -369,7 +372,8 @@ Canales:
 > `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
 > `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`; I-14 sube a **v12** por `MoveItem`,
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
-> `ItemCatalog`. El snapshot no cambia.
+> `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot. El tamaño
+> de `EntityState` se mantiene en 15 B.
 
 ### Handshake
 
@@ -1066,6 +1070,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-08** | Clases, atributos y nivel 25 (sin protocolo; esquema SQLite v4) | ✅ servidor; reparto I-09 y selección de clase I-10 |
 | **I-09** | Reparto y reajuste de puntos (protocolo v11; esquema SQLite v4) | ✅ servidor y bots; interfaz I-09b pendiente |
 | **I-14** | Equipo de 10 huecos, armaduras e inventario interactivo (protocolo v12; esquema SQLite v5) | ✅ servidor, bots y cliente I-14b |
+| **I-20** | Rangos de PNJ configurables y multiplicadores (protocolo v13; esquema SQLite v5) | ✅ servidor y bots; cliente I-20b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1510,6 +1515,45 @@ suelo o destruir.
 0 correcciones; 58 equipados, 40 desequipados, 56 movidos, 7 divididos, 9 intercambiados, 71 tirados y
 54 destruidos; balance exacto (267 soltados por PNJ + 71 tirados = 338 recogidos) y ninguna pila fuera
 de `1…maxStack` en la base. Detalle en `docs/agentes/informes/I-14.md`.
+
+### Mobs élite y campeón (I-20, protocolo v13)
+
+El campo opcional de primer nivel `ranks` en `npcs.json` define ids 1–3, nombre para consola, probabilidad
+de aparición, multiplicadores `health`, `damage` y `experience` (1–20), y `lootRolls` (1–5). La suma de
+`chance` no puede superar 1; el resto de probabilidad corresponde al rango 0, normal e implícito. Al no
+declarar `ranks`, todos los enemigos permanecen normales como antes. Cada tipo puede declarar
+`"ranks": false` para excluirse de esos sorteos; el valor por defecto es `true`.
+
+```json
+"ranks": [
+  { "id": 1, "name": "Élite", "chance": 0.08, "health": 2.5, "damage": 1.5, "experience": 3.0, "lootRolls": 2 },
+  { "id": 2, "name": "Campeón", "chance": 0.02, "health": 5.0, "damage": 2.0, "experience": 8.0, "lootRolls": 3 }
+]
+```
+
+La zona sortea el rango en cada aparición y reaparición con su `Random` determinista, en orden ascendente
+de id. Solo multiplica la vida máxima, el daño y la experiencia del PNJ; redondea al entero más cercano
+(empates alejándose de cero) y garantiza un mínimo de 1. No modifica velocidad, defensa, alcance, recarga,
+radios ni nivel. `lootRolls` repite la tabla de botín completa y vuelve a tirar cada probabilidad en cada
+pasada; el límite existente de objetos en el suelo sigue aplicándose.
+
+En el snapshot, `EntityState` conserva sus 15 bytes: los bits 0–3 del byte de acción contienen `None`,
+`Attacking` o `Dead`; los bits 4–5 contienen el rango; los bits 6–7 deben ser cero. Jugadores y objetos
+del suelo llevan rango 0. El protocolo sube a **v13** y la base de datos no cambia (esquema v5).
+El arranque lista los rangos cargados; los informes periódico y final incluyen `elites_aparecidos`,
+`elites_muertos` y, por cada id configurado, `rango{id}_aparecidos` y `rango{id}_muertos`. Los bots
+`fight` cuentan `elites_vistos` por id distinto de entidad.
+
+**Verificación y carga I-20:** `dotnet build Avelora.slnx -v q --nologo`: **0 errores y 0 advertencias**;
+`dotnet test Avelora.slnx`: **582/582**. La pasada indicada de 50 bots `fight` durante 120 s con
+`-LogCorrections -NuevaBase` conectó **50/50** y completó **3200 ticks**; p99 **0,062 ms**, peor tick
+**10,901 ms** y **0** ticks por encima de 50 ms. No hubo correcciones ni líneas `[corrección]`. El
+servidor envió **28 659 208 B (28,66 MB)**; registró **265** muertes de PNJ y **15** de jugador. Hubo
+**29/23** apariciones/muertes de rangos distintos de 0: rango 1, **25/21**; rango 2, **4/2**. Los bots
+sumaron **352 `elites_vistos`** (conteo por cliente de ids distintos, no ids globales únicos). Frente a
+la pasada histórica I-14 (11 muertes de jugador), esta ejecución tuvo 4 más; una pasada con rutas y
+combates variables no basta para atribuir esa diferencia causalmente a los rangos. Salidas guardadas en
+`tools/carga/resultados/20261028-221016-fight-50-redund4-corr/`.
 
 ### Chat (I-07, protocolo v10)
 

@@ -68,6 +68,23 @@ namespace Avelora.Tests
             Spawners = new List<NpcSpawner>(spawners),
         };
 
+        private static NpcRank Rank(
+            byte id = 1,
+            double chance = 1d,
+            double health = 1d,
+            double damage = 1d,
+            double experience = 1d,
+            int lootRolls = 1) => new NpcRank
+        {
+            Id = id,
+            Name = "Rango " + id,
+            Chance = chance,
+            Health = health,
+            Damage = damage,
+            Experience = experience,
+            LootRolls = lootRolls,
+        };
+
         private static Zone NewZone(MapCollisionGrid map, NpcCatalog? npcs, int seed = 12345) =>
             new Zone(
                 1,
@@ -124,6 +141,216 @@ namespace Avelora.Tests
             {
                 File.Delete(path);
             }
+        }
+
+        [Fact]
+        public void Rangos_Se_Cargan_Desde_Json_Y_Son_Opcionales()
+        {
+            string json = """
+                { "ranks": [{ "id": 1, "name": "Especial", "chance": 0.25,
+                    "health": 2.5, "damage": 1.5, "experience": 3, "lootRolls": 2 }],
+                  "types": [{ "id": 2001, "name": "Enemigo", "speed": 2, "halfWidth": 0.35,
+                    "halfHeight": 0.35, "maxHealth": 30, "experience": 20, "level": 1,
+                    "respawnSeconds": 10, "aggroRadius": 0, "leashRadius": 8,
+                    "attackDamage": 8, "attackRange": 1, "attackCooldownSeconds": 1.5,
+                    "ranks": false }],
+                  "spawners": [] }
+                """;
+            string path = WriteTempJson(json);
+            try
+            {
+                NpcCatalog catalog = NpcCatalog.Load(path);
+                NpcRank rank = Assert.Single(catalog.Ranks);
+                Assert.Equal((byte)1, rank.Id);
+                Assert.Equal("Especial", rank.Name);
+                Assert.Equal(0.25, rank.Chance);
+                Assert.Equal(2.5, rank.Health);
+                Assert.Equal(2, rank.LootRolls);
+                Assert.False(catalog.Types[0].Ranks);
+                catalog.Validate(MapCollisionGrid.AllWalkable(20, 20));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+
+            string withoutRanks = WriteTempJson("{ \"types\": [], \"spawners\": [] }");
+            try
+            {
+                NpcCatalog catalog = NpcCatalog.Load(withoutRanks);
+                Assert.Empty(catalog.Ranks);
+                Assert.True(Catalog().Types[0].Ranks);
+                catalog.Validate(MapCollisionGrid.AllWalkable(20, 20));
+            }
+            finally
+            {
+                File.Delete(withoutRanks);
+            }
+        }
+
+        [Fact]
+        public void Rangos_Rechazan_Ids_Probabilidades_Multiplicadores_Y_Tiradas_Invalidos()
+        {
+            NpcCatalog catalog = Catalog();
+            catalog.Ranks = new List<NpcRank> { Rank(id: 1), Rank(id: 1) };
+            AssertRankInvalid(catalog, "repetido");
+
+            catalog = Catalog();
+            catalog.Ranks = new List<NpcRank> { Rank(id: 0) };
+            AssertRankInvalid(catalog, "entre 1 y 3");
+
+            catalog = Catalog();
+            catalog.Ranks = new List<NpcRank> { Rank(id: 4) };
+            AssertRankInvalid(catalog, "entre 1 y 3");
+
+            catalog = Catalog();
+            catalog.Ranks = new List<NpcRank> { Rank(id: 1, chance: 0.6), Rank(id: 2, chance: 0.5) };
+            AssertRankInvalid(catalog, "suma");
+
+            foreach (double chance in new[] { -0.01, 1.01, double.NaN, double.PositiveInfinity })
+            {
+                catalog = Catalog();
+                catalog.Ranks = new List<NpcRank> { Rank(chance: chance) };
+                AssertRankInvalid(catalog, "chance");
+            }
+
+            foreach (double multiplier in new[] { 0.99, 20.01, double.NaN, double.PositiveInfinity })
+            {
+                catalog = Catalog();
+                catalog.Ranks = new List<NpcRank> { Rank(health: multiplier) };
+                AssertRankInvalid(catalog, "health");
+
+                catalog = Catalog();
+                catalog.Ranks = new List<NpcRank> { Rank(damage: multiplier) };
+                AssertRankInvalid(catalog, "damage");
+
+                catalog = Catalog();
+                catalog.Ranks = new List<NpcRank> { Rank(experience: multiplier) };
+                AssertRankInvalid(catalog, "experience");
+            }
+
+            foreach (int rolls in new[] { 0, 6 })
+            {
+                catalog = Catalog();
+                catalog.Ranks = new List<NpcRank> { Rank(lootRolls: rolls) };
+                AssertRankInvalid(catalog, "lootRolls");
+            }
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(25)]
+        public void Rango_Exige_Nombre_De_Uno_A_24_Caracteres(int nameLength)
+        {
+            NpcCatalog catalog = Catalog();
+            catalog.Ranks = new List<NpcRank> { Rank() };
+            catalog.Ranks[0].Name = new string('x', nameLength);
+
+            AssertRankInvalid(catalog, "name");
+        }
+
+        private static void AssertRankInvalid(NpcCatalog catalog, string expected)
+        {
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                () => catalog.Validate(MapCollisionGrid.AllWalkable(20, 20)));
+            Assert.Contains(expected, error.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void Aparicion_Aplica_Multiplicadores_Y_Deja_El_Rango_Normal_Implicito()
+        {
+            NpcCatalog catalog = Catalog(Spawner(5f, 5f, 1, 2f));
+            catalog.Types[0].AttackDamage = 3;
+            catalog.Ranks = new List<NpcRank>
+            {
+                Rank(chance: 1, health: 2.5, damage: 1.5, experience: 3),
+            };
+
+            Zone zone = NewZone(MapCollisionGrid.AllWalkable(20, 20), catalog);
+            NpcEntity npc = Assert.IsType<NpcEntity>(zone.Entities[0]);
+
+            Assert.Equal((byte)1, npc.Rank);
+            Assert.Equal(75, npc.MaxHealth);
+            Assert.Equal(5, npc.AttackDamage);
+            Assert.Equal(60, npc.ExperienceReward);
+            Assert.Equal(1, npc.LootRolls);
+
+            NpcCatalog noRanks = Catalog(Spawner(5f, 5f, 1, 2f));
+            Zone normalZone = NewZone(MapCollisionGrid.AllWalkable(20, 20), noRanks);
+            Assert.Equal((byte)0, Assert.IsType<NpcEntity>(normalZone.Entities[0]).Rank);
+        }
+
+        [Fact]
+        public void Tipo_Con_Ranks_False_Nunca_Recibe_Un_Rango()
+        {
+            NpcCatalog catalog = Catalog(Spawner(5f, 5f, 10, 2f));
+            catalog.Types[0].Ranks = false;
+            catalog.Ranks = new List<NpcRank> { Rank(chance: 1) };
+
+            Zone zone = NewZone(MapCollisionGrid.AllWalkable(20, 20), catalog);
+
+            for (int i = 0; i < zone.Entities.Count; i++)
+            {
+                Assert.Equal((byte)0, Assert.IsType<NpcEntity>(zone.Entities[i]).Rank);
+            }
+        }
+
+        [Fact]
+        public void Reparto_De_Rangos_Con_Semilla_Fija_Se_Aproxima_A_Las_Probabilidades()
+        {
+            NpcCatalog catalog = Catalog(Spawner(5f, 5f, 10000, 2f));
+            catalog.Ranks = new List<NpcRank> { Rank(id: 2, chance: 0.02), Rank(id: 1, chance: 0.08) };
+            Zone zone = NewZone(MapCollisionGrid.AllWalkable(20, 20), catalog, seed: 7351);
+            int firstRank = 0;
+            int secondRank = 0;
+
+            for (int i = 0; i < zone.Entities.Count; i++)
+            {
+                byte rank = Assert.IsType<NpcEntity>(zone.Entities[i]).Rank;
+                if (rank == 1) firstRank++;
+                if (rank == 2) secondRank++;
+            }
+
+            Assert.InRange(firstRank, 700, 900);
+            Assert.InRange(secondRank, 100, 300);
+        }
+
+        [Fact]
+        public void La_Reaparicion_Vuelve_A_Tirar_El_Rango_Y_Actualiza_Las_Metricas()
+        {
+            NpcCatalog catalog = Catalog(Spawner(5f, 5f, 1, 2f));
+            catalog.Ranks = new List<NpcRank>
+            {
+                Rank(id: 1, chance: 0.5),
+                Rank(id: 2, chance: 0.5),
+            };
+            bool observedDifferentRank = false;
+
+            for (int seed = 1; seed <= 16 && !observedDifferentRank; seed++)
+            {
+                Zone zone = NewZone(MapCollisionGrid.AllWalkable(20, 20), catalog, seed);
+                NpcEntity initial = Assert.IsType<NpcEntity>(zone.Entities[0]);
+                initial.Action = EntityAction.Dead;
+                initial.Health = 0;
+                zone.Tick();
+
+                for (int tick = 0; tick < 200; tick++)
+                {
+                    zone.Tick();
+                }
+
+                NpcEntity respawned = Assert.IsType<NpcEntity>(Assert.Single(zone.Entities.All));
+                observedDifferentRank = initial.Rank != respawned.Rank;
+                if (observedDifferentRank)
+                {
+                    Assert.Equal(2, zone.RankAppearances(1) + zone.RankAppearances(2));
+                    Assert.Equal(1, zone.RankDeaths(initial.Rank));
+                    Assert.Equal(2, zone.EliteAppearances);
+                    Assert.Equal(1, zone.EliteDeaths);
+                }
+            }
+
+            Assert.True(observedDifferentRank, "La reaparición debe efectuar un nuevo sorteo de rango.");
         }
 
         [Theory]

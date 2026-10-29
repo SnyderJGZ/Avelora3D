@@ -417,6 +417,62 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Snapshot_Empaqueta_Accion_Y_Rango_Sin_Cambiar_Su_Tamano()
+        {
+            foreach (EntityAction action in new[] { EntityAction.None, EntityAction.Attacking, EntityAction.Dead })
+            {
+                for (byte rank = 0; rank <= 3; rank++)
+                {
+                    byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(
+                        1,
+                        0,
+                        new[] { new EntityState(7, 0, 0, 0, 0, EntityKind.Npc, 100, action, rank: rank) }));
+
+                    Assert.Equal(26, bytes.Length);
+                    Assert.Equal((byte)((byte)action | (rank << 4)), bytes[23]);
+                    Assert.True(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out SnapshotMessage decoded));
+                    Assert.Equal(action, decoded.Entities[0].Action);
+                    Assert.Equal(rank, decoded.Entities[0].Rank);
+                }
+            }
+        }
+
+        [Theory]
+        [InlineData(0x0f)]
+        [InlineData(0x40)]
+        [InlineData(0x80)]
+        public void El_Snapshot_Rechaza_Accion_Desconocida_O_Bits_Reservados(byte actionByte)
+        {
+            byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(
+                1,
+                0,
+                new[] { new EntityState(7, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None) }));
+            bytes[23] = actionByte;
+
+            Assert.False(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void El_Snapshot_No_Acepta_Rango_Imposible_Al_Codificar()
+        {
+            var entity = new EntityState(7, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None, rank: 4);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSnapshot(
+                new SnapshotMessage(1, 0, new[] { entity })));
+        }
+
+        [Theory]
+        [InlineData(EntityKind.Player)]
+        [InlineData(EntityKind.Item)]
+        public void El_Snapshot_No_Acepta_Rango_En_Jugador_Ni_Objeto(EntityKind kind)
+        {
+            var entity = new EntityState(7, 0, 0, 0, 0, kind, 100, EntityAction.None, rank: 1);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSnapshot(
+                new SnapshotMessage(1, 0, new[] { entity })));
+        }
+
+        [Fact]
         public void Un_Snapshot_Acepta_Objeto_En_El_Suelo()
         {
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

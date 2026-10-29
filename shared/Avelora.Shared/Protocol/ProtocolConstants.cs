@@ -24,9 +24,13 @@ namespace Avelora.Shared.Protocol
         /// I-05 a 8 porque se añaden <c>Equip</c>, <c>Unequip</c>, <c>ItemCatalog</c> y el arma equipada;
         /// I-06 a 9 por el mensaje <c>Progress</c>; I-07 a 10 por <c>ChatSend</c> y <c>Chat</c>;
         /// I-09 a 11 por <c>AllocatePoints</c>, <c>ResetPoints</c> y <c>Stats</c>; I-14 a 12
-        /// por los mensajes y datos de equipo e inventario interactivo.
+        /// por los mensajes y datos de equipo e inventario interactivo; I-20 a 13 porque el byte
+        /// de acción de <c>EntityState</c> también transporta el rango de los PNJ.
         /// </summary>
-        public const ushort Version = 12;
+        public const ushort Version = 13;
+
+        /// <summary>Rango máximo representable en los dos bits asignados en el snapshot.</summary>
+        public const byte MaxEntityRank = 3;
 
         /// <summary>Número de huecos de equipo definidos por el protocolo.</summary>
         public const int EquipSlotCount = 10;

@@ -54,15 +54,20 @@ namespace Avelora.Server.Simulation
         private readonly ClassCatalog _classes;
         private readonly ItemCatalog? _items;
         private readonly List<Entity> _candidates = new List<Entity>(32);
+        private readonly long[] _rankAppearances = new long[NpcCatalog.MaxRankId + 1];
+        private readonly long[] _rankDeaths = new long[NpcCatalog.MaxRankId + 1];
         private long _tick;
 
         private SpawnerState[] _spawners = Array.Empty<SpawnerState>();
         private EntityIdAllocator? _ids;
         private int _zoneId;
+        private NpcCatalog? _catalog;
 
         private long _deaths;
         private long _respawns;
         private long _hits;
+        private long _eliteAppearances;
+        private long _eliteDeaths;
 
         public NpcSystem(
             MapCollisionGrid map,
@@ -103,6 +108,18 @@ namespace Avelora.Server.Simulation
         /// <summary>Golpes que los enemigos han acertado a un jugador desde el arranque.</summary>
         public long Hits => _hits;
 
+        /// <summary>Enemigos de rango distinto de 0 que han aparecido.</summary>
+        public long EliteAppearances => _eliteAppearances;
+
+        /// <summary>Enemigos de rango distinto de 0 que han muerto.</summary>
+        public long EliteDeaths => _eliteDeaths;
+
+        public long RankAppearances(int rank) =>
+            rank > 0 && rank < _rankAppearances.Length ? _rankAppearances[rank] : 0;
+
+        public long RankDeaths(int rank) =>
+            rank > 0 && rank < _rankDeaths.Length ? _rankDeaths[rank] : 0;
+
         /// <summary>
         /// Coloca los enemigos de <paramref name="catalog"/> en el almacén, con Ids nuevos de
         /// <paramref name="ids"/>. Todos los de un spawner nacen en su punto: no chocan entre sí.
@@ -130,6 +147,7 @@ namespace Avelora.Server.Simulation
 
             _ids = ids;
             _zoneId = zoneId;
+            _catalog = catalog;
             _spawners = new SpawnerState[catalog.Spawners.Count];
 
             for (int s = 0; s < catalog.Spawners.Count; s++)
@@ -231,6 +249,12 @@ namespace Avelora.Server.Simulation
             npc.DeathScheduled = true;
             npc.DeathTick = _tick;
             _deaths++;
+            if (npc.Rank > 0)
+            {
+                _eliteDeaths++;
+                _rankDeaths[npc.Rank]++;
+            }
+
             NpcDied?.Invoke(npc, _tick);
 
             if (npc.SpawnerIndex < 0 || npc.SpawnerIndex >= _spawners.Length)
@@ -294,31 +318,76 @@ namespace Avelora.Server.Simulation
                     "No se puede crear un enemigo sin haber llamado antes a Spawn.");
             }
 
-            return new NpcEntity(
+            byte rank = RollRank(state.Type);
+            NpcRank? rankData = rank == 0 ? null : _catalog?.FindRank(rank);
+            int maxHealth = rankData == null ? state.Type.MaxHealth : Multiply(state.Type.MaxHealth, rankData.Health);
+            int attackDamage = rankData == null ? state.Type.AttackDamage : Multiply(state.Type.AttackDamage, rankData.Damage);
+            int experience = rankData == null ? state.Type.Experience : Multiply(state.Type.Experience, rankData.Experience);
+            var npc = new NpcEntity(
                 _ids.Allocate(),
                 state.Type.Id,
                 state.Type.Speed,
                 state.Spawner.Position,
                 state.Spawner.WanderRadius,
                 _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1),
-                state.Type.MaxHealth,
+                maxHealth,
                 state.Type.RespawnTicks,
                 spawnerIndex,
                 state.Type.AggroRadius,
                 state.Type.LeashRadius,
-                state.Type.AttackDamage,
+                attackDamage,
                 state.Type.AttackRange,
                 state.Type.AttackCooldownTicks,
-                state.Type.Experience,
+                experience,
                 state.Type.Level,
                 state.Type.Defense,
-                state.Type.MagicResist)
+                state.Type.MagicResist,
+                rank,
+                rankData?.LootRolls ?? 1)
             {
                 MapId = _zoneId,
                 Position = state.Spawner.Position,
                 HalfSize = state.Type.HalfSize,
             };
+
+            if (rank > 0)
+            {
+                _eliteAppearances++;
+                _rankAppearances[rank]++;
+            }
+
+            return npc;
         }
+
+        private byte RollRank(NpcType type)
+        {
+            if (!type.Ranks || _catalog == null || _catalog.Ranks.Count == 0)
+            {
+                return 0;
+            }
+
+            double roll = _random.NextDouble();
+            double cumulativeChance = 0d;
+            for (int id = 1; id <= NpcCatalog.MaxRankId; id++)
+            {
+                NpcRank? rank = _catalog.FindRank(id);
+                if (rank == null)
+                {
+                    continue;
+                }
+
+                cumulativeChance += rank.Chance;
+                if (roll < cumulativeChance)
+                {
+                    return (byte)id;
+                }
+            }
+
+            return 0;
+        }
+
+        private static int Multiply(int value, double multiplier) =>
+            Math.Max(1, (int)Math.Round(value * multiplier, MidpointRounding.AwayFromZero));
 
         private void Step(NpcEntity npc, EntityStore entities)
         {

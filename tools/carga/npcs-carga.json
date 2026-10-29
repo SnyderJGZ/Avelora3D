@@ -1,4 +1,8 @@
 {
+  "ranks": [
+    { "id": 1, "name": "Élite", "chance": 0.08, "health": 2.5, "damage": 1.5, "experience": 3.0, "lootRolls": 2 },
+    { "id": 2, "name": "Campeón", "chance": 0.02, "health": 5.0, "damage": 2.0, "experience": 8.0, "lootRolls": 3 }
+  ],
   "types": [
     {
       "id": 2001,

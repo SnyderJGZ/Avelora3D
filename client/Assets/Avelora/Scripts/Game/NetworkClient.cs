@@ -1272,6 +1272,7 @@ namespace Avelora.Client
                     _remoteViews[state.Id] = view;
                 }
 
+                view.SetRank(state.Rank);
                 view.Apply(sample);
             }
 
@@ -1505,7 +1506,10 @@ namespace Avelora.Client
                 _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
             }
 
-            string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId.ToString() : "ninguno") +
+            RemotePlayerView selected = SelectedTarget();
+            string rank = selected == null || selected.Rank == 0 ? string.Empty
+                : selected.Rank == 1 ? " (élite)" : " (campeón)";
+            string combat = "Objetivo " + (_selectedNpcId != 0 ? _selectedNpcId + rank : "ninguno") +
                 (_autoAttack ? " (auto · Esc cancela)" : string.Empty) +
                 " · Ataques " + _attacksSent +
                 (Time.unscaledTime < _combatHintUntil ? " · " + _combatHint : string.Empty);

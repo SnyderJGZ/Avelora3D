@@ -354,6 +354,36 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void La_Experiencia_Del_Rango_Se_Multiplica_Antes_Del_Escalado_Por_Nivel()
+        {
+            NpcCatalog catalog = Catalog(maxHealth: 20);
+            catalog.Ranks = new List<NpcRank>
+            {
+                new NpcRank
+                {
+                    Id = 1,
+                    Name = "Rango",
+                    Chance = 1,
+                    Health = 1,
+                    Damage = 1,
+                    Experience = 3,
+                    LootRolls = 1,
+                },
+            };
+            Zone zone = NewZone(catalog);
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
+            NpcEntity npc = OnlyNpc(zone);
+            npc.Health = 1;
+
+            Attack(zone, player, npc);
+            zone.Tick();
+
+            Assert.Equal((byte)1, npc.Rank);
+            Assert.Equal(60, player.Experience);
+            Assert.Equal(60, zone.ExperienceGranted);
+        }
+
+        [Fact]
         public void Muertes_De_Jugadores_Distintos_En_Un_Tick_Publican_Un_Cambio_Por_Jugador()
         {
             Zone zone = NewZone(Catalog(count: 2, maxHealth: 10));

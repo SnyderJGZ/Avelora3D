@@ -6,6 +6,7 @@ using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
 using Avelora.Server.Metrics;
 using Avelora.Server.Net;
+using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -79,7 +80,7 @@ namespace Avelora.Server.Diagnostics
                 "  Enemigos      : " + (npcs == null
                     ? "ninguno"
                     : (npcs.Types?.Count ?? 0) + " tipo(s), " + (npcs.Spawners?.Count ?? 0) +
-                      " spawner(s), " + npcs.TotalEnemies + " enemigo(s)"));
+                      " spawner(s), " + npcs.TotalEnemies + " enemigo(s), rangos: " + DescribeRanks(npcs)));
             Console.WriteLine(
                 "  Combate       : daño, alcance y recarga por clase o arma, tolerancia +" +
                 Invariant(config.AttackRangeTolerance, "0.##") + " tiles, cola de ataques " +
@@ -164,6 +165,9 @@ namespace Avelora.Server.Diagnostics
                 " npc_golpes=" + zone.NpcHits +
                 " npc_muertes=" + zone.NpcDeaths +
                 " npc_reapariciones=" + zone.NpcRespawns +
+                " elites_aparecidos=" + zone.EliteAppearances +
+                " elites_muertos=" + zone.EliteDeaths +
+                DescribeRankMetrics(zone) +
                 " experiencia_otorgada=" + zone.ExperienceGranted +
                 " subidas_nivel=" + zone.LevelUps +
                 " jugador_muertes=" + zone.PlayerDeaths +
@@ -344,6 +348,8 @@ namespace Avelora.Server.Diagnostics
                 (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
                 zone.NpcHits + " golpes de PNJ, " +
                 zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ, " +
+                "elites_aparecidos=" + zone.EliteAppearances +
+                ", elites_muertos=" + zone.EliteDeaths + DescribeRankMetrics(zone) + ", " +
                 "experiencia_otorgada=" + zone.ExperienceGranted +
                 ", subidas_nivel=" + zone.LevelUps);
             Console.WriteLine(
@@ -439,6 +445,59 @@ namespace Avelora.Server.Diagnostics
         /// <summary>Primeros 16 caracteres de la huella, que bastan para comparar visualmente.</summary>
         public static string ShortHash(string hash) =>
             hash.Length <= 16 ? hash : hash.Substring(0, 16) + "…";
+
+        private static string DescribeRanks(NpcCatalog npcs)
+        {
+            if (npcs.Ranks == null || npcs.Ranks.Count == 0)
+            {
+                return "ninguno";
+            }
+
+            var text = new StringBuilder();
+            bool first = true;
+            for (int id = 1; id <= NpcCatalog.MaxRankId; id++)
+            {
+                Avelora.Server.Npcs.NpcRank? rank = npcs.FindRank(id);
+                if (rank == null)
+                {
+                    continue;
+                }
+
+                if (!first)
+                {
+                    text.Append(", ");
+                }
+
+                text.Append(id).Append(':').Append(rank.Name)
+                    .Append(" (chance=").Append(Invariant(rank.Chance, "0.##")).Append(')');
+                first = false;
+            }
+
+            return text.ToString();
+        }
+
+        private static string DescribeRankMetrics(Zone zone)
+        {
+            NpcCatalog? npcs = zone.Npcs;
+            if (npcs == null || npcs.Ranks == null || npcs.Ranks.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var text = new StringBuilder();
+            for (int id = 1; id <= NpcCatalog.MaxRankId; id++)
+            {
+                if (npcs.FindRank(id) == null)
+                {
+                    continue;
+                }
+
+                text.Append(" rango").Append(id).Append("_aparecidos=").Append(zone.RankAppearances(id))
+                    .Append(" rango").Append(id).Append("_muertos=").Append(zone.RankDeaths(id));
+            }
+
+            return text.ToString();
+        }
 
         private static string Invariant(double value, string format) =>
             value.ToString(format, CultureInfo.InvariantCulture);

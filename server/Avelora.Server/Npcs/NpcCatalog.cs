@@ -5,9 +5,28 @@ using System.IO;
 using System.Text.Json;
 using Avelora.Server.Items;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Npcs
 {
+    /// <summary>Multiplicadores declarados para un rango de enemigos.</summary>
+    public sealed class NpcRank
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = string.Empty;
+
+        public double Chance { get; set; }
+
+        public double Health { get; set; } = 1d;
+
+        public double Damage { get; set; } = 1d;
+
+        public double Experience { get; set; } = 1d;
+
+        public int LootRolls { get; set; } = 1;
+    }
+
     /// <summary>
     /// Un tipo de enemigo: lo que comparten todos los que salen de un mismo spawner.
     /// </summary>
@@ -73,6 +92,9 @@ namespace Avelora.Server.Npcs
         /// <summary>Botín que puede soltar al morir (I-04).</summary>
         public List<LootEntry> Loot { get; set; } = new List<LootEntry>();
 
+        /// <summary>Si este tipo puede aparecer con un rango declarado.</summary>
+        public bool Ranks { get; set; } = true;
+
         /// <summary>Recarga del golpe en ticks, redondeando hacia arriba (I-03).</summary>
         public long AttackCooldownTicks => Math.Max(
             1L,
@@ -121,6 +143,9 @@ namespace Avelora.Server.Npcs
     /// </remarks>
     public sealed class NpcCatalog
     {
+        /// <summary>Mayor id de rango que cabe en el campo compartido del snapshot.</summary>
+        public const int MaxRankId = ProtocolConstants.MaxEntityRank;
+
         /// <summary>Tope de enemigos por zona.</summary>
         public const int MaxTotalEnemies = 500;
 
@@ -166,6 +191,9 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Tipos de enemigo declarados.</summary>
         public List<NpcType> Types { get; set; } = new List<NpcType>();
+
+        /// <summary>Rangos de aparición declarados; el rango 0 (normal) no necesita datos.</summary>
+        public List<NpcRank> Ranks { get; set; } = new List<NpcRank>();
 
         /// <summary>Puntos de aparición declarados.</summary>
         public List<NpcSpawner> Spawners { get; set; } = new List<NpcSpawner>();
@@ -216,6 +244,7 @@ namespace Avelora.Server.Npcs
             }
 
             catalog.Types ??= new List<NpcType>();
+            catalog.Ranks ??= new List<NpcRank>();
             catalog.Spawners ??= new List<NpcSpawner>();
             return catalog;
         }
@@ -239,6 +268,25 @@ namespace Avelora.Server.Npcs
             return null;
         }
 
+        /// <summary>Busca un rango por id, o <c>null</c> si no está declarado.</summary>
+        public NpcRank? FindRank(int id)
+        {
+            if (Ranks == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < Ranks.Count; i++)
+            {
+                if (Ranks[i]?.Id == id)
+                {
+                    return Ranks[i];
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Comprueba que los datos son utilizables en <paramref name="map"/> y lanza una
         /// <see cref="InvalidOperationException"/> con el primer problema que encuentre.
@@ -251,8 +299,10 @@ namespace Avelora.Server.Npcs
             }
 
             Types ??= new List<NpcType>();
+            Ranks ??= new List<NpcRank>();
             Spawners ??= new List<NpcSpawner>();
 
+            ValidateRanks();
             ValidateTypes(items);
 
             int total = 0;
@@ -314,6 +364,77 @@ namespace Avelora.Server.Npcs
                 throw new InvalidOperationException(
                     "npcs.json: hay " + total + " enemigos y el máximo por zona es " +
                     MaxTotalEnemies + ".");
+            }
+        }
+
+        private void ValidateRanks()
+        {
+            double totalChance = 0d;
+
+            for (int i = 0; i < Ranks.Count; i++)
+            {
+                NpcRank rank = Ranks[i];
+                string where = "el rango " + (i + 1);
+
+                if (rank == null)
+                {
+                    throw new InvalidOperationException("npcs.json: " + where + " está vacío.");
+                }
+
+                if (rank.Id < 1 || rank.Id > MaxRankId)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: " + where + " tiene id " + rank.Id + "; debe estar entre 1 y " + MaxRankId + ".");
+                }
+
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if (Ranks[previous] != null && Ranks[previous].Id == rank.Id)
+                    {
+                        throw new InvalidOperationException(
+                            "npcs.json: el id " + rank.Id + " está repetido en ranks.");
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(rank.Name) || rank.Name.Length > 24)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el name del rango " + rank.Id + " debe tener entre 1 y 24 caracteres.");
+                }
+
+                if (rank.Chance < 0d || rank.Chance > 1d ||
+                    double.IsNaN(rank.Chance) || double.IsInfinity(rank.Chance))
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: la chance del rango " + rank.Id + " debe estar entre 0 y 1.");
+                }
+
+                totalChance += rank.Chance;
+
+                ValidateRankMultiplier(rank.Id, "health", rank.Health);
+                ValidateRankMultiplier(rank.Id, "damage", rank.Damage);
+                ValidateRankMultiplier(rank.Id, "experience", rank.Experience);
+
+                if (rank.LootRolls < 1 || rank.LootRolls > 5)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: lootRolls del rango " + rank.Id + " debe estar entre 1 y 5.");
+                }
+            }
+
+            if (totalChance > 1d)
+            {
+                throw new InvalidOperationException(
+                    "npcs.json: la suma de chance en ranks no puede superar 1.");
+            }
+        }
+
+        private static void ValidateRankMultiplier(int rankId, string field, double value)
+        {
+            if (value < 1d || value > 20d || double.IsNaN(value) || double.IsInfinity(value))
+            {
+                throw new InvalidOperationException(
+                    "npcs.json: " + field + " del rango " + rankId + " debe estar entre 1 y 20.");
             }
         }
 

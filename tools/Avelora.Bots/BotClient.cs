@@ -207,11 +207,13 @@ namespace Avelora.Bots
         // Vista de los enemigos del último snapshot (modo fight) y ataques enviados (I-02).
         private readonly Dictionary<int, NpcView> _npcs = new Dictionary<int, NpcView>(64);
         private readonly HashSet<int> _deadNpcs = new HashSet<int>();
+        private readonly HashSet<int> _rankedNpcIds = new HashSet<int>();
         private long _nextAttackAt;
         private long _sentAttacks;
         private long _sentChat;
         private long _receivedChat;
         private long _deathsSeen;
+        private long _elitesSeen;
 
         // Vida propia (I-03): el snapshot trae la acción del jugador local. Mientras está muerto
         // manda movimiento cero y no ataca; al volver, reinicia la predicción en la posición nueva.
@@ -421,6 +423,9 @@ namespace Avelora.Bots
 
         /// <summary>Muertes de enemigos vistas en los snapshots (modo <c>fight</c>, I-02).</summary>
         public long DeathsSeen => Interlocked.Read(ref _deathsSeen);
+
+        /// <summary>Entidades distintas de rango distinto de 0 vistas en snapshots.</summary>
+        public long ElitesSeen => Interlocked.Read(ref _elitesSeen);
 
         /// <summary>Muertes propias vistas en los snapshots (I-03).</summary>
         public long OwnDeaths => Interlocked.Read(ref _ownDeaths);
@@ -1888,6 +1893,11 @@ namespace Avelora.Bots
                 if (state.Kind != EntityKind.Npc)
                 {
                     continue;
+                }
+
+                if (state.Rank > 0 && _rankedNpcIds.Add(state.Id))
+                {
+                    Interlocked.Increment(ref _elitesSeen);
                 }
 
                 _npcs[state.Id] = new NpcView(
