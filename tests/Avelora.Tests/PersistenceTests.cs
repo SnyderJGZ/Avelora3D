@@ -115,6 +115,16 @@ namespace Avelora.Tests
             Assert.Equal(NewHash(2), record.MapHash);
             Assert.Equal(new InventoryItemRecord(0, 3001, 2), record.InventoryItems[0]);
             Assert.Equal((ushort)3101, record.Equipment[(int)EquipSlot.Weapon]);
+
+            // `with` también copia y valida: el guardado le pasa los arrays vivos del jugador.
+            var live = new ushort[ProtocolConstants.EquipSlotCount];
+            live[(int)EquipSlot.Head] = 3301;
+            CharacterRecord copy = record with { Equipment = live, InventoryItems = null! };
+            live[(int)EquipSlot.Head] = 0;
+            Assert.Equal((ushort)3301, copy.Equipment[(int)EquipSlot.Head]);
+            Assert.Empty(copy.InventoryItems);
+            Assert.Throws<ArgumentException>(() => record with { Equipment = new ushort[3] });
+            Assert.Throws<ArgumentException>(() => record with { MapHash = new byte[1] });
         }
 
         private static ItemCatalog ItemCatalogForTests() => new ItemCatalog

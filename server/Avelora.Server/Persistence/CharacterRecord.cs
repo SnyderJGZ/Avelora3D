@@ -50,13 +50,6 @@ namespace Avelora.Server.Persistence
                 throw new ArgumentException("El personaje necesita un nombre.", nameof(name));
             }
 
-            if (mapHash is null || mapHash.Length != ProtocolConstants.MapHashSize)
-            {
-                throw new ArgumentException(
-                    "La huella del mapa debe tener " + ProtocolConstants.MapHashSize + " bytes.",
-                    nameof(mapHash));
-            }
-
             Id = id;
             AccountId = accountId;
             Name = name;
@@ -66,19 +59,11 @@ namespace Avelora.Server.Persistence
             Mana = mana;
             ZoneId = zoneId;
             Position = position;
-            MapHash = (byte[])mapHash.Clone();
+            MapHash = mapHash!;
             CreatedUtc = createdUtc;
             UpdatedUtc = updatedUtc;
-            InventoryItems = inventoryItems == null
-                ? Array.Empty<InventoryItemRecord>()
-                : (InventoryItemRecord[])inventoryItems.Clone();
-            Equipment = equipment == null
-                ? new ushort[ProtocolConstants.EquipSlotCount]
-                : (ushort[])equipment.Clone();
-            if (Equipment.Length != ProtocolConstants.EquipSlotCount)
-            {
-                throw new ArgumentException("El equipo debe contener exactamente diez huecos.", nameof(equipment));
-            }
+            InventoryItems = inventoryItems!;
+            Equipment = equipment ?? new ushort[ProtocolConstants.EquipSlotCount];
 
             ClassId = classId;
             AllocStr = allocStr;
@@ -105,18 +90,41 @@ namespace Avelora.Server.Persistence
 
         public Vec2 Position { get; init; }
 
+        // Los arrays se copian y validan al asignarlos, también desde un `with`: la foto viaja al hilo
+        // de guardado y no puede compartir memoria con la entidad viva.
+        private readonly byte[] _mapHash = null!;
+        private readonly InventoryItemRecord[] _inventoryItems = null!;
+        private readonly ushort[] _equipment = null!;
+
         /// <summary>Mapa en el que se guardó; si el servidor carga otro, la posición no se reutiliza.</summary>
-        public byte[] MapHash { get; init; }
+        public byte[] MapHash
+        {
+            get => _mapHash;
+            init => _mapHash = value is { Length: ProtocolConstants.MapHashSize }
+                ? (byte[])value.Clone()
+                : throw new ArgumentException(
+                    "La huella del mapa debe tener " + ProtocolConstants.MapHashSize + " bytes.", nameof(MapHash));
+        }
 
         public DateTime CreatedUtc { get; init; }
 
         public DateTime UpdatedUtc { get; init; }
 
         /// <summary>Contenido de inventario guardado por ranura.</summary>
-        public InventoryItemRecord[] InventoryItems { get; init; }
+        public InventoryItemRecord[] InventoryItems
+        {
+            get => _inventoryItems;
+            init => _inventoryItems = value == null ? Array.Empty<InventoryItemRecord>() : (InventoryItemRecord[])value.Clone();
+        }
 
-        /// <summary>Ids equipados por hueco; se copia para que la foto sea inmutable.</summary>
-        public ushort[] Equipment { get; init; }
+        /// <summary>Ids equipados por hueco.</summary>
+        public ushort[] Equipment
+        {
+            get => _equipment;
+            init => _equipment = value is { Length: ProtocolConstants.EquipSlotCount }
+                ? (ushort[])value.Clone()
+                : throw new ArgumentException("El equipo debe contener exactamente diez huecos.", nameof(Equipment));
+        }
 
         public int ClassId { get; init; }
         public int AllocStr { get; init; }

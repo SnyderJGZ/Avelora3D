@@ -1337,11 +1337,11 @@ namespace Avelora.Server.Net
             {
                 ZoneId = zone.Id,
                 Position = position,
-                MapHash = (byte[])_mapHash.Clone(),
+                MapHash = _mapHash,
                 Health = health,
                 Mana = player.Mana,
                 InventoryItems = inventory.ToArray(),
-                Equipment = (ushort[])player.Equipment.Clone(),
+                Equipment = player.Equipment,
                 ClassId = player.ClassId,
                 AllocStr = player.AllocStr,
                 AllocDex = player.AllocDex,
