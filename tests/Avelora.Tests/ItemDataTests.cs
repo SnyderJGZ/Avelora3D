@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Shared;
@@ -62,6 +63,31 @@ namespace Avelora.Tests
                 CooldownSeconds = cooldownSeconds,
             };
 
+        private static ItemType Armor(
+            int id = 3301,
+            string slot = "head",
+            int stack = 1,
+            int defense = 2,
+            int magicResist = 0,
+            int str = 0,
+            int dex = 0,
+            int intelligence = 0,
+            int vit = 0) =>
+            new ItemType
+            {
+                Id = id,
+                Name = "Casco",
+                Kind = "armor",
+                Slot = slot,
+                MaxStack = stack,
+                Defense = defense,
+                MagicResist = magicResist,
+                Str = str,
+                Dex = dex,
+                Int = intelligence,
+                Vit = vit,
+            };
+
         private static NpcCatalog Npcs(params LootEntry[] loot) => new NpcCatalog
         {
             Types = new List<NpcType>
@@ -109,6 +135,44 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Armor_Valida_Hueco_Y_Stats_Y_Rechaza_Datos_Inválidos()
+        {
+            ItemType armor = Armor(dex: 1, vit: 2);
+            Catalog(armor).Validate();
+            Assert.True(armor.TryGetEquipSlot(out byte slot));
+            Assert.Equal(2, slot);
+
+            Assert.Throws<InvalidOperationException>(() => Catalog(new ItemType
+            {
+                Id = 3301, Name = "Casco", Kind = "armor", MaxStack = 1,
+            }).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(Armor(slot: "weapon")).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(Armor(slot: "unknown")).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(Armor(stack: 2)).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(Armor(str: 256)).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(Armor(defense: -1)).Validate());
+            Assert.Throws<InvalidOperationException>(() => Catalog(WeaponWithSlot()).Validate());
+        }
+
+        [Fact]
+        public void JSON_Valida_Armor_Sin_Slot_Obligatorio()
+        {
+            string path = Path.Combine(_folder, "armor-sin-slot.json");
+            File.WriteAllText(path, """
+                { "items": [ { "id": 3301, "name": "Casco", "kind": "armor", "maxStack": 1 } ] }
+                """);
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => ItemCatalog.Load(path).Validate());
+            Assert.Contains("requiere slot", error.Message);
+        }
+
+        private static ItemType WeaponWithSlot()
+        {
+            ItemType item = Weapon();
+            item.Slot = "head";
+            return item;
+        }
+
+        [Fact]
         public void Datos_De_I09_Declaran_La_Piedra_Y_El_Drop_Del_Orco_Guerrero()
         {
             ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
@@ -124,6 +188,57 @@ namespace Avelora.Tests
             Assert.Equal(0.03, drop.Chance);
             Assert.Equal(1, drop.Min);
             Assert.Equal(1, drop.Max);
+        }
+
+        [Fact]
+        public void Items_I14_Declara_Las_Diez_Armaduras_Y_Cada_Orco_Suelta_Cinco()
+        {
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            items.Validate();
+            (int Id, string Slot, int Defense, int Resist, int Str, int Dex, int Int, int Vit)[] expected =
+            {
+                (3301, "head", 2, 0, 0, 0, 0, 0),
+                (3302, "head", 4, 1, 0, 0, 0, 0),
+                (3303, "body", 4, 1, 0, 0, 0, 0),
+                (3304, "legs", 2, 0, 0, 0, 0, 0),
+                (3305, "hands", 1, 0, 0, 1, 0, 0),
+                (3306, "feet", 1, 0, 0, 0, 0, 0),
+                (3307, "offhand", 3, 0, 0, 0, 0, 0),
+                (3308, "ring", 0, 0, 0, 0, 0, 2),
+                (3309, "neck", 0, 1, 2, 0, 0, 0),
+                (3310, "accessory", 0, 2, 0, 0, 2, 0),
+            };
+
+            foreach (var expectedItem in expected)
+            {
+                ItemType item = Assert.IsType<ItemType>(items.Find(expectedItem.Id));
+                Assert.True(item.IsArmor);
+                Assert.Equal(expectedItem.Slot, item.Slot);
+                Assert.Equal(1, item.MaxStack);
+                Assert.Equal(expectedItem.Defense, item.Defense);
+                Assert.Equal(expectedItem.Resist, item.MagicResist);
+                Assert.Equal(expectedItem.Str, item.Str);
+                Assert.Equal(expectedItem.Dex, item.Dex);
+                Assert.Equal(expectedItem.Int, item.Int);
+                Assert.Equal(expectedItem.Vit, item.Vit);
+            }
+
+            NpcCatalog npcs = NpcCatalog.Load(Path.Combine(AppContext.BaseDirectory, "npcs.json"));
+            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-valle.avmap")), items);
+            int[] orcDrops = npcs.FindType(2001)!.Loot!
+                .Where(drop => drop.ItemId >= 3301 && drop.ItemId <= 3305)
+                .Select(drop => drop.ItemId)
+                .OrderBy(id => id)
+                .ToArray();
+            int[] warriorDrops = npcs.FindType(2002)!.Loot!
+                .Where(drop => drop.ItemId >= 3306 && drop.ItemId <= 3310)
+                .Select(drop => drop.ItemId)
+                .OrderBy(id => id)
+                .ToArray();
+            Assert.Equal(new[] { 3301, 3302, 3303, 3304, 3305 }, orcDrops);
+            Assert.Equal(new[] { 3306, 3307, 3308, 3309, 3310 }, warriorDrops);
+            Assert.All(npcs.Types.SelectMany(type => type.Loot!).Where(drop => drop.ItemId >= 3301),
+                drop => Assert.Equal(0.06, drop.Chance));
         }
 
         [Theory]

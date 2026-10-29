@@ -67,5 +67,14 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Cliente → servidor: devolver todos los puntos repartidos (I-09).</summary>
         ResetPoints = 19,
+
+        /// <summary>Cliente → servidor: mover, dividir, juntar o intercambiar objetos (I-14).</summary>
+        MoveItem = 20,
+
+        /// <summary>Cliente → servidor: tirar objetos al suelo (I-14).</summary>
+        DropItem = 21,
+
+        /// <summary>Cliente → servidor: destruir objetos explícitamente (I-14).</summary>
+        DestroyItem = 22,
     }
 }

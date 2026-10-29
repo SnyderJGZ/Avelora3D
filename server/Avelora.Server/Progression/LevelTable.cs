@@ -131,7 +131,7 @@ namespace Avelora.Server.Progression
         /// Aplica experiencia ganada al jugador. Devuelve los niveles subidos y rellena la vida en
         /// cada subida; el sobrante se conserva salvo al alcanzar el nivel máximo.
         /// </summary>
-        public int AddExperience(PlayerEntity player, int amount, ClassCatalog classes)
+        public int AddExperience(PlayerEntity player, int amount, ClassCatalog classes, ItemCatalog? items = null)
         {
             if (player == null)
             {
@@ -167,7 +167,9 @@ namespace Avelora.Server.Progression
                     player.AllocStr,
                     player.AllocDex,
                     player.AllocInt,
-                    player.AllocVit);
+                    player.AllocVit,
+                    items,
+                    player.Equipment);
                 player.MaxHealth = stats.MaxHealth;
                 player.MaxMana = stats.MaxResource;
                 player.Health = player.MaxHealth;

@@ -40,6 +40,9 @@ namespace Avelora.Bots
 
         /// <summary>Se mueve al azar y manda mensajes cortos al chat de la zona (I-07).</summary>
         Chat = 8,
+
+        /// <summary>Recoge objetos y genera acciones aleatorias sobre el inventario (I-14).</summary>
+        Inventory = 9,
     }
 
     /// <summary>
@@ -180,6 +183,7 @@ namespace Avelora.Bots
         private long _nextInvalidDirectionAt;
         private long _nextReplayAt;
         private long _nextChatAt;
+        private long _nextInventoryActionAt;
         private int _garbageKind;
         private int _invalidDirectionKind;
 
@@ -219,9 +223,12 @@ namespace Avelora.Bots
         private uint _lastAttackTick;
         private ushort[] _inventoryItemIds = Array.Empty<ushort>();
         private ushort[] _inventoryCounts = Array.Empty<ushort>();
+        private ushort[] _equipmentItemIds = new ushort[ProtocolConstants.EquipSlotCount];
         private readonly Dictionary<ushort, ItemCatalogEntry> _itemCatalog = new Dictionary<ushort, ItemCatalogEntry>();
         private ushort _equippedItemId;
         private ushort _pendingEquipItemId;
+        private byte _pendingEquipSlot;
+        private long _armorsEquipped;
         private float _fistDamage = 10f;
         private float _fistRange = AttackRange;
         private float _fistCooldownSeconds = 0.8f;
@@ -430,6 +437,9 @@ namespace Avelora.Bots
         /// <summary>Armas que el servidor confirmó como equipadas durante la sesión.</summary>
         public long Equipped => Interlocked.Read(ref _equipped);
 
+        /// <summary>Armaduras confirmadas por el servidor como equipadas durante la sesión.</summary>
+        public long ArmorsEquipped => Interlocked.Read(ref _armorsEquipped);
+
         /// <summary>Nivel que el servidor confirmó en el último mensaje Progress.</summary>
         public byte Level => _level;
 
@@ -448,7 +458,10 @@ namespace Avelora.Bots
         public byte ClassId => _classId;
 
         /// <summary>¿Su comportamiento es de abuso (no es un bot normal de carga)?</summary>
-        public static bool IsAbusive(BotBehavior behavior) => behavior >= BotBehavior.Flood && behavior != BotBehavior.Chat;
+        public static bool IsAbusive(BotBehavior behavior) =>
+            behavior == BotBehavior.Flood || behavior == BotBehavior.Garbage ||
+            behavior == BotBehavior.Speed || behavior == BotBehavior.Replay ||
+            behavior == BotBehavior.BadLogin;
 
         /// <summary>Suma los <c>Reject</c> recibidos a un acumulador, para el resumen de la ejecución.</summary>
         public void AccumulateRejectCounts(SortedDictionary<string, int> totals)
@@ -676,7 +689,7 @@ namespace Avelora.Bots
                             _directionX = 0;
                             _directionY = 0;
                         }
-                        else if (_behavior == BotBehavior.Fight)
+                        else if (_behavior == BotBehavior.Fight || _behavior == BotBehavior.Inventory)
                         {
                             UpdateFightDirection();
                         }
@@ -695,15 +708,22 @@ namespace Avelora.Bots
                         }
                     }
 
-                    if (_behavior == BotBehavior.Fight && !_ownDead && now >= _nextAttackAt)
+                    if ((_behavior == BotBehavior.Fight || _behavior == BotBehavior.Inventory) && !_ownDead && now >= _nextAttackAt)
                     {
                         SendAttackIfInRange(now);
                     }
 
-                    if (_behavior == BotBehavior.Fight && !_ownDead && _itemDecisionPending)
+                    if ((_behavior == BotBehavior.Fight || _behavior == BotBehavior.Inventory) &&
+                        !_ownDead && _itemDecisionPending)
                     {
                         UpdateItemActions(_pendingFightSnapshot);
                         _itemDecisionPending = false;
+                    }
+
+                    if (_behavior == BotBehavior.Inventory && !_ownDead && now >= _nextInventoryActionAt)
+                    {
+                        SendRandomInventoryAction();
+                        _nextInventoryActionAt = now + 500;
                     }
 
                     if (_behavior == BotBehavior.Chat && now >= _nextChatAt)
@@ -936,9 +956,11 @@ namespace Avelora.Bots
             _lastAttackTick = 0;
             _inventoryItemIds = Array.Empty<ushort>();
             _inventoryCounts = Array.Empty<ushort>();
+            _equipmentItemIds = new ushort[ProtocolConstants.EquipSlotCount];
             _itemCatalog.Clear();
             _equippedItemId = 0;
             _pendingEquipItemId = 0;
+            _pendingEquipSlot = 0;
             _fistDamage = 10f;
             _fistRange = AttackRange;
             _fistCooldownSeconds = _attackCooldownMs / 1000f;
@@ -1386,6 +1408,10 @@ namespace Avelora.Bots
                 {
                     _nextChatAt = now + 4000 + _random.Next(2001);
                 }
+                if (_behavior == BotBehavior.Inventory)
+                {
+                    _nextInventoryActionAt = now + 500;
+                }
                 _welcomeMs = now - _firstAttemptAt;
                 EntityId = welcome.EntityId;
                 _x = welcome.SpawnX;
@@ -1406,6 +1432,7 @@ namespace Avelora.Bots
                 // posición y mide las correcciones que le costaría la red. El modo fight también
                 // predice: se mueve como un jugador que persigue.
                 if ((_behavior == BotBehavior.Random || _behavior == BotBehavior.Fight ||
+                    _behavior == BotBehavior.Inventory ||
                     _behavior == BotBehavior.Chat) && _map != null)
                 {
                     _halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
@@ -1450,13 +1477,22 @@ namespace Avelora.Bots
             {
                 _inventoryItemIds = inventory.ItemIds;
                 _inventoryCounts = inventory.Counts;
-                _equippedItemId = inventory.EquippedItemId;
+                _equipmentItemIds = inventory.Equipment;
+                _equippedItemId = _equipmentItemIds[0];
 
                 if (_pendingEquipItemId != 0)
                 {
-                    if (_equippedItemId == _pendingEquipItemId)
+                    if (_pendingEquipSlot < _equipmentItemIds.Length &&
+                        _equipmentItemIds[_pendingEquipSlot] == _pendingEquipItemId)
                     {
-                        Interlocked.Increment(ref _equipped);
+                        if (_pendingEquipSlot == 0)
+                        {
+                            Interlocked.Increment(ref _equipped);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref _armorsEquipped);
+                        }
                     }
 
                     _pendingEquipItemId = 0;
@@ -1465,6 +1501,7 @@ namespace Avelora.Bots
                 if (_behavior == BotBehavior.Fight)
                 {
                     TryEquipBetterWeapon();
+                    TryEquipArmor();
                 }
 
                 return;
@@ -1552,7 +1589,7 @@ namespace Avelora.Bots
 
                 _lastSnapshotTick = snapshot.ServerTick;
 
-                if (_behavior == BotBehavior.Fight)
+                if (_behavior == BotBehavior.Fight || _behavior == BotBehavior.Inventory)
                 {
                     UpdateNpcView(snapshot);
                 }
@@ -1630,7 +1667,7 @@ namespace Avelora.Bots
                     }
                 }
 
-                if (_behavior == BotBehavior.Fight && !_ownDead)
+                if ((_behavior == BotBehavior.Fight || _behavior == BotBehavior.Inventory) && !_ownDead)
                 {
                     _pendingFightSnapshot = snapshot;
                     _itemDecisionPending = true;
@@ -2045,6 +2082,76 @@ namespace Avelora.Bots
             byte[] equip = MessageCodec.EncodeEquip(new EquipMessage(bestSlot));
             _transport.Send(equip, equip.Length, DeliveryMode.ReliableOrdered);
             _pendingEquipItemId = bestItemId;
+            _pendingEquipSlot = 0;
+        }
+
+        /// <summary>Equipa la primera armadura que encuentre en un hueco de equipo vacío.</summary>
+        private void TryEquipArmor()
+        {
+            if (_pendingEquipItemId != 0 || _transport == null)
+            {
+                return;
+            }
+
+            int slots = Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length);
+            for (int i = 0; i < slots; i++)
+            {
+                ushort itemId = _inventoryItemIds[i];
+                if (_inventoryCounts[i] == 0 ||
+                    !_itemCatalog.TryGetValue(itemId, out ItemCatalogEntry item) ||
+                    item.Kind != ItemKind.Armor ||
+                    item.EquipSlot >= _equipmentItemIds.Length ||
+                    _equipmentItemIds[item.EquipSlot] != 0)
+                {
+                    continue;
+                }
+
+                byte[] equip = MessageCodec.EncodeEquip(new EquipMessage((byte)i));
+                _transport.Send(equip, equip.Length, DeliveryMode.ReliableOrdered);
+                _pendingEquipItemId = itemId;
+                _pendingEquipSlot = item.EquipSlot;
+                return;
+            }
+        }
+
+        /// <summary>Envía una mutación de inventario al azar cada medio segundo (I-14).</summary>
+        private void SendRandomInventoryAction()
+        {
+            if (_transport == null)
+            {
+                return;
+            }
+
+            int slots = Math.Max(1, Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length));
+            byte first = (byte)_random.Next(slots);
+            byte second = (byte)_random.Next(slots);
+            ushort count = _random.Next(3) == 0 ? (ushort)0 : (ushort)_random.Next(1, 11);
+            byte[] bytes;
+
+            switch (_random.Next(5))
+            {
+                case 0:
+                    bytes = MessageCodec.EncodeMoveItem(new MoveItemMessage(first, second, count));
+                    break;
+                case 1:
+                    bytes = MessageCodec.EncodeEquip(new EquipMessage(first));
+                    break;
+                case 2:
+                    byte equipSlot = (byte)_random.Next(ProtocolConstants.EquipSlotCount);
+                    byte targetSlot = _random.Next(3) == 0
+                        ? ProtocolConstants.FirstFreeInventorySlot
+                        : first;
+                    bytes = MessageCodec.EncodeUnequip(new UnequipMessage(equipSlot, targetSlot));
+                    break;
+                case 3:
+                    bytes = MessageCodec.EncodeDropItem(new DropItemMessage(first, count));
+                    break;
+                default:
+                    bytes = MessageCodec.EncodeDestroyItem(new DestroyItemMessage(first, count));
+                    break;
+            }
+
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
         /// <summary>Enemigo vivo más cercano de la vista; devuelve su id y el vector hacia él.</summary>

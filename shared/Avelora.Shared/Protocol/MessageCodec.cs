@@ -31,7 +31,10 @@ namespace Avelora.Shared.Protocol
         private const int PickUpSize = 1 + 4;
         private const int UseItemSize = 1 + 1;
         private const int EquipSize = 1 + 1;
-        private const int UnequipSize = 1;
+        private const int UnequipSize = 1 + 1 + 1;
+        private const int MoveItemSize = 1 + 1 + 1 + 2;
+        private const int DropItemSize = 1 + 1 + 2;
+        private const int DestroyItemSize = 1 + 1 + 2;
         private const int AllocatePointsSize = 1 + 4;
         private const int ResetPointsSize = 1;
         private const int RejectSize = 1 + 1;
@@ -477,6 +480,7 @@ namespace Avelora.Shared.Protocol
         /// <summary>Codifica Equip: tipo (1) + hueco (1) = 2 bytes.</summary>
         public static byte[] EncodeEquip(in EquipMessage message)
         {
+            RequireInventorySlot(message.Slot, nameof(message));
             var buffer = new byte[EquipSize];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.Equip);
@@ -496,8 +500,14 @@ namespace Avelora.Shared.Protocol
             try
             {
                 var reader = new WireReader(buffer, offset + 1, length - 1);
-                message = new EquipMessage(reader.ReadByte());
-                return reader.Remaining == 0;
+                byte slot = reader.ReadByte();
+                if (slot >= ProtocolConstants.MaxInventorySlots || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new EquipMessage(slot);
+                return true;
             }
             catch (ProtocolException)
             {
@@ -505,15 +515,20 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica Unequip, que solo lleva su byte de tipo.</summary>
+        /// <summary>Codifica Unequip: tipo, hueco equipado y destino del inventario.</summary>
         public static byte[] EncodeUnequip(in UnequipMessage message)
         {
+            RequireEquipSlot(message.EquipSlot, nameof(message));
+            RequireUnequipTarget(message.TargetSlot, nameof(message));
             var buffer = new byte[UnequipSize];
-            buffer[0] = (byte)MessageType.Unequip;
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.Unequip);
+            writer.WriteByte(message.EquipSlot);
+            writer.WriteByte(message.TargetSlot);
             return buffer;
         }
 
-        /// <summary>Lee Unequip; exige exactamente un byte.</summary>
+        /// <summary>Lee Unequip; valida hueco equipado y destino.</summary>
         public static bool TryReadUnequip(byte[] buffer, int offset, int length, out UnequipMessage message)
         {
             message = default;
@@ -522,8 +537,24 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
 
-            message = new UnequipMessage();
-            return true;
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte equipSlot = reader.ReadByte();
+                byte targetSlot = reader.ReadByte();
+                if (equipSlot >= ProtocolConstants.EquipSlotCount ||
+                    !IsValidUnequipTarget(targetSlot) || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new UnequipMessage(equipSlot, targetSlot);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
         }
 
         /// <summary>Codifica ChatSend: tipo y cadena UTF-8 con longitud uint16.</summary>
@@ -629,6 +660,130 @@ namespace Avelora.Shared.Protocol
 
             message = new ResetPointsMessage();
             return true;
+        }
+
+        /// <summary>Codifica MoveItem: tipo, origen, destino y cantidad.</summary>
+        public static byte[] EncodeMoveItem(in MoveItemMessage message)
+        {
+            RequireInventorySlot(message.FromSlot, nameof(message));
+            RequireInventorySlot(message.ToSlot, nameof(message));
+            var buffer = new byte[MoveItemSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.MoveItem);
+            writer.WriteByte(message.FromSlot);
+            writer.WriteByte(message.ToSlot);
+            writer.WriteUInt16(message.Count);
+            return buffer;
+        }
+
+        /// <summary>Lee MoveItem; comprueba tamaño y que ambos huecos estén en rango.</summary>
+        public static bool TryReadMoveItem(byte[] buffer, int offset, int length, out MoveItemMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.MoveItem, MoveItemSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte fromSlot = reader.ReadByte();
+                byte toSlot = reader.ReadByte();
+                ushort count = reader.ReadUInt16();
+                if (fromSlot >= ProtocolConstants.MaxInventorySlots ||
+                    toSlot >= ProtocolConstants.MaxInventorySlots || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new MoveItemMessage(fromSlot, toSlot, count);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica DropItem: tipo, hueco y cantidad.</summary>
+        public static byte[] EncodeDropItem(in DropItemMessage message)
+        {
+            RequireInventorySlot(message.Slot, nameof(message));
+            var buffer = new byte[DropItemSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.DropItem);
+            writer.WriteByte(message.Slot);
+            writer.WriteUInt16(message.Count);
+            return buffer;
+        }
+
+        /// <summary>Lee DropItem; comprueba tamaño exacto y hueco.</summary>
+        public static bool TryReadDropItem(byte[] buffer, int offset, int length, out DropItemMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.DropItem, DropItemSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte slot = reader.ReadByte();
+                ushort count = reader.ReadUInt16();
+                if (slot >= ProtocolConstants.MaxInventorySlots || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new DropItemMessage(slot, count);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica DestroyItem: tipo, hueco y cantidad.</summary>
+        public static byte[] EncodeDestroyItem(in DestroyItemMessage message)
+        {
+            RequireInventorySlot(message.Slot, nameof(message));
+            var buffer = new byte[DestroyItemSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.DestroyItem);
+            writer.WriteByte(message.Slot);
+            writer.WriteUInt16(message.Count);
+            return buffer;
+        }
+
+        /// <summary>Lee DestroyItem; comprueba tamaño exacto y hueco.</summary>
+        public static bool TryReadDestroyItem(byte[] buffer, int offset, int length, out DestroyItemMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.DestroyItem, DestroyItemSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte slot = reader.ReadByte();
+                ushort count = reader.ReadUInt16();
+                if (slot >= ProtocolConstants.MaxInventorySlots || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new DestroyItemMessage(slot, count);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
         }
 
         // ---------------------------------------------------------------- servidor → cliente
@@ -883,15 +1038,17 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica un inventario: tipo (1) + slotCount (1) + 4 bytes por hueco + arma equipada (2).
+        /// Codifica un inventario: tipo, número de huecos, cuatro bytes por pila y diez ids equipados.
         /// </summary>
         public static byte[] EncodeInventory(in InventoryMessage message)
         {
-            if (message.SlotCount > 60 ||
+            if (message.SlotCount > ProtocolConstants.MaxInventorySlots ||
                 message.ItemIds == null ||
                 message.Counts == null ||
+                message.Equipment == null ||
                 message.ItemIds.Length != message.SlotCount ||
-                message.Counts.Length != message.SlotCount)
+                message.Counts.Length != message.SlotCount ||
+                message.Equipment.Length != ProtocolConstants.EquipSlotCount)
             {
                 throw new ArgumentException("El inventario debe tener entre 0 y 60 huecos coherentes.", nameof(message));
             }
@@ -904,7 +1061,7 @@ namespace Avelora.Shared.Protocol
                 }
             }
 
-            int size = 1 + 1 + (message.SlotCount * 4) + 2;
+            int size = 1 + 1 + (message.SlotCount * 4) + (ProtocolConstants.EquipSlotCount * 2);
             var buffer = new byte[size];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.Inventory);
@@ -916,7 +1073,10 @@ namespace Avelora.Shared.Protocol
                 writer.WriteUInt16(message.Counts[i]);
             }
 
-            writer.WriteUInt16(message.EquippedItemId);
+            for (int i = 0; i < ProtocolConstants.EquipSlotCount; i++)
+            {
+                writer.WriteUInt16(message.Equipment[i]);
+            }
 
             return buffer;
         }
@@ -949,7 +1109,7 @@ namespace Avelora.Shared.Protocol
                     return false;
                 }
 
-                int expectedSize = 1 + 1 + (slotCount * 4) + 2;
+                int expectedSize = 1 + 1 + (slotCount * 4) + (ProtocolConstants.EquipSlotCount * 2);
                 if (length != expectedSize)
                 {
                     return false;
@@ -973,14 +1133,18 @@ namespace Avelora.Shared.Protocol
                     counts[i] = count;
                 }
 
-                ushort equippedItemId = reader.ReadUInt16();
+                var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                for (int i = 0; i < equipment.Length; i++)
+                {
+                    equipment[i] = reader.ReadUInt16();
+                }
 
                 if (reader.Remaining != 0)
                 {
                     return false;
                 }
 
-                message = new InventoryMessage(slotCount, itemIds, counts, equippedItemId);
+                message = new InventoryMessage(slotCount, itemIds, counts, equipment);
                 return true;
             }
             catch (ProtocolException)
@@ -990,7 +1154,7 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica el catálogo: cabecera fija de 19 bytes y, por objeto, 21 bytes más el nombre
+        /// Codifica el catálogo: cabecera fija de 19 bytes y, por objeto, 32 bytes más el nombre
         /// UTF-8 (con su prefijo de longitud de dos bytes).
         /// </summary>
         public static byte[] EncodeItemCatalog(in ItemCatalogMessage message)
@@ -1004,9 +1168,9 @@ namespace Avelora.Shared.Protocol
             int size = ItemCatalogHeaderSize;
             for (int i = 0; i < items.Length; i++)
             {
-                if (items[i].Kind > ItemKind.Weapon)
+                if (!IsValidItemCatalogEntry(items[i]))
                 {
-                    throw new ArgumentOutOfRangeException(nameof(message), "El catálogo contiene un tipo de objeto desconocido.");
+                    throw new ArgumentOutOfRangeException(nameof(message), "El catálogo contiene un tipo o hueco de equipo inválido.");
                 }
 
                 int nameBytes = Encoding.UTF8.GetByteCount(items[i].Name ?? string.Empty);
@@ -1015,7 +1179,7 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentException("El nombre del objeto supera los 48 bytes UTF-8.", nameof(message));
                 }
 
-                size += 23 + nameBytes;
+                size += 32 + nameBytes;
             }
 
             if (size > ProtocolConstants.MaxMessageSize)
@@ -1044,6 +1208,13 @@ namespace Avelora.Shared.Protocol
                 writer.WriteUInt32(item.Damage);
                 writer.WriteSingle(item.Range);
                 writer.WriteSingle(item.CooldownSeconds);
+                writer.WriteByte(item.EquipSlot);
+                writer.WriteUInt16(item.Defense);
+                writer.WriteUInt16(item.MagicResist);
+                writer.WriteByte(item.Str);
+                writer.WriteByte(item.Dex);
+                writer.WriteByte(item.Int);
+                writer.WriteByte(item.Vit);
                 writer.WriteString(item.Name, 48);
             }
 
@@ -1081,7 +1252,7 @@ namespace Avelora.Shared.Protocol
                 {
                     ushort id = reader.ReadUInt16();
                     byte rawKind = reader.ReadByte();
-                    if (rawKind > (byte)ItemKind.Weapon)
+                    if (rawKind > (byte)ItemKind.Armor)
                     {
                         return false;
                     }
@@ -1091,9 +1262,23 @@ namespace Avelora.Shared.Protocol
                     uint damage = reader.ReadUInt32();
                     float range = reader.ReadSingle();
                     float cooldownSeconds = reader.ReadSingle();
+                    byte equipSlot = reader.ReadByte();
+                    ushort defense = reader.ReadUInt16();
+                    ushort magicResist = reader.ReadUInt16();
+                    byte str = reader.ReadByte();
+                    byte dex = reader.ReadByte();
+                    byte intelligence = reader.ReadByte();
+                    byte vit = reader.ReadByte();
                     string name = reader.ReadString(48);
-                    items[i] = new ItemCatalogEntry(
-                        id, (ItemKind)rawKind, maxStack, heal, damage, range, cooldownSeconds, name);
+                    var entry = new ItemCatalogEntry(
+                        id, (ItemKind)rawKind, maxStack, heal, damage, range, cooldownSeconds, name,
+                        equipSlot, defense, magicResist, str, dex, intelligence, vit);
+                    if (!IsValidItemCatalogEntry(entry))
+                    {
+                        return false;
+                    }
+
+                    items[i] = entry;
                 }
 
                 if (reader.Remaining != 0)
@@ -1390,6 +1575,51 @@ namespace Avelora.Shared.Protocol
                     "El texto ocupa " + byteCount + " bytes y el tope es " + maxBytes + ".",
                     parameterName);
             }
+        }
+
+        private static void RequireInventorySlot(byte slot, string parameterName)
+        {
+            if (slot >= ProtocolConstants.MaxInventorySlots)
+            {
+                throw new ArgumentOutOfRangeException(parameterName, "El hueco de inventario debe ser menor que 60.");
+            }
+        }
+
+        private static void RequireEquipSlot(byte slot, string parameterName)
+        {
+            if (slot >= ProtocolConstants.EquipSlotCount)
+            {
+                throw new ArgumentOutOfRangeException(parameterName, "El hueco de equipo debe ser menor que 10.");
+            }
+        }
+
+        private static void RequireUnequipTarget(byte slot, string parameterName)
+        {
+            if (!IsValidUnequipTarget(slot))
+            {
+                throw new ArgumentOutOfRangeException(
+                    parameterName,
+                    "El destino debe ser un hueco de inventario menor que 60 o 255 (primer hueco libre).");
+            }
+        }
+
+        private static bool IsValidUnequipTarget(byte slot) =>
+            slot == ProtocolConstants.FirstFreeInventorySlot || slot < ProtocolConstants.MaxInventorySlots;
+
+        private static bool IsValidItemCatalogEntry(ItemCatalogEntry item)
+        {
+            if (item.Kind > ItemKind.Armor)
+            {
+                return false;
+            }
+
+            return item.Kind switch
+            {
+                ItemKind.Weapon => item.EquipSlot == (byte)Avelora.Shared.EquipSlot.Weapon,
+                ItemKind.Armor => item.EquipSlot > (byte)Avelora.Shared.EquipSlot.Weapon &&
+                    item.EquipSlot < ProtocolConstants.EquipSlotCount,
+                _ => item.EquipSlot == byte.MaxValue,
+            };
         }
     }
 }

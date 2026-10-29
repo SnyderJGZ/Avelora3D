@@ -6,6 +6,7 @@ using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 using Xunit;
 
 namespace Avelora.Tests
@@ -20,6 +21,9 @@ namespace Avelora.Tests
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
                 new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
                 new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
+                new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
+                new ItemType { Id = 3302, Name = "Casco de hierro", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 4, MagicResist = 1 },
+                new ItemType { Id = 3308, Name = "Anillo de vigor", Kind = "armor", Slot = "ring", MaxStack = 1, Vit = 2 },
             },
         };
 
@@ -391,7 +395,8 @@ namespace Avelora.Tests
 
             zone.Tick();
 
-            Assert.Equal(3, zone.RejectedEquipItem);
+            Assert.Equal(1, zone.RejectedEquipItem);
+            Assert.Equal(2, zone.RejectedEquipEmpty);
             Assert.Equal((ushort)0, player.EquippedWeaponId);
             Assert.Equal((ushort)3001, player.Inventory[0].ItemId);
         }
@@ -404,7 +409,7 @@ namespace Avelora.Tests
             player.EquippedWeaponId = 3102;
             player.Inventory[0] = new InventorySlot(3001, 1);
             player.Inventory[2] = new InventorySlot(3002, 1);
-            zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id));
+            zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id, (byte)EquipSlot.Weapon, byte.MaxValue));
 
             zone.Tick();
 
@@ -418,19 +423,318 @@ namespace Avelora.Tests
         {
             Zone emptyZone = NewZone(slots: 1);
             PlayerEntity emptyPlayer = SpawnPlayer(emptyZone);
-            emptyZone.ItemActions!.TryEnqueue(ItemAction.Unequip(emptyPlayer.Id));
+            emptyZone.ItemActions!.TryEnqueue(ItemAction.Unequip(emptyPlayer.Id, (byte)EquipSlot.Weapon, byte.MaxValue));
             emptyZone.Tick();
-            Assert.Equal(1, emptyZone.RejectedEquipEmpty);
+            Assert.Equal(1, emptyZone.RejectedUnequipEmpty);
 
             Zone fullZone = NewZone(slots: 1);
             PlayerEntity fullPlayer = SpawnPlayer(fullZone);
             fullPlayer.EquippedWeaponId = 3101;
             fullPlayer.Inventory[0] = new InventorySlot(3001, 1);
-            fullZone.ItemActions!.TryEnqueue(ItemAction.Unequip(fullPlayer.Id));
+            fullZone.ItemActions!.TryEnqueue(ItemAction.Unequip(fullPlayer.Id, (byte)EquipSlot.Weapon, byte.MaxValue));
             fullZone.Tick();
             Assert.Equal(1, fullZone.RejectedEquipFull);
             Assert.Equal((ushort)3101, fullPlayer.EquippedWeaponId);
             Assert.Equal((ushort)3001, fullPlayer.Inventory[0].ItemId);
+        }
+
+        [Fact]
+        public void Equipar_Armadura_Intercambia_Con_El_Mismo_Hueco_Aunque_El_Inventario_Este_Lleno()
+        {
+            Zone zone = NewZone(slots: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Equipment[(int)EquipSlot.Head] = 3301;
+            player.Inventory[0] = new InventorySlot(3302, 1);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+            zone.Tick();
+
+            Assert.Equal((ushort)3302, player.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal(new InventorySlot(3301, 1), player.Inventory[0]);
+            Assert.Equal(1, zone.EquipmentSwaps);
+            Assert.Equal(1, zone.ItemsEquipped);
+        }
+
+        [Fact]
+        public void Desequipar_A_Hueco_Con_Objeto_Del_Mismo_Hueco_Intercambia_Y_Otro_Objeto_Rechaza()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Equipment[(int)EquipSlot.Head] = 3301;
+            player.Inventory[0] = new InventorySlot(3302, 1);
+            player.Inventory[1] = new InventorySlot(3001, 1);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id, (byte)EquipSlot.Head, 0));
+            zone.ItemActions.TryEnqueue(ItemAction.Unequip(player.Id, (byte)EquipSlot.Head, 1));
+            zone.Tick();
+
+            Assert.Equal((ushort)3302, player.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal(new InventorySlot(3301, 1), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3001, 1), player.Inventory[1]);
+            Assert.Equal(1, zone.RejectedEquipmentDestination);
+            Assert.Equal(1, zone.ItemsUnequipped);
+        }
+
+        [Fact]
+        public void Bonus_De_VIT_Al_Equipar_No_Cura_Y_Al_Desequipar_Recorta_Vida()
+        {
+            Zone zone = NewZone(slots: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Health = 70;
+            player.Inventory[0] = new InventorySlot(3308, 1);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+            zone.Tick();
+            Assert.Equal(110, player.MaxHealth);
+            Assert.Equal(70, player.Health);
+            Assert.Equal(12, ReadStats(zone, player).Vit);
+
+            player.Health = 108;
+            zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id, (byte)EquipSlot.Ring, byte.MaxValue));
+            zone.Tick();
+            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(100, player.Health);
+        }
+
+        [Fact]
+        public void Armadura_Reduce_El_Daño_Que_Inflige_Un_Pnj()
+        {
+            Zone zone = NewZone(npcs: Npcs(1));
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3301, 1);
+            zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
+            zone.Tick();
+            player.Health = 100;
+            NpcEntity npc = Assert.IsType<NpcEntity>(zone.Entities[0]);
+            npc.AiState = NpcAiState.Attack;
+            npc.TargetEntityId = player.Id;
+
+            zone.Tick();
+
+            Assert.Equal(93, player.Health);
+        }
+
+        [Fact]
+        public void MoveItem_Mueve_A_Hueco_Vacio_Y_Divide_Una_Pila()
+        {
+            Zone zone = NewZone(slots: 3);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 5);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 1, 2));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3001, 2), player.Inventory[1]);
+            Assert.Equal(1, zone.ItemsSplit);
+
+            zone.ItemActions.TryEnqueue(ItemAction.MoveItem(player.Id, 1, 2, 0));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(0, 0), player.Inventory[1]);
+            Assert.Equal(new InventorySlot(3001, 2), player.Inventory[2]);
+            Assert.Equal(2, zone.ItemsMoved);
+        }
+
+        [Fact]
+        public void MoveItem_Junta_Hasta_MaxStack_Y_Deja_El_Sobrante_En_Origen()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 4);
+            player.Inventory[1] = new InventorySlot(3001, 4);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 1, 0));
+            zone.Tick();
+
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[1]);
+            Assert.Equal(1, zone.ItemsMerged);
+        }
+
+        [Fact]
+        public void MoveItem_Intercambia_Pilas_Y_Rechaza_Intercambio_Parcial_Sin_Cambios()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 2);
+            player.Inventory[1] = new InventorySlot(3002, 3);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 1, 1));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 2), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3002, 3), player.Inventory[1]);
+            Assert.Equal(1, zone.RejectedMoveCount);
+
+            zone.ItemActions.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 1, 0));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(3002, 3), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3001, 2), player.Inventory[1]);
+            Assert.Equal(1, zone.ItemsSwapped);
+        }
+
+        [Fact]
+        public void MoveItem_Rechaza_Mismo_Hueco_Vacio_Fuera_De_Rango_Y_Cantidad_Excesiva()
+        {
+            Zone zone = NewZone(slots: 2);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 2);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 0, 0));
+            zone.ItemActions.TryEnqueue(ItemAction.MoveItem(player.Id, 2, 0, 0));
+            zone.ItemActions.TryEnqueue(ItemAction.MoveItem(player.Id, 1, 0, 0));
+            zone.ItemActions.TryEnqueue(ItemAction.MoveItem(player.Id, 0, 1, 3));
+            zone.Tick();
+
+            Assert.Equal(1, zone.RejectedMoveSameSlot);
+            Assert.Equal(1, zone.RejectedMoveSlot);
+            Assert.Equal(1, zone.RejectedMoveEmpty);
+            Assert.Equal(1, zone.RejectedMoveCount);
+            Assert.Equal(new InventorySlot(3001, 2), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(0, 0), player.Inventory[1]);
+        }
+
+        [Fact]
+        public void DropItem_Crea_Botin_Recogible_Y_El_Tope_Rechaza_Sin_Perdida()
+        {
+            Zone zone = NewZone(slots: 1, maxGroundItems: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 5);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.DropItem(player.Id, 0, 2));
+            zone.Tick();
+            GroundItemEntity dropped = Assert.Single(GroundItems(zone));
+            Assert.Equal(3001, dropped.ItemId);
+            Assert.Equal(2, dropped.Count);
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
+
+            zone.ItemActions.TryEnqueue(ItemAction.DropItem(player.Id, 0, 0));
+            zone.Tick();
+            Assert.Equal(1, zone.RejectedDropFull);
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
+
+            zone.ItemActions.TryEnqueue(ItemAction.PickUp(player.Id, dropped.Id));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[0]);
+            Assert.False(zone.Entities.TryGet(dropped.Id, out _));
+        }
+
+        [Fact]
+        public void DestroyItem_Destruye_Parcial_Y_Totalmente()
+        {
+            Zone zone = NewZone(slots: 1);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 5);
+
+            zone.ItemActions!.TryEnqueue(ItemAction.DestroyItem(player.Id, 0, 2));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[0]);
+
+            zone.ItemActions.TryEnqueue(ItemAction.DestroyItem(player.Id, 0, 0));
+            zone.Tick();
+            Assert.Equal(new InventorySlot(0, 0), player.Inventory[0]);
+            Assert.Equal(2, zone.ItemsDestroyed);
+        }
+
+        [Fact]
+        public void Mil_Acciones_Aleatorias_No_Duplican_Ni_Pierden_Objetos()
+        {
+            Zone zone = NewZone(slots: 8);
+            PlayerEntity player = SpawnPlayer(zone);
+            player.Inventory[0] = new InventorySlot(3001, 5);
+            player.Inventory[1] = new InventorySlot(3001, 4);
+            player.Inventory[2] = new InventorySlot(3002, 3);
+            player.Inventory[3] = new InventorySlot(3101, 1);
+            player.Inventory[4] = new InventorySlot(3102, 1);
+            player.Inventory[5] = new InventorySlot(3301, 1);
+            player.Inventory[6] = new InventorySlot(3302, 1);
+            player.Equipment[(int)EquipSlot.Weapon] = 3101;
+            player.Equipment[(int)EquipSlot.Head] = 3301;
+            var random = new System.Random(14014);
+
+            for (int i = 0; i < 2000; i++)
+            {
+                Dictionary<int, int> before = CountItems(player);
+                int action = random.Next(3);
+                if (action == 0)
+                {
+                    zone.ItemActions!.TryEnqueue(ItemAction.MoveItem(
+                        player.Id, (byte)random.Next(player.Inventory.Length), (byte)random.Next(player.Inventory.Length),
+                        (ushort)random.Next(0, 7)));
+                }
+                else if (action == 1)
+                {
+                    zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, (byte)random.Next(player.Inventory.Length)));
+                }
+                else
+                {
+                    byte equipSlot = (byte)random.Next(ProtocolConstants.EquipSlotCount);
+                    byte targetSlot = random.Next(2) == 0 ? byte.MaxValue : (byte)random.Next(player.Inventory.Length);
+                    zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id, equipSlot, targetSlot));
+                }
+
+                zone.Tick();
+                Assert.Equal(before.OrderBy(pair => pair.Key), CountItems(player).OrderBy(pair => pair.Key));
+                AssertValidStacks(player);
+            }
+        }
+
+        private static DerivedCharacterStats ReadStats(Zone zone, PlayerEntity player)
+        {
+            return CharacterStats.Calculate(
+                zone.Classes, player.ClassId, player.Level,
+                player.AllocStr, player.AllocDex, player.AllocInt, player.AllocVit,
+                zone.Items, player.Equipment);
+        }
+
+        private static Dictionary<int, int> CountItems(PlayerEntity player)
+        {
+            var counts = new Dictionary<int, int>();
+            for (int i = 0; i < player.Inventory.Length; i++)
+            {
+                AddCount(counts, player.Inventory[i].ItemId, player.Inventory[i].Count);
+            }
+
+            for (int i = 0; i < player.Equipment.Length; i++)
+            {
+                AddCount(counts, player.Equipment[i], player.Equipment[i] == 0 ? 0 : 1);
+            }
+
+            return counts;
+        }
+
+        private static void AddCount(Dictionary<int, int> counts, int itemId, int count)
+        {
+            if (itemId == 0)
+            {
+                Assert.Equal(0, count);
+                return;
+            }
+
+            counts.TryGetValue(itemId, out int existing);
+            counts[itemId] = existing + count;
+        }
+
+        private static void AssertValidStacks(PlayerEntity player)
+        {
+            ItemCatalog catalog = Items();
+            for (int i = 0; i < player.Inventory.Length; i++)
+            {
+                InventorySlot slot = player.Inventory[i];
+                Assert.Equal(slot.ItemId == 0, slot.Count == 0);
+                if (slot.ItemId != 0)
+                {
+                    Assert.True(slot.Count <= catalog.Find(slot.ItemId)!.MaxStack);
+                }
+            }
+
+            for (int i = 0; i < player.Equipment.Length; i++)
+            {
+                ushort itemId = player.Equipment[i];
+                if (itemId != 0)
+                {
+                    Assert.True(catalog.Find(itemId)!.TryGetEquipSlot(out byte slot));
+                    Assert.Equal((byte)i, slot);
+                }
+            }
         }
 
         [Fact]

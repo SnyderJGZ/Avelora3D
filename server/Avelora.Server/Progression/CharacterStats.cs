@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using Avelora.Server.Items;
 
 namespace Avelora.Server.Progression
 {
@@ -13,7 +14,9 @@ namespace Avelora.Server.Progression
             int allocStr,
             int allocDex,
             int allocInt,
-            int allocVit)
+            int allocVit,
+            ItemCatalog? items = null,
+            ushort[]? equipment = null)
         {
             if (catalog == null)
             {
@@ -36,6 +39,33 @@ namespace Avelora.Server.Progression
             int dex = checked(baseAttributes.Dex + allocDex);
             int intelligence = checked(baseAttributes.Int + allocInt);
             int vit = checked(baseAttributes.Vit + allocVit);
+
+            int defense = characterClass.Defense;
+            int magicResist = characterClass.MagicResist;
+            if (equipment != null)
+            {
+                if (equipment.Length != Avelora.Shared.Protocol.ProtocolConstants.EquipSlotCount)
+                {
+                    throw new ArgumentException("El equipo debe contener exactamente diez huecos.", nameof(equipment));
+                }
+
+                for (int i = 0; i < equipment.Length; i++)
+                {
+                    ItemType? item = equipment[i] == 0 ? null : items?.Find(equipment[i]);
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
+                    str = checked(str + item.Str);
+                    dex = checked(dex + item.Dex);
+                    intelligence = checked(intelligence + item.Int);
+                    vit = checked(vit + item.Vit);
+                    defense = checked(defense + item.Defense);
+                    magicResist = checked(magicResist + item.MagicResist);
+                }
+            }
+
             int maxHealth = checked(catalog.BaseHealth + checked(vit * characterClass.HealthPerVit));
             int maxResource = checked(characterClass.Resource!.Base + checked(intelligence * characterClass.Resource.PerInt));
 
@@ -46,8 +76,8 @@ namespace Avelora.Server.Progression
                 vit,
                 maxHealth,
                 maxResource,
-                characterClass.Defense,
-                characterClass.MagicResist);
+                defense,
+                magicResist);
         }
 
         /// <summary>Daño bruto de un ataque sin arma o de un arma física.</summary>
@@ -60,7 +90,9 @@ namespace Avelora.Server.Progression
             int allocInt,
             int allocVit,
             int? weaponDamage,
-            out string damageType)
+            out string damageType,
+            ItemCatalog? items = null,
+            ushort[]? equipment = null)
         {
             if (catalog == null)
             {
@@ -68,7 +100,8 @@ namespace Avelora.Server.Progression
             }
 
             CharacterClass characterClass = RequireClass(catalog, classId);
-            DerivedCharacterStats stats = Calculate(catalog, classId, level, allocStr, allocDex, allocInt, allocVit);
+            DerivedCharacterStats stats = Calculate(
+                catalog, classId, level, allocStr, allocDex, allocInt, allocVit, items, equipment);
             int baseDamage = weaponDamage ?? characterClass.Unarmed!.Damage;
             damageType = weaponDamage.HasValue ? "physical" : characterClass.Unarmed!.DamageType;
 

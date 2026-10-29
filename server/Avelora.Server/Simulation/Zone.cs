@@ -180,7 +180,7 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes);
+                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes, _itemCatalog);
                 _npcs.NpcDied += OnNpcDied;
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
@@ -340,6 +340,34 @@ namespace Avelora.Server.Simulation
         public long RejectedEquipItem => _items?.RejectedEquipItem ?? 0;
         public long RejectedEquipFull => _items?.RejectedEquipFull ?? 0;
         public long RejectedEquipEmpty => _items?.RejectedEquipEmpty ?? 0;
+        public long EquipmentSwaps => _items?.EquipmentSwaps ?? 0;
+        public long ItemsMoved => _items?.Moved ?? 0;
+        public long ItemsSplit => _items?.Split ?? 0;
+        public long ItemsMerged => _items?.Merged ?? 0;
+        public long ItemsSwapped => _items?.Swapped ?? 0;
+        public long ItemsDroppedByPlayer => _items?.DroppedFromInventory ?? 0;
+        public long ItemsDestroyed => _items?.DestroyedFromInventory ?? 0;
+        public long RejectedUnequipEmpty => _items?.RejectedUnequipEmpty ?? 0;
+        public long RejectedEquipmentDestination => _items?.RejectedEquipmentDestination ?? 0;
+        public long RejectedEquipmentSlot => _items?.RejectedEquipmentSlot ?? 0;
+        public long RejectedMoveDead => _items?.RejectedMoveDead ?? 0;
+        public long RejectedMoveSlot => _items?.RejectedMoveSlot ?? 0;
+        public long RejectedMoveSameSlot => _items?.RejectedMoveSameSlot ?? 0;
+        public long RejectedMoveEmpty => _items?.RejectedMoveEmpty ?? 0;
+        public long RejectedMoveCount => _items?.RejectedMoveCount ?? 0;
+        public long RejectedMoveItem => _items?.RejectedMoveItem ?? 0;
+        public long RejectedMoveFull => _items?.RejectedMoveFull ?? 0;
+        public long RejectedDropDead => _items?.RejectedDropDead ?? 0;
+        public long RejectedDropSlot => _items?.RejectedDropSlot ?? 0;
+        public long RejectedDropEmpty => _items?.RejectedDropEmpty ?? 0;
+        public long RejectedDropCount => _items?.RejectedDropCount ?? 0;
+        public long RejectedDropFull => _items?.RejectedDropFull ?? 0;
+        public long RejectedDropItem => _items?.RejectedDropItem ?? 0;
+        public long RejectedDestroyDead => _items?.RejectedDestroyDead ?? 0;
+        public long RejectedDestroySlot => _items?.RejectedDestroySlot ?? 0;
+        public long RejectedDestroyEmpty => _items?.RejectedDestroyEmpty ?? 0;
+        public long RejectedDestroyCount => _items?.RejectedDestroyCount ?? 0;
+        public long RejectedDestroyItem => _items?.RejectedDestroyItem ?? 0;
 
         /// <summary>Añade un jugador a la zona y devuelve su entidad.</summary>
         /// <param name="initialHealth">
@@ -456,6 +484,10 @@ namespace Avelora.Server.Simulation
         /// <summary>Notifica a la red un cambio de atributos o estadísticas.</summary>
         public void NotifyStatsChanged(PlayerEntity player) => StatsChanged?.Invoke(player);
 
+        /// <summary>Recalcula vida, recurso y defensas tras cargar o cambiar el equipo.</summary>
+        public void RecalculateEquipmentStats(PlayerEntity player) =>
+            _stats.RecalculateAfterEquipmentChange(player);
+
         /// <summary>Un tick: leer intenciones, simular el mundo y publicar el estado.</summary>
         public void Tick()
         {
@@ -539,7 +571,7 @@ namespace Avelora.Server.Simulation
                 int experience = CharacterStats.ScaleExperience(
                     npc.ExperienceReward, npc.Level, killer.Level);
                 ExperienceGranted += experience;
-                LevelUps += _levels.AddExperience(killer, experience, _classes);
+                LevelUps += _levels.AddExperience(killer, experience, _classes, _itemCatalog);
             }
         }
 

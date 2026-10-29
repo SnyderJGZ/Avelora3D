@@ -20,10 +20,12 @@ calcular igual (movimiento y colisión).
 > daño dependen de la clase y de los puntos repartidos, no crecen automáticamente al subir nivel.
 > Desde I-07 (**protocolo v10**) hay chat básico de zona con validación UTF-8 y límite de ritmo por jugador.
 > Desde I-09 (**protocolo v11**) los jugadores reparten atributos y pueden reajustarlos con la piedra 3201.
+> Desde I-14 (**protocolo v12**, esquema v5) hay 10 huecos de equipo, armaduras e inventario interactivo.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
-> [I-07](#chat-i-07-protocolo-v10) e [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11).
+> [I-07](#chat-i-07-protocolo-v10) [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11) e
+> [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -365,7 +367,9 @@ Canales:
 > I-03c añadió `TypeId` al snapshot y subió a v6; I-04 sube a **v7** por `EntityKind.Item` y los mensajes
 > `PickUp`, `UseItem` e `Inventory`; I-05 sube a **v8** por `Equip`, `Unequip`, `ItemCatalog` y el campo
 > `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
-> `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`. El snapshot no cambia.
+> `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`; I-14 sube a **v12** por `MoveItem`,
+> `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
+> `ItemCatalog`. El snapshot no cambia.
 
 ### Handshake
 
@@ -1061,6 +1065,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-07** | Chat básico de zona (protocolo v10) | ✅ servidor y bots; I-07b implementa el cliente |
 | **I-08** | Clases, atributos y nivel 25 (sin protocolo; esquema SQLite v4) | ✅ servidor; reparto I-09 y selección de clase I-10 |
 | **I-09** | Reparto y reajuste de puntos (protocolo v11; esquema SQLite v4) | ✅ servidor y bots; interfaz I-09b pendiente |
+| **I-14** | Equipo de 10 huecos, armaduras e inventario interactivo (protocolo v12; esquema SQLite v5) | ✅ servidor, bots y cliente I-14b |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1453,6 +1458,58 @@ frente a 31 256 232 B de I-08; los snapshots incluyeron 2 447 123 entidades fren
 jugador; el aumento es compatible con el daño extra de FUE, pero una sola pasada no aísla el efecto de
 la variación de rutas y objetivos. Los bots llegaron como máximo al nivel 2, así que no necesitaron
 reajustar ni consumir piedras.
+
+### Equipo e inventario (I-14, protocolo v12, esquema v5)
+
+**Diez huecos de equipo** con ids fijos (`EquipSlot` en `Avelora.Shared`; se guardan y viajan así):
+0 `weapon`, 1 `offhand`, 2 `head`, 3 `body`, 4 `legs`, 5 `hands`, 6 `feet`, 7 `ring`, 8 `neck`,
+9 `accessory`. Un objeto por hueco. En `items.json`, `kind: "armor"` exige `slot` (cualquiera salvo
+`weapon`) y `maxStack: 1`; admite `defense`, `magicResist` y bonus `str`/`dex`/`int`/`vit` (0–255), que
+también pueden llevar las armas. Las armas van siempre al hueco 0. Objetos de prueba 3301–3310 (casco de
+cuero y de hierro, peto, pantalones, guantes, botas, escudo, anillo, collar, amuleto); los orcos los
+sueltan con probabilidad 0,06 cada uno.
+
+`CharacterStats` suma los bonus de todo lo equipado a los atributos (antes de derivar vida y recurso) y
+la defensa/resistencia de los objetos a las de la clase. Equipar o quitar no cura: la vida actual se
+recorta a la nueva máxima si baja. La vida máxima con equipo se respeta también al subir de nivel, al
+cargar de la base y al entrar en la zona.
+
+Mensajes (todos fiables y ordenados, resueltos en el hilo de simulación y atómicos; nada se duplica):
+
+| Mensaje | Tipo | Cuerpo | Regla |
+|---|---|---|---|
+| `Equip` | 6 | hueco de inventario (u8) | El servidor deduce el hueco de equipo; si está ocupado, **intercambia** (el viejo ocupa el hueco del nuevo), así que funciona con el inventario lleno. |
+| `Unequip` | 7 | hueco de equipo (u8), destino (u8, 255 = primero libre) | Sin hueco libre se rechaza. Destino vacío: va ahí; con un objeto del mismo hueco de equipo: intercambio; con otra cosa: rechazo. |
+| `MoveItem` | 20 | origen, destino (u8), cantidad (u16, 0 = todo) | A vacío mueve (dividir si es parte); al mismo objeto junta hasta `maxStack` y el resto se queda; a otro objeto intercambia solo con la pila entera. |
+| `DropItem` | 21 | hueco (u8), cantidad (u16) | Lo deja en el suelo a los pies; con el suelo en su tope se rechaza sin pérdida. |
+| `DestroyItem` | 22 | hueco (u8), cantidad (u16) | Lo borra. |
+
+`Inventory` (14) sustituye el arma equipada por los **10** ids de equipo (u16). `ItemCatalog` (15) añade
+`ItemKind.Armor = 3` y por objeto `equipSlot` (u8, 255 = no se equipa), `defense`, `magicResist` (u16) y
+los cuatro bonus (u8). Todo se rechaza con el jugador muerto.
+
+**Esquema v5:** tabla `character_equipment(character_id, slot, item_id)`; la migración copia
+`equipped_item_id` al hueco 0 y la columna deja de usarse. Equipo e inventario se guardan en la misma
+transacción; al cargar, un objeto inexistente o que no va en ese hueco se descarta con aviso.
+
+Métricas: `intercambios_equipo`, `movidos`, `divididos`, `juntados`, `intercambiados`, `tirados`,
+`destruidos` y los rechazos `equipo_rech_{muerto,vacio,hueco,lleno,destino}`, `equip_rech_{objeto,vacio}`,
+`mover_rech_{muerto,hueco,mismo,vacio,cantidad,objeto,lleno}`,
+`tirar_rech_{muerto,hueco,vacio,cantidad,lleno,objeto}` y
+`destruir_rech_{muerto,hueco,vacio,cantidad,objeto}`. Bots: `fight` equipa armaduras si el hueco está
+vacío (`armaduras_equipadas`); el comportamiento nuevo **`inventory`** (9) recoge botín y cada 0,5 s manda
+una acción de inventario al azar.
+
+Cliente (I-14b): arrastrar entre huecos del inventario o la barra rápida mueve, intercambia o junta
+(con Shift, media pila); arrastrar al panel de personaje (C) equipa y del panel al inventario quita;
+doble clic usa o quita; clic derecho equipa o quita; soltar fuera de los paneles pregunta si tirar al
+suelo o destruir.
+
+**Verificación y carga I-14:** 0 advertencias, **565** pruebas en verde. 50 bots `fight` (120 s): p99
+**0,082 ms**, 0 correcciones, 56 armaduras equipadas. 30 bots `inventory` (120 s): p99 **0,078 ms**,
+0 correcciones; 58 equipados, 40 desequipados, 56 movidos, 7 divididos, 9 intercambiados, 71 tirados y
+54 destruidos; balance exacto (267 soltados por PNJ + 71 tirados = 338 recogidos) y ninguna pila fuera
+de `1…maxStack` en la base. Detalle en `docs/agentes/informes/I-14.md`.
 
 ### Chat (I-07, protocolo v10)
 

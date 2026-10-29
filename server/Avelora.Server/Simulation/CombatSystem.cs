@@ -149,7 +149,9 @@ namespace Avelora.Server.Simulation
                 attacker.AllocInt,
                 attacker.AllocVit,
                 hasWeapon ? weapon!.Damage : null,
-                out string damageType);
+                out string damageType,
+                _catalog,
+                attacker.Equipment);
             int defense = damageType == "physical" ? target.Defense : target.MagicResist;
             damage = CharacterStats.MitigateDamage(damage, defense);
             target.Health = Math.Max(0, target.Health - damage);

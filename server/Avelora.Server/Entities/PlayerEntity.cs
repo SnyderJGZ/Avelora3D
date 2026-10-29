@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Entities
 {
@@ -24,6 +25,7 @@ namespace Avelora.Server.Entities
             CharacterId = characterId;
             Input = new PlayerInputBuffer(inputBufferCapacity);
             Inventory = new InventorySlot[inventorySlots];
+            Equipment = new ushort[ProtocolConstants.EquipSlotCount];
         }
 
         /// <summary>Identificador del personaje (en la Etapa F vendrá de la base de datos).</summary>
@@ -44,8 +46,15 @@ namespace Avelora.Server.Entities
         /// <summary>Huecos de inventario, modificados solo por el hilo de simulación.</summary>
         public InventorySlot[] Inventory { get; }
 
-        /// <summary>Identificador del arma equipada; 0 significa combatir con los puños.</summary>
-        public ushort EquippedWeaponId { get; set; }
+        /// <summary>Objeto equipado por hueco; solo el hilo de simulación lo modifica.</summary>
+        public ushort[] Equipment { get; }
+
+        /// <summary>Arma equipada calculada desde el hueco weapon; 0 significa combatir con los puños.</summary>
+        public ushort EquippedWeaponId
+        {
+            get => Equipment[(int)EquipSlot.Weapon];
+            set => Equipment[(int)EquipSlot.Weapon] = value;
+        }
 
         /// <summary>Tick del último uso válido de poción; -1 si todavía no ha usado ninguna.</summary>
         public long LastPotionTick { get; set; } = -1;

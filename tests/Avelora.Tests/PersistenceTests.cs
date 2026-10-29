@@ -10,6 +10,7 @@ using Avelora.Server.Items;
 using Avelora.Server.Net;
 using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
@@ -60,6 +61,8 @@ namespace Avelora.Tests
                 new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
                 new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
+                new ItemType { Id = 3308, Name = "Anillo de vigor", Kind = "armor", Slot = "ring", MaxStack = 1, Vit = 2 },
             },
         };
 
@@ -374,7 +377,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Arma_Equipada_Se_Guarda_Y_Se_Carga()
+        public void El_Equipo_De_Varios_Huecos_Se_Guarda_Y_Se_Carga()
         {
             byte[] mapHash = NewHash(14);
             using (var repository = new SqlitePlayerRepository(
@@ -384,7 +387,13 @@ namespace Avelora.Tests
                 int accountId = repository.Login("equipo", "secreto1", "inv", "inv").AccountId;
                 CharacterRecord character = repository.GetOrCreateCharacter(
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
-                repository.SaveCharacter(character.WithEquippedItem(3101));
+                var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                equipment[(int)EquipSlot.Weapon] = 3101;
+                equipment[(int)EquipSlot.Head] = 3301;
+                equipment[(int)EquipSlot.Ring] = 3308;
+                repository.SaveCharacter(character
+                    .WithInventory(new[] { new InventoryItemRecord(1, 3001, 2) })
+                    .WithEquipment(equipment));
             }
 
             using var reopened = new SqlitePlayerRepository(
@@ -394,12 +403,46 @@ namespace Avelora.Tests
             CharacterRecord loaded = reopened.GetOrCreateCharacter(
                 loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             Assert.Equal((ushort)3101, loaded.EquippedItemId);
+            Assert.Equal((ushort)3301, loaded.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal((ushort)3308, loaded.Equipment[(int)EquipSlot.Ring]);
+            Assert.Contains(loaded.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
+        }
+
+        [Fact]
+        public void La_Vida_Que_Da_El_Equipo_No_Se_Recorta_Al_Cargar()
+        {
+            byte[] mapHash = NewHash(16);
+            int fullHealth;
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests()))
+            {
+                repository.Initialize();
+                int accountId = repository.Login("anillo", "secreto1", "inv", "inv").AccountId;
+                CharacterRecord character = repository.GetOrCreateCharacter(
+                    accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
+                var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                equipment[(int)EquipSlot.Ring] = 3308; // +2 VIT = +10 de vida máxima
+                fullHealth = CharacterStats.Calculate(
+                    ClassCatalog.Default, character.ClassId, 1, 0, 0, 0, 0, ItemCatalogForTests(), equipment).MaxHealth;
+                repository.SaveCharacter(character
+                    .WithState(character.ZoneId, character.Position, mapHash, fullHealth)
+                    .WithEquipment(equipment));
+            }
+
+            using var reopened = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
+            reopened.Initialize();
+            int loadedAccount = reopened.Login("anillo", "secreto1", "", "").AccountId;
+            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+                loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+            Assert.Equal(fullHealth, loaded.Health);
         }
 
         [Theory]
         [InlineData(9999)]
         [InlineData(3001)]
-        public void Arma_Equipada_Desconocida_O_Que_No_Es_Arma_Se_Descarta(int equippedItemId)
+        [InlineData(3301)]
+        public void Equipo_Desconocido_O_Que_No_Cabe_En_El_Hueco_Se_Descarta(int equippedItemId)
         {
             byte[] mapHash = NewHash(15);
             int accountId;
@@ -417,7 +460,8 @@ namespace Avelora.Tests
             {
                 connection.Open();
                 using SqliteCommand update = connection.CreateCommand();
-                update.CommandText = "UPDATE characters SET equipped_item_id=@item WHERE id=@id;";
+                update.CommandText =
+                    "INSERT INTO character_equipment (character_id, slot, item_id) VALUES (@id, 0, @item);";
                 update.Parameters.AddWithValue("@item", equippedItemId);
                 update.Parameters.AddWithValue("@id", characterId);
                 update.ExecuteNonQuery();
@@ -432,7 +476,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void La_Migracion_De_V1_A_V4_Conserva_Los_Personajes()
+        public void La_Migracion_De_V1_A_V5_Conserva_Los_Personajes()
         {
             int characterId;
             using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
@@ -450,6 +494,7 @@ namespace Avelora.Tests
                 using SqliteCommand command = connection.CreateCommand();
                 command.CommandText =
                     "DROP TABLE inventory_items; " +
+                    "DROP TABLE character_equipment; " +
                     "ALTER TABLE characters DROP COLUMN equipped_item_id; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
@@ -469,7 +514,7 @@ namespace Avelora.Tests
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(4, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(5, Convert.ToInt32(version.ExecuteScalar()));
             using SqliteCommand characters = verify.CreateCommand();
             characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
             characters.Parameters.AddWithValue("@id", characterId);
@@ -477,7 +522,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void La_Migracion_De_V2_A_V4_Conserva_Personaje_E_Inventario()
+        public void La_Migracion_De_V2_A_V5_Conserva_Personaje_E_Inventario()
         {
             int accountId;
             int characterId;
@@ -498,6 +543,7 @@ namespace Avelora.Tests
                 connection.Open();
                 using SqliteCommand command = connection.CreateCommand();
                 command.CommandText =
+                    "DROP TABLE character_equipment; " +
                     "ALTER TABLE characters DROP COLUMN equipped_item_id; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
@@ -523,11 +569,11 @@ namespace Avelora.Tests
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(4, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(5, Convert.ToInt32(version.ExecuteScalar()));
         }
 
         [Fact]
-        public void La_Migracion_De_V3_A_V4_Conserva_Progreso_Inventario_Y_Arma_Y_Asigna_Clase_1()
+        public void La_Migracion_De_V3_A_V5_Conserva_Progreso_Inventario_Y_Arma_Y_Asigna_Clase_1()
         {
             int accountId;
             int characterId;
@@ -552,6 +598,8 @@ namespace Avelora.Tests
                 connection.Open();
                 using SqliteCommand command = connection.CreateCommand();
                 command.CommandText =
+                    "DROP TABLE character_equipment; " +
+                    "UPDATE characters SET equipped_item_id=3101; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
                     "ALTER TABLE characters DROP COLUMN alloc_dex; " +
@@ -578,7 +626,42 @@ namespace Avelora.Tests
                 Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
             }
 
-            Assert.Equal(4, QuerySchemaVersion());
+            Assert.Equal(5, QuerySchemaVersion());
+        }
+
+        [Fact]
+        public void La_Migracion_De_V4_A_V5_Mueve_El_Arma_Legada_Al_Hueco_Weapon()
+        {
+            byte[] mapHash = NewHash(24);
+            int accountId;
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests()))
+            {
+                repository.Initialize();
+                accountId = repository.Login("migracion-v4", "secreto1", "inv", "inv").AccountId;
+                repository.GetOrCreateCharacter(accountId, "Heroe", 1, new Vec2(1, 1), mapHash);
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = @"
+DROP TABLE character_equipment;
+UPDATE characters SET equipped_item_id = 3101;
+PRAGMA user_version = 4;";
+                command.ExecuteNonQuery();
+            }
+
+            using var migrated = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
+            migrated.Initialize();
+            CharacterRecord loaded = migrated.GetOrCreateCharacter(
+                accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
+
+            Assert.Equal(5, QuerySchemaVersion());
+            Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
+            Assert.All(loaded.Equipment.Skip(1), itemId => Assert.Equal((ushort)0, itemId));
         }
 
         [Fact]
@@ -1009,6 +1092,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
             first.EquippedWeaponId = 3101;
+            first.Equipment[(int)EquipSlot.Head] = 3301;
+            first.Equipment[(int)EquipSlot.Ring] = 3308;
             first.Level = 4;
             first.Experience = 275;
             first.ClassId = 2;
@@ -1023,6 +1108,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             PlayerEntity reconnected = Assert.IsType<PlayerEntity>(
                 harness.Zone.Entities.Get(harness.LastWelcome(2).EntityId));
             Assert.Equal((ushort)3101, reconnected.EquippedWeaponId);
+            Assert.Equal((ushort)3301, reconnected.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal((ushort)3308, reconnected.Equipment[(int)EquipSlot.Ring]);
             Assert.Equal(4, reconnected.Level);
             Assert.Equal(275, reconnected.Experience);
             Assert.Equal(2, reconnected.ClassId);
@@ -1031,6 +1118,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             Assert.Equal(95, reconnected.Mana);
             Assert.True(harness.Saves.TryGetLatest(first.CharacterId, out CharacterRecord latest));
             Assert.Equal((ushort)3101, latest.EquippedItemId);
+            Assert.Equal((ushort)3301, latest.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal((ushort)3308, latest.Equipment[(int)EquipSlot.Ring]);
             Assert.Equal(4, latest.Level);
             Assert.Equal(275, latest.Experience);
             Assert.Equal(2, latest.ClassId);

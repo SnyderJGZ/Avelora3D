@@ -49,6 +49,7 @@ namespace Avelora.Tests
                         new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
                         new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
                         new ItemType { Id = 3201, Name = "Piedra de reajuste", Kind = "material", MaxStack = 10 },
+                        new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
                     },
                 }
                 : null;
@@ -645,6 +646,52 @@ namespace Avelora.Tests
             Assert.True(MessageCodec.TryReadInventory(
                 inventorySent.Data, 0, inventorySent.Data.Length, out InventoryMessage inventory));
             Assert.Equal((ushort)3101, inventory.EquippedItemId);
+        }
+
+        [Fact]
+        public void La_Red_Encola_Mover_Tirar_Destruir_Equipar_Y_Desequipar_En_La_Cola_Del_Tick()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            player.Inventory[0] = new InventorySlot(3001, 4);
+            player.Inventory[1] = new InventorySlot(3001, 2);
+            player.Inventory[2] = new InventorySlot(3301, 1);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeMoveItem(new MoveItemMessage(0, 1, 0)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal(new InventorySlot(0, 0), player.Inventory[0]);
+            Assert.Equal(new InventorySlot(3001, 6), player.Inventory[1]);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeDestroyItem(new DestroyItemMessage(1, 2)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 4), player.Inventory[1]);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeDropItem(new DropItemMessage(1, 1)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal(new InventorySlot(3001, 3), player.Inventory[1]);
+            Assert.Equal(1, harness.Zone.ItemsDroppedByPlayer);
+            Assert.Equal(1, harness.Zone.GroundItemCount);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeEquip(new EquipMessage(2)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal((ushort)3301, player.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal(1, harness.Zone.ItemsEquipped);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUnequip(
+                new UnequipMessage((byte)EquipSlot.Head, byte.MaxValue)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal((ushort)0, player.Equipment[(int)EquipSlot.Head]);
+            Assert.Equal(1, harness.Zone.ItemsUnequipped);
+            Assert.Equal(1, harness.Zone.ItemsDestroyed);
+            Assert.Equal(1, harness.Zone.ItemsMoved);
         }
 
         [Fact]

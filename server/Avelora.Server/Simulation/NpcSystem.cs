@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Avelora.Server.Entities;
+using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Shared;
@@ -51,6 +52,7 @@ namespace Avelora.Server.Simulation
         private readonly EntitySpatialGrid _grid;
         private readonly System.Random _random;
         private readonly ClassCatalog _classes;
+        private readonly ItemCatalog? _items;
         private readonly List<Entity> _candidates = new List<Entity>(32);
         private long _tick;
 
@@ -62,17 +64,28 @@ namespace Avelora.Server.Simulation
         private long _respawns;
         private long _hits;
 
-        public NpcSystem(MapCollisionGrid map, int seed, EntitySpatialGrid grid, ClassCatalog? classes = null)
-            : this(map, new System.Random(seed), grid, classes)
+        public NpcSystem(
+            MapCollisionGrid map,
+            int seed,
+            EntitySpatialGrid grid,
+            ClassCatalog? classes = null,
+            ItemCatalog? items = null)
+            : this(map, new System.Random(seed), grid, classes, items)
         {
         }
 
-        public NpcSystem(MapCollisionGrid map, System.Random random, EntitySpatialGrid grid, ClassCatalog? classes = null)
+        public NpcSystem(
+            MapCollisionGrid map,
+            System.Random random,
+            EntitySpatialGrid grid,
+            ClassCatalog? classes = null,
+            ItemCatalog? items = null)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _random = random ?? throw new ArgumentNullException(nameof(random));
             _classes = classes ?? ClassCatalog.Default;
+            _items = items;
         }
 
         /// <summary>Se invoca en el hilo del tick al registrar una muerte, antes de simular PNJ.</summary>
@@ -438,7 +451,9 @@ namespace Avelora.Server.Simulation
                 target.AllocStr,
                 target.AllocDex,
                 target.AllocInt,
-                target.AllocVit);
+                target.AllocVit,
+                _items,
+                target.Equipment);
             int damage = CharacterStats.MitigateDamage(npc.AttackDamage, targetStats.Defense);
             target.Health = Math.Max(0, target.Health - damage);
             target.LastDamageTick = _tick;

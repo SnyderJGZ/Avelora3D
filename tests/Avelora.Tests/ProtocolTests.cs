@@ -564,7 +564,7 @@ namespace Avelora.Tests
             byte[] encodedInventory = MessageCodec.EncodeInventory(inventory);
             Assert.True(MessageCodec.TryReadInventory(
                 encodedInventory, 0, encodedInventory.Length, out InventoryMessage inventoryRead));
-            Assert.Equal(16, encodedInventory.Length);
+            Assert.Equal(34, encodedInventory.Length);
             Assert.Equal(inventory.ItemIds, inventoryRead.ItemIds);
             Assert.Equal(inventory.Counts, inventoryRead.Counts);
             Assert.Equal((ushort)3101, inventoryRead.EquippedItemId);
@@ -578,9 +578,9 @@ namespace Avelora.Tests
             Assert.Equal((byte)19, equipRead.Slot);
             Assert.Equal(2, equip.Length);
 
-            byte[] unequip = MessageCodec.EncodeUnequip(new UnequipMessage());
+            byte[] unequip = MessageCodec.EncodeUnequip(new UnequipMessage(0, byte.MaxValue));
             Assert.True(MessageCodec.TryReadUnequip(unequip, 0, unequip.Length, out _));
-            Assert.Single(unequip);
+            Assert.Equal(3, unequip.Length);
 
             var catalog = new ItemCatalogMessage(
                 1.5f,
@@ -591,7 +591,7 @@ namespace Avelora.Tests
                 {
                     new ItemCatalogEntry(3001, ItemKind.Material, 99, 0, 0, 0, 0, "Colmillo"),
                     new ItemCatalogEntry(3002, ItemKind.Potion, 10, 30, 0, 0, 0, "Poción"),
-                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta"),
+                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0),
                 });
 
             byte[] bytes = MessageCodec.EncodeItemCatalog(catalog);
@@ -609,14 +609,14 @@ namespace Avelora.Tests
         public void Equip_Unequip_E_ItemCatalog_Rechazan_Longitudes_Kind_Y_Cuenta_Invalidos()
         {
             byte[] equip = MessageCodec.EncodeEquip(new EquipMessage(1));
-            byte[] unequip = MessageCodec.EncodeUnequip(new UnequipMessage());
+            byte[] unequip = MessageCodec.EncodeUnequip(new UnequipMessage(0, byte.MaxValue));
             Assert.False(MessageCodec.TryReadEquip(equip, 0, equip.Length - 1, out _));
             Assert.False(MessageCodec.TryReadEquip(equip, 0, equip.Length + 1, out _));
             Assert.False(MessageCodec.TryReadUnequip(unequip, 0, 0, out _));
 
             byte[] catalog = MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                 1f, 10, 1.2f, 0.8f,
-                new[] { new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada") }));
+                new[] { new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada", 0) }));
             Assert.False(MessageCodec.TryReadItemCatalog(catalog, 0, catalog.Length - 1, out _));
             Assert.False(MessageCodec.TryReadItemCatalog(catalog, 0, catalog.Length + 1, out _));
 

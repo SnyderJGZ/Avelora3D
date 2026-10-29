@@ -272,9 +272,58 @@ namespace Avelora.Shared.Protocol
         public byte Slot { get; }
     }
 
-    /// <summary>Intención de guardar el arma equipada en el inventario (I-05).</summary>
+    /// <summary>Intención de desequipar un hueco en un destino del inventario (I-14).</summary>
     public readonly struct UnequipMessage
     {
+        public UnequipMessage(byte equipSlot, byte targetSlot)
+        {
+            EquipSlot = equipSlot;
+            TargetSlot = targetSlot;
+        }
+
+        public byte EquipSlot { get; }
+        public byte TargetSlot { get; }
+    }
+
+    /// <summary>Intención de mover, dividir, juntar o intercambiar una pila (I-14).</summary>
+    public readonly struct MoveItemMessage
+    {
+        public MoveItemMessage(byte fromSlot, byte toSlot, ushort count)
+        {
+            FromSlot = fromSlot;
+            ToSlot = toSlot;
+            Count = count;
+        }
+
+        public byte FromSlot { get; }
+        public byte ToSlot { get; }
+        public ushort Count { get; }
+    }
+
+    /// <summary>Intención de tirar objetos al suelo (I-14).</summary>
+    public readonly struct DropItemMessage
+    {
+        public DropItemMessage(byte slot, ushort count)
+        {
+            Slot = slot;
+            Count = count;
+        }
+
+        public byte Slot { get; }
+        public ushort Count { get; }
+    }
+
+    /// <summary>Intención de destruir objetos del inventario (I-14).</summary>
+    public readonly struct DestroyItemMessage
+    {
+        public DestroyItemMessage(byte slot, ushort count)
+        {
+            Slot = slot;
+            Count = count;
+        }
+
+        public byte Slot { get; }
+        public ushort Count { get; }
     }
 
     /// <summary>Texto que el cliente propone publicar en el chat de la zona (I-07).</summary>
@@ -313,6 +362,7 @@ namespace Avelora.Shared.Protocol
         Material = 0,
         Potion = 1,
         Weapon = 2,
+        Armor = 3,
     }
 
     /// <summary>Datos de un tipo de objeto del catálogo del servidor.</summary>
@@ -326,7 +376,14 @@ namespace Avelora.Shared.Protocol
             uint damage,
             float range,
             float cooldownSeconds,
-            string name)
+            string name,
+            byte equipSlot = byte.MaxValue,
+            ushort defense = 0,
+            ushort magicResist = 0,
+            byte str = 0,
+            byte dex = 0,
+            byte intelligence = 0,
+            byte vit = 0)
         {
             Id = id;
             Kind = kind;
@@ -336,6 +393,13 @@ namespace Avelora.Shared.Protocol
             Range = range;
             CooldownSeconds = cooldownSeconds;
             Name = name ?? string.Empty;
+            EquipSlot = equipSlot;
+            Defense = defense;
+            MagicResist = magicResist;
+            Str = str;
+            Dex = dex;
+            Int = intelligence;
+            Vit = vit;
         }
 
         public ushort Id { get; }
@@ -346,6 +410,13 @@ namespace Avelora.Shared.Protocol
         public float Range { get; }
         public float CooldownSeconds { get; }
         public string Name { get; }
+        public byte EquipSlot { get; }
+        public ushort Defense { get; }
+        public ushort MagicResist { get; }
+        public byte Str { get; }
+        public byte Dex { get; }
+        public byte Int { get; }
+        public byte Vit { get; }
     }
 
     /// <summary>Catálogo completo de objetos y reglas de puños que envía el servidor (I-05).</summary>
@@ -589,7 +660,16 @@ namespace Avelora.Shared.Protocol
             SlotCount = slotCount;
             ItemIds = itemIds ?? Array.Empty<ushort>();
             Counts = counts ?? Array.Empty<ushort>();
-            EquippedItemId = equippedItemId;
+            Equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            Equipment[0] = equippedItemId;
+        }
+
+        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort[] equipment)
+        {
+            SlotCount = slotCount;
+            ItemIds = itemIds ?? Array.Empty<ushort>();
+            Counts = counts ?? Array.Empty<ushort>();
+            Equipment = equipment ?? Array.Empty<ushort>();
         }
 
         /// <summary>Número de huecos del inventario (≤ 60).</summary>
@@ -601,8 +681,11 @@ namespace Avelora.Shared.Protocol
         /// <summary>Cantidad por hueco. Debe ser 0 si <see cref="ItemIds"/> es 0, y > 0 si no lo es.</summary>
         public ushort[] Counts { get; }
 
-        /// <summary>Arma equipada; 0 significa que el jugador combate con los puños.</summary>
-        public ushort EquippedItemId { get; }
+        /// <summary>Objeto equipado por hueco, en orden de <see cref="EquipSlot"/>; 0 significa vacío.</summary>
+        public ushort[] Equipment { get; }
+
+        /// <summary>Compatibilidad de lectura del arma, que ocupa el hueco weapon.</summary>
+        public ushort EquippedItemId => Equipment.Length == 0 ? (ushort)0 : Equipment[0];
     }
 
     /// <summary>Progreso del personaje (I-06), enviado de forma fiable y ordenada.</summary>

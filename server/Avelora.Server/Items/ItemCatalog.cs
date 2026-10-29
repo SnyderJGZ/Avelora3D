@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Avelora.Shared;
 
 namespace Avelora.Server.Items
 {
@@ -19,8 +20,34 @@ namespace Avelora.Server.Items
         /// <summary>Nombre para informes y depuración.</summary>
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>Tipo de objeto: <c>material</c>, <c>potion</c> o <c>weapon</c>.</summary>
+        /// <summary>Tipo de objeto: <c>material</c>, <c>potion</c>, <c>weapon</c> o <c>armor</c>.</summary>
         public string Kind { get; set; } = string.Empty;
+
+        private string _slot = string.Empty;
+
+        /// <summary>Hueco de una armadura. Está prohibido en otros tipos de objeto.</summary>
+        public string Slot
+        {
+            get => _slot;
+            set
+            {
+                _slot = value ?? string.Empty;
+                HasSlot = true;
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasSlot { get; private set; }
+
+        /// <summary>Defensa y resistencia mágica que aporta al equiparse.</summary>
+        public int Defense { get; set; }
+        public int MagicResist { get; set; }
+
+        /// <summary>Bonus de atributos que aporta al equiparse.</summary>
+        public int Str { get; set; }
+        public int Dex { get; set; }
+        public int Int { get; set; }
+        public int Vit { get; set; }
 
         /// <summary>Tamaño máximo de pila (1..999).</summary>
         public int MaxStack { get; set; }
@@ -101,6 +128,48 @@ namespace Avelora.Server.Items
 
         /// <summary>True si es un arma.</summary>
         public bool IsWeapon => string.Equals(Kind, "weapon", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True si es una armadura.</summary>
+        public bool IsArmor => string.Equals(Kind, "armor", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Devuelve el hueco fijo que puede ocupar este objeto, o false si no se equipa.</summary>
+        public bool TryGetEquipSlot(out byte slot)
+        {
+            if (IsWeapon)
+            {
+                slot = (byte)EquipSlot.Weapon;
+                return true;
+            }
+
+            if (IsArmor && TryParseArmorSlot(Slot, out EquipSlot armorSlot))
+            {
+                slot = (byte)armorSlot;
+                return true;
+            }
+
+            slot = byte.MaxValue;
+            return false;
+        }
+
+        public static bool TryParseArmorSlot(string? value, out EquipSlot slot)
+        {
+            if (string.Equals(value, "offhand", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Offhand;
+            else if (string.Equals(value, "head", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Head;
+            else if (string.Equals(value, "body", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Body;
+            else if (string.Equals(value, "legs", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Legs;
+            else if (string.Equals(value, "hands", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Hands;
+            else if (string.Equals(value, "feet", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Feet;
+            else if (string.Equals(value, "ring", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Ring;
+            else if (string.Equals(value, "neck", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Neck;
+            else if (string.Equals(value, "accessory", StringComparison.OrdinalIgnoreCase)) slot = EquipSlot.Accessory;
+            else
+            {
+                slot = default;
+                return false;
+            }
+
+            return true;
+        }
     }
 
     /// <summary>
@@ -227,12 +296,13 @@ namespace Avelora.Server.Items
                 bool isPotion = item.IsPotion;
                 bool isMaterial = item.IsMaterial;
                 bool isWeapon = item.IsWeapon;
+                bool isArmor = item.IsArmor;
 
-                if (!isPotion && !isMaterial && !isWeapon)
+                if (!isPotion && !isMaterial && !isWeapon && !isArmor)
                 {
                     throw new InvalidOperationException(
                         "items.json: " + where + " tiene kind '" + item.Kind +
-                        "'; debe ser 'material', 'potion' o 'weapon'.");
+                        "'; debe ser 'material', 'potion', 'weapon' o 'armor'.");
                 }
 
                 int nameBytes = string.IsNullOrWhiteSpace(item.Name)
@@ -244,7 +314,7 @@ namespace Avelora.Server.Items
                         "items.json: " + where + " (id " + item.Id + ") debe tener un nombre no vacío de hasta 48 bytes UTF-8.");
                 }
 
-                catalogBytes += 23 + nameBytes;
+                catalogBytes += 32 + nameBytes;
                 if (catalogBytes > Avelora.Shared.Protocol.ProtocolConstants.MaxMessageSize)
                 {
                     throw new InvalidOperationException(
@@ -257,6 +327,35 @@ namespace Avelora.Server.Items
                     throw new InvalidOperationException(
                         "items.json: " + where + " (id " + item.Id + ") tiene maxStack " + item.MaxStack +
                         "; debe estar entre 1 y 999.");
+                }
+
+                ValidateEquipmentStats(item, where, isWeapon || isArmor);
+
+                if (isArmor)
+                {
+                    if (!item.HasSlot)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") es armadura y requiere slot.");
+                    }
+
+                    if (!ItemType.TryParseArmorSlot(item.Slot, out _))
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") tiene slot '" + item.Slot +
+                            "'; una armadura debe usar offhand, head, body, legs, hands, feet, ring, neck o accessory (no weapon).");
+                    }
+
+                    if (item.MaxStack != 1)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") es armadura y debe tener maxStack 1.");
+                    }
+                }
+                else if (item.HasSlot)
+                {
+                    throw new InvalidOperationException(
+                        "items.json: " + where + " (id " + item.Id + ") no es armadura y no puede declarar slot.");
                 }
 
                 if (isPotion)
@@ -314,6 +413,30 @@ namespace Avelora.Server.Items
                         "items.json: " + where + " (id " + item.Id +
                         ") no es arma y tiene campos de arma, que están prohibidos.");
                 }
+            }
+        }
+
+        private static void ValidateEquipmentStats(ItemType item, string where, bool equipable)
+        {
+            if (item.Defense < 0 || item.Defense > ushort.MaxValue ||
+                item.MagicResist < 0 || item.MagicResist > ushort.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    "items.json: " + where + " (id " + item.Id + ") requiere defense y magicResist entre 0 y 65535.");
+            }
+
+            if (item.Str < 0 || item.Str > byte.MaxValue || item.Dex < 0 || item.Dex > byte.MaxValue ||
+                item.Int < 0 || item.Int > byte.MaxValue || item.Vit < 0 || item.Vit > byte.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    "items.json: " + where + " (id " + item.Id + ") requiere str, dex, int y vit entre 0 y 255.");
+            }
+
+            if (!equipable && (item.Defense != 0 || item.MagicResist != 0 || item.Str != 0 ||
+                item.Dex != 0 || item.Int != 0 || item.Vit != 0))
+            {
+                throw new InvalidOperationException(
+                    "items.json: " + where + " (id " + item.Id + ") no es equipable y no puede dar defensa, resistencia ni bonus.");
             }
         }
     }

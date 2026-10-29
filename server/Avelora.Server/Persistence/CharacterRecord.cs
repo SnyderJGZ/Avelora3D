@@ -33,7 +33,8 @@ namespace Avelora.Server.Persistence
             int allocStr = 0,
             int allocDex = 0,
             int allocInt = 0,
-            int allocVit = 0)
+            int allocVit = 0,
+            ushort[]? equipment = null)
         {
             if (id <= 0)
             {
@@ -72,7 +73,18 @@ namespace Avelora.Server.Persistence
             InventoryItems = inventoryItems == null
                 ? Array.Empty<InventoryItemRecord>()
                 : (InventoryItemRecord[])inventoryItems.Clone();
-            EquippedItemId = equippedItemId;
+            Equipment = equipment == null
+                ? new ushort[ProtocolConstants.EquipSlotCount]
+                : (ushort[])equipment.Clone();
+            if (Equipment.Length != ProtocolConstants.EquipSlotCount)
+            {
+                throw new ArgumentException("El equipo debe contener exactamente diez huecos.", nameof(equipment));
+            }
+
+            if (equippedItemId != 0 && equipment == null)
+            {
+                Equipment[0] = equippedItemId;
+            }
             ClassId = classId;
             AllocStr = allocStr;
             AllocDex = allocDex;
@@ -108,8 +120,11 @@ namespace Avelora.Server.Persistence
         /// <summary>Contenido de inventario guardado por ranura.</summary>
         public InventoryItemRecord[] InventoryItems { get; }
 
-        /// <summary>Arma equipada; 0 significa combatir con los puños.</summary>
-        public ushort EquippedItemId { get; }
+        /// <summary>Ids equipados por hueco; se copia para que la foto sea inmutable.</summary>
+        public ushort[] Equipment { get; }
+
+        /// <summary>Arma equipada derivada del hueco weapon.</summary>
+        public ushort EquippedItemId => Equipment[0];
 
         public int ClassId { get; }
         public int AllocStr { get; }
@@ -138,7 +153,8 @@ namespace Avelora.Server.Persistence
                 AllocStr,
                 AllocDex,
                 AllocInt,
-                AllocVit);
+                AllocVit,
+                Equipment);
 
         /// <summary>
         /// Copia el personaje con posición, zona, mapa y vida nuevos (I-03). La usa el guardado
@@ -164,7 +180,8 @@ namespace Avelora.Server.Persistence
                 AllocStr,
                 AllocDex,
                 AllocInt,
-                AllocVit);
+                AllocVit,
+                Equipment);
 
         /// <summary>Crea una foto nueva con el inventario completo.</summary>
         public CharacterRecord WithInventory(InventoryItemRecord[] inventoryItems) =>
@@ -187,10 +204,11 @@ namespace Avelora.Server.Persistence
                 AllocStr,
                 AllocDex,
                 AllocInt,
-                AllocVit);
+                AllocVit,
+                Equipment);
 
-        /// <summary>Crea una foto nueva con el arma equipada.</summary>
-        public CharacterRecord WithEquippedItem(ushort equippedItemId) =>
+        /// <summary>Crea una foto nueva con el equipo completo.</summary>
+        public CharacterRecord WithEquipment(ushort[] equipment) =>
             new CharacterRecord(
                 Id,
                 AccountId,
@@ -205,12 +223,21 @@ namespace Avelora.Server.Persistence
                 CreatedUtc,
                 DateTime.UtcNow,
                 InventoryItems,
-                equippedItemId,
+                0,
                 ClassId,
                 AllocStr,
                 AllocDex,
                 AllocInt,
-                AllocVit);
+                AllocVit,
+                equipment);
+
+        /// <summary>Compatibilidad para establecer el arma del hueco weapon.</summary>
+        public CharacterRecord WithEquippedItem(ushort equippedItemId)
+        {
+            var equipment = (ushort[])Equipment.Clone();
+            equipment[0] = equippedItemId;
+            return WithEquipment(equipment);
+        }
 
         /// <summary>Crea una foto con el nivel y la experiencia vivos de la entidad (I-06).</summary>
         public CharacterRecord WithProgress(int level, int experience) =>
@@ -233,7 +260,8 @@ namespace Avelora.Server.Persistence
                 AllocStr,
                 AllocDex,
                 AllocInt,
-                AllocVit);
+                AllocVit,
+                Equipment);
 
         /// <summary>Crea una foto con clase y puntos repartidos nuevos.</summary>
         public CharacterRecord WithClassAndAllocations(
@@ -261,7 +289,8 @@ namespace Avelora.Server.Persistence
                 allocStr,
                 allocDex,
                 allocInt,
-                allocVit);
+                allocVit,
+                Equipment);
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

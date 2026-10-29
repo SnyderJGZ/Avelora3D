@@ -93,7 +93,8 @@ namespace Avelora.Server.Simulation
             int allocInt = checked(player.AllocInt + action.Int);
             int allocVit = checked(player.AllocVit + action.Vit);
             DerivedCharacterStats derived = CharacterStats.Calculate(
-                _classes, player.ClassId, player.Level, allocStr, allocDex, allocInt, allocVit);
+                _classes, player.ClassId, player.Level, allocStr, allocDex, allocInt, allocVit,
+                _items, player.Equipment);
 
             player.AllocStr = allocStr;
             player.AllocDex = allocDex;
@@ -133,7 +134,7 @@ namespace Avelora.Server.Simulation
             }
 
             DerivedCharacterStats derived = CharacterStats.Calculate(
-                _classes, player.ClassId, player.Level, 0, 0, 0, 0);
+                _classes, player.ClassId, player.Level, 0, 0, 0, 0, _items, player.Equipment);
             player.AllocStr = 0;
             player.AllocDex = 0;
             player.AllocInt = 0;
@@ -178,6 +179,25 @@ namespace Avelora.Server.Simulation
             }
 
             return false;
+        }
+
+        /// <summary>Recalcula límites al cambiar equipo sin curar al aumentar vida o recurso máximos.</summary>
+        public void RecalculateAfterEquipmentChange(PlayerEntity player)
+        {
+            DerivedCharacterStats derived = CharacterStats.Calculate(
+                _classes,
+                player.ClassId,
+                player.Level,
+                player.AllocStr,
+                player.AllocDex,
+                player.AllocInt,
+                player.AllocVit,
+                _items,
+                player.Equipment);
+            player.MaxHealth = derived.MaxHealth;
+            player.Health = Math.Min(player.Health, player.MaxHealth);
+            player.MaxMana = derived.MaxResource;
+            player.Mana = Math.Min(player.Mana, player.MaxMana);
         }
 
         private static bool TryGetLivingPlayer(Zone zone, int playerId, out PlayerEntity player)

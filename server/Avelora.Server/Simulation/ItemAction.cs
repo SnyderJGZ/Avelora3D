@@ -10,6 +10,9 @@ namespace Avelora.Server.Simulation
         Unequip = 3,
         AllocatePoints = 4,
         ResetPoints = 5,
+        MoveItem = 6,
+        DropItem = 7,
+        DestroyItem = 8,
     }
 
     /// <summary>Intención validada sintácticamente en la red y pendiente de resolver en el tick.</summary>
@@ -20,6 +23,8 @@ namespace Avelora.Server.Simulation
             int playerEntityId,
             int itemEntityId,
             byte slot,
+            byte targetSlot,
+            ushort count,
             int str,
             int dex,
             int intelligence,
@@ -29,6 +34,8 @@ namespace Avelora.Server.Simulation
             PlayerEntityId = playerEntityId;
             ItemEntityId = itemEntityId;
             Slot = slot;
+            TargetSlot = targetSlot;
+            Count = count;
             Str = str;
             Dex = dex;
             Int = intelligence;
@@ -39,27 +46,38 @@ namespace Avelora.Server.Simulation
         public int PlayerEntityId { get; }
         public int ItemEntityId { get; }
         public byte Slot { get; }
+        public byte TargetSlot { get; }
+        public ushort Count { get; }
         public int Str { get; }
         public int Dex { get; }
         public int Int { get; }
         public int Vit { get; }
 
         public static ItemAction PickUp(int playerEntityId, int itemEntityId) =>
-            new ItemAction(ItemActionKind.PickUp, playerEntityId, itemEntityId, 0, 0, 0, 0, 0);
+            new ItemAction(ItemActionKind.PickUp, playerEntityId, itemEntityId, 0, 0, 0, 0, 0, 0, 0);
 
         public static ItemAction UseItem(int playerEntityId, byte slot) =>
-            new ItemAction(ItemActionKind.UseItem, playerEntityId, 0, slot, 0, 0, 0, 0);
+            new ItemAction(ItemActionKind.UseItem, playerEntityId, 0, slot, 0, 0, 0, 0, 0, 0);
 
         public static ItemAction Equip(int playerEntityId, byte slot) =>
-            new ItemAction(ItemActionKind.Equip, playerEntityId, 0, slot, 0, 0, 0, 0);
+            new ItemAction(ItemActionKind.Equip, playerEntityId, 0, slot, 0, 0, 0, 0, 0, 0);
 
-        public static ItemAction Unequip(int playerEntityId) =>
-            new ItemAction(ItemActionKind.Unequip, playerEntityId, 0, 0, 0, 0, 0, 0);
+        public static ItemAction Unequip(int playerEntityId, byte equipSlot, byte targetSlot) =>
+            new ItemAction(ItemActionKind.Unequip, playerEntityId, 0, equipSlot, targetSlot, 0, 0, 0, 0, 0);
+
+        public static ItemAction MoveItem(int playerEntityId, byte fromSlot, byte toSlot, ushort count) =>
+            new ItemAction(ItemActionKind.MoveItem, playerEntityId, 0, fromSlot, toSlot, count, 0, 0, 0, 0);
+
+        public static ItemAction DropItem(int playerEntityId, byte slot, ushort count) =>
+            new ItemAction(ItemActionKind.DropItem, playerEntityId, 0, slot, 0, count, 0, 0, 0, 0);
+
+        public static ItemAction DestroyItem(int playerEntityId, byte slot, ushort count) =>
+            new ItemAction(ItemActionKind.DestroyItem, playerEntityId, 0, slot, 0, count, 0, 0, 0, 0);
 
         public static ItemAction AllocatePoints(int playerEntityId, int str, int dex, int intelligence, int vit) =>
-            new ItemAction(ItemActionKind.AllocatePoints, playerEntityId, 0, 0, str, dex, intelligence, vit);
+            new ItemAction(ItemActionKind.AllocatePoints, playerEntityId, 0, 0, 0, 0, str, dex, intelligence, vit);
 
         public static ItemAction ResetPoints(int playerEntityId) =>
-            new ItemAction(ItemActionKind.ResetPoints, playerEntityId, 0, 0, 0, 0, 0, 0);
+            new ItemAction(ItemActionKind.ResetPoints, playerEntityId, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 }

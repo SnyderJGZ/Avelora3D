@@ -147,7 +147,8 @@ namespace Avelora.Client
         private Vec2 _lastAuthoritative;
         private int _entityId;
         private ushort[] _inventoryIds = new ushort[0];
-        private ushort _equippedItemId;
+        // Objeto equipado por hueco, en el orden de EquipSlot (I-14); 0 = vacío.
+        private ushort[] _equipment = new ushort[ProtocolConstants.EquipSlotCount];
 
         // Progreso que manda el servidor (I-06): nivel, experiencia y vida máxima del nivel.
         private byte _level;
@@ -330,7 +331,7 @@ namespace Avelora.Client
             _ownDead = false;
             _inventoryIds = new ushort[0];
             _inventoryCounts = new ushort[0];
-            _equippedItemId = 0;
+            System.Array.Clear(_equipment, 0, _equipment.Length);
             _catalog.Clear();
             _catalogReceived = false;
             _accumulator = 0;
@@ -551,7 +552,8 @@ namespace Avelora.Client
                 var gui = new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y);
                 overPanel = (_showStats && _statsPanel.Contains(gui)) ||
                     (_showInventory && _inventoryPanel.Contains(gui)) ||
-                    _hotbarPanel.Contains(gui);
+                    _hotbarPanel.Contains(gui) ||
+                    (_discardSlot >= 0 && _discardDialog.Contains(gui));
             }
 
             if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
@@ -676,19 +678,30 @@ namespace Avelora.Client
 
             if (keyboard.uKey.wasPressedThisFrame)
             {
-                if (_equippedItemId == 0)
+                if (_equipment[(int)EquipSlot.Weapon] == 0)
                 {
                     ShowHint("sin arma equipada");
                 }
                 else
                 {
-                    byte[] bytes = MessageCodec.EncodeUnequip(new UnequipMessage());
-                    _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+                    SendUnequip((int)EquipSlot.Weapon, byte.MaxValue);
                 }
             }
         }
 
-        /// <summary>Equipa el arma del hueco o bebe su poción; el servidor valida.</summary>
+        private void SendUnequip(int equipSlot, int targetSlot)
+        {
+            byte[] bytes = MessageCodec.EncodeUnequip(new UnequipMessage((byte)equipSlot, (byte)targetSlot));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        private void SendMoveItem(int from, int to, int count)
+        {
+            byte[] bytes = MessageCodec.EncodeMoveItem(new MoveItemMessage((byte)from, (byte)to, (ushort)count));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        /// <summary>Equipa el arma o armadura del hueco o bebe su poción; el servidor valida.</summary>
         private void UseSlot(int slot)
         {
             if (slot >= _inventoryIds.Length || !_catalog.TryGetValue(_inventoryIds[slot], out ItemCatalogEntry item))
@@ -698,7 +711,7 @@ namespace Avelora.Client
             }
 
             byte[] bytes;
-            if (item.Kind == ItemKind.Weapon)
+            if (item.Kind == ItemKind.Weapon || item.Kind == ItemKind.Armor)
             {
                 bytes = MessageCodec.EncodeEquip(new EquipMessage((byte)slot));
             }
@@ -773,7 +786,7 @@ namespace Avelora.Client
         /// <summary>Alcance y recarga del arma equipada, o de los puños si no hay (catálogo del servidor).</summary>
         private void CurrentWeapon(out float range, out float cooldownSeconds)
         {
-            if (_catalog.TryGetValue(_equippedItemId, out ItemCatalogEntry weapon) && weapon.Kind == ItemKind.Weapon)
+            if (_catalog.TryGetValue(_equipment[(int)EquipSlot.Weapon], out ItemCatalogEntry weapon) && weapon.Kind == ItemKind.Weapon)
             {
                 range = weapon.Range;
                 cooldownSeconds = weapon.CooldownSeconds;
@@ -1004,7 +1017,7 @@ namespace Avelora.Client
                     {
                         _inventoryIds = inventory.ItemIds;
                         _inventoryCounts = inventory.Counts;
-                        _equippedItemId = inventory.EquippedItemId;
+                        _equipment = inventory.Equipment;
                     }
 
                     break;
@@ -1517,6 +1530,7 @@ namespace Avelora.Client
 
             if (_welcomeReceived)
             {
+                _dropTarget = -1;
                 DrawOwnHealth();
                 DrawChat();
             }
@@ -1703,6 +1717,7 @@ namespace Avelora.Client
             for (int i = 0; i < _inventoryIds.Length; i++)
             {
                 var slot = new Rect(left + ((i % columns) * (cell + gap)), top + ((i / columns) * (cell + gap)), cell, cell);
+                SlotInput(slot, i, _inventoryIds[i]);
                 if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i]) && slot.Contains(mouse))
                 {
                     hovered = _inventoryIds[i];
@@ -1711,7 +1726,7 @@ namespace Avelora.Client
 
             GUI.Label(
                 new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
-                "E recoger · Q poción · 1-0 usar · U guardar arma",
+                "Arrastra para mover (Shift: media pila) · doble clic usar · clic dcho. equipar · fuera: tirar",
                 _darkSmallStyle);
 
             if (hovered != 0)
@@ -1738,6 +1753,7 @@ namespace Avelora.Client
             {
                 // Huecos de 123×120 cada 132 px desde x = 77, y = 16 en la imagen original.
                 Rect slot = Part(_hotbarPanel, scale, 77f + (i * 132f) + 13.5f, 16f + 12f, 96f, 96f);
+                SlotInput(slot, i, _inventoryIds[i]);
                 if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i], drawFrame: false) && slot.Contains(mouse))
                 {
                     hovered = _inventoryIds[i];
@@ -1747,6 +1763,193 @@ namespace Avelora.Client
             if (hovered != 0)
             {
                 DrawItemTooltip(hovered, mouse);
+            }
+        }
+
+        // Inventario interactivo (I-14b). Un «origen» es un hueco del inventario (0…) o del equipo
+        // (EquipSource + EquipSlot). El cliente solo pide; el servidor valida y manda el Inventory nuevo.
+        private const int EquipSource = 100;
+        private int _pressSource = -1;
+        private Vector2 _pressAt;
+        private bool _dragging;
+        private int _dropTarget = -1;
+        private int _discardSlot = -1;
+        private ushort _discardItemId;
+        private Rect _discardDialog;
+
+        /// <summary>
+        /// Clics sobre un hueco: izquierdo empieza a arrastrar (doble clic usa o quita), derecho equipa
+        /// o quita. Además apunta qué hueco hay bajo el ratón para cuando se suelte lo arrastrado.
+        /// </summary>
+        private void SlotInput(Rect rect, int source, ushort id)
+        {
+            Event e = Event.current;
+            if (!rect.Contains(e.mousePosition))
+            {
+                return;
+            }
+
+            _dropTarget = source;
+            if (e.type != EventType.MouseDown || id == 0 || _transport == null)
+            {
+                return;
+            }
+
+            if (e.button == 0 && e.clickCount == 2)
+            {
+                _pressSource = -1;
+                ActivateSlot(source);
+                e.Use();
+            }
+            else if (e.button == 0)
+            {
+                _pressSource = source;
+                _pressAt = e.mousePosition;
+                e.Use();
+            }
+            else if (e.button == 1)
+            {
+                if (source >= EquipSource ||
+                    (_catalog.TryGetValue(id, out ItemCatalogEntry item) && (item.Kind == ItemKind.Weapon || item.Kind == ItemKind.Armor)))
+                {
+                    ActivateSlot(source);
+                }
+                else
+                {
+                    ShowHint("no se equipa");
+                }
+
+                e.Use();
+            }
+        }
+
+        /// <summary>Hueco del inventario: usar o equipar. Hueco del equipo: devolverlo al inventario.</summary>
+        private void ActivateSlot(int source)
+        {
+            if (source >= EquipSource)
+            {
+                SendUnequip(source - EquipSource, byte.MaxValue);
+            }
+            else
+            {
+                UseSlot(source);
+            }
+        }
+
+        /// <summary>
+        /// Arrastre en curso: dibuja el icono bajo el ratón y, al soltar, pide mover, dividir (Shift),
+        /// equipar o quitar. Soltar fuera de los paneles abre el aviso de tirar o destruir.
+        /// </summary>
+        private void HandleDrag()
+        {
+            Event e = Event.current;
+            if (_pressSource < 0)
+            {
+                return;
+            }
+
+            if (!_dragging && e.type == EventType.MouseDrag && (e.mousePosition - _pressAt).sqrMagnitude > 36f)
+            {
+                _dragging = true;
+            }
+
+            int from = _pressSource;
+            ushort id = from >= EquipSource ? _equipment[from - EquipSource] : from < _inventoryIds.Length ? _inventoryIds[from] : (ushort)0;
+            if (_dragging && e.type == EventType.Repaint && id != 0)
+            {
+                DrawItemSlot(new Rect(e.mousePosition.x - 24f, e.mousePosition.y - 24f, 48f, 48f), id, 1, drawFrame: false);
+            }
+
+            if (e.rawType != EventType.MouseUp || e.button != 0)
+            {
+                return;
+            }
+
+            _pressSource = -1;
+            if (!_dragging)
+            {
+                return;
+            }
+
+            _dragging = false;
+            int to = _dropTarget;
+            if (id == 0 || to == from || _transport == null)
+            {
+                return;
+            }
+
+            if (to < 0)
+            {
+                bool overPanel = (_showStats && _statsPanel.Contains(e.mousePosition)) ||
+                    (_showInventory && _inventoryPanel.Contains(e.mousePosition)) ||
+                    _hotbarPanel.Contains(e.mousePosition);
+                if (!overPanel && from < EquipSource)
+                {
+                    _discardSlot = from;
+                    _discardItemId = id;
+                }
+            }
+            else if (from < EquipSource && to < EquipSource)
+            {
+                ushort count = _inventoryCounts[from];
+                SendMoveItem(from, to, e.shift && count > 1 ? count / 2 : 0);
+            }
+            else if (from < EquipSource)
+            {
+                if (_catalog.TryGetValue(id, out ItemCatalogEntry item) && item.EquipSlot == to - EquipSource)
+                {
+                    UseSlot(from);
+                }
+                else
+                {
+                    ShowHint("no va en ese hueco");
+                }
+            }
+            else if (to < EquipSource)
+            {
+                SendUnequip(from - EquipSource, to);
+            }
+        }
+
+        /// <summary>Aviso al soltar un objeto fuera de los paneles: tirarlo al suelo o destruirlo.</summary>
+        private void DrawDiscardDialog()
+        {
+            // Si el hueco cambió mientras tanto (lo recogió otro mensaje), se olvida.
+            if (_discardSlot >= _inventoryIds.Length || _inventoryIds[_discardSlot] != _discardItemId)
+            {
+                _discardSlot = -1;
+                return;
+            }
+
+            string name = _catalog.TryGetValue(_discardItemId, out ItemCatalogEntry item) ? item.Name : "Objeto " + _discardItemId;
+            ushort count = _inventoryCounts[_discardSlot];
+            _discardDialog = new Rect((Screen.width - 360f) / 2f, (Screen.height / 2f) - 60f, 360f, 110f);
+            GUI.DrawTexture(_discardDialog, _darkSlotFill);
+            GUI.Label(
+                new Rect(_discardDialog.x + 14f, _discardDialog.y + 12f, 332f, 30f),
+                "¿Qué hacer con " + name + (count > 1 ? " ×" + count : string.Empty) + "?",
+                _darkTextStyle);
+
+            byte[] bytes = null;
+            if (LeftButton(new Rect(_discardDialog.x + 14f, _discardDialog.y + 60f, 120f, 34f), "Tirar al suelo", _darkButtonStyle))
+            {
+                bytes = MessageCodec.EncodeDropItem(new DropItemMessage((byte)_discardSlot, 0));
+            }
+
+            if (LeftButton(new Rect(_discardDialog.x + 142f, _discardDialog.y + 60f, 100f, 34f), "Destruir", _darkButtonStyle))
+            {
+                bytes = MessageCodec.EncodeDestroyItem(new DestroyItemMessage((byte)_discardSlot, 0));
+            }
+
+            if (LeftButton(new Rect(_discardDialog.x + 250f, _discardDialog.y + 60f, 96f, 34f), "Cancelar", _darkButtonStyle))
+            {
+                _discardSlot = -1;
+            }
+
+            if (bytes != null && _transport != null)
+            {
+                _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+                _discardSlot = -1;
             }
         }
 
@@ -1787,7 +1990,7 @@ namespace Avelora.Client
         /// <summary>Ficha del objeto (panel de tooltip): icono, nombre, tipo y sus números.</summary>
         private void DrawItemTooltip(ushort id, Vector2 mouse)
         {
-            if (!_catalog.TryGetValue(id, out ItemCatalogEntry item))
+            if (_dragging || !_catalog.TryGetValue(id, out ItemCatalogEntry item))
             {
                 return;
             }
@@ -1807,7 +2010,9 @@ namespace Avelora.Client
                 GUI.DrawTexture(Part(panel, scale, 45f, 67f, 80f, 86f), icon, ScaleMode.ScaleToFit);
             }
 
-            string kind = item.Kind == ItemKind.Weapon ? "Arma" : item.Kind == ItemKind.Potion ? "Poción" : "Material";
+            string kind = item.Kind == ItemKind.Weapon ? "Arma"
+                : item.Kind == ItemKind.Armor ? EquipSlotNames[item.EquipSlot]
+                : item.Kind == ItemKind.Potion ? "Poción" : "Material";
             GUI.Label(Part(panel, scale, 155f, 62f, 300f, 50f), item.Name, _darkTitleStyle);
             GUI.Label(Part(panel, scale, 155f, 112f, 300f, 40f), kind, _darkSmallStyle);
 
@@ -1823,14 +2028,48 @@ namespace Avelora.Client
                 lines.Add(new KeyValuePair<string, string>("Cura", item.Heal + " de vida"));
             }
 
-            lines.Add(new KeyValuePair<string, string>("Pila máxima", item.MaxStack.ToString()));
-            for (int i = 0; i < lines.Count && i < 4; i++)
+            AddStatLine(lines, "Defensa", item.Defense);
+            AddStatLine(lines, "Res. mágica", item.MagicResist);
+            AddStatLine(lines, "Fuerza", item.Str);
+            AddStatLine(lines, "Destreza", item.Dex);
+            AddStatLine(lines, "Inteligencia", item.Int);
+            AddStatLine(lines, "Vitalidad", item.Vit);
+            if (item.MaxStack > 1)
+            {
+                lines.Add(new KeyValuePair<string, string>("Pila máxima", item.MaxStack.ToString()));
+            }
+
+            for (int i = 0; i < lines.Count && i < 9; i++)
             {
                 Rect row = Part(panel, scale, 33f, 192f + (i * 32f), 410f, 30f);
                 GUI.Label(row, lines[i].Key, _darkTextStyle);
                 GUI.Label(row, lines[i].Value, _darkRightStyle);
             }
         }
+
+        private static void AddStatLine(List<KeyValuePair<string, string>> lines, string label, int value)
+        {
+            if (value != 0)
+            {
+                lines.Add(new KeyValuePair<string, string>(label, "+" + value));
+            }
+        }
+
+        // En el orden de EquipSlot (I-14).
+        private static readonly string[] EquipSlotNames =
+        {
+            "Arma", "Escudo / mano secundaria", "Casco", "Armadura", "Pantalones",
+            "Guantes", "Botas", "Anillo", "Collar", "Accesorio",
+        };
+
+        // Huecos del panel de personaje (91×91 en la imagen original), en el orden de EquipSlot. El
+        // arte trae nueve; el accesorio va debajo del arma, donde no hay dibujo.
+        private static readonly Vector2[] EquipSlotPositions =
+        {
+            new Vector2(328f, 449f), new Vector2(328f, 340f), new Vector2(44f, 123f), new Vector2(44f, 231f),
+            new Vector2(44f, 340f), new Vector2(44f, 449f), new Vector2(44f, 557f), new Vector2(328f, 231f),
+            new Vector2(328f, 123f), new Vector2(328f, 557f),
+        };
 
         /// <summary>
         /// Panel del personaje (C, I-09b): equipo a la izquierda, nivel, experiencia, vida y números a
@@ -1858,12 +2097,26 @@ namespace Avelora.Client
 
             Vector2 mouse = Event.current.mousePosition;
 
-            // Hueco del arma (x 328, y 449, 91×91): el arma equipada tapa la silueta dibujada.
-            Rect weaponSlot = Part(_statsPanel, scale, 328f, 449f, 91f, 91f);
-            if (_equippedItemId != 0)
+            // Huecos de equipo: el objeto equipado tapa la silueta dibujada.
+            ushort hoveredEquipment = 0;
+            for (int e = 0; e < _equipment.Length && e < EquipSlotPositions.Length; e++)
             {
-                GUI.DrawTexture(new Rect(weaponSlot.x + 3f, weaponSlot.y + 3f, weaponSlot.width - 6f, weaponSlot.height - 6f), _darkSlotFill);
-                DrawItemSlot(weaponSlot, _equippedItemId, 1, drawFrame: false);
+                Rect equipSlot = Part(_statsPanel, scale, EquipSlotPositions[e].x, EquipSlotPositions[e].y, 91f, 91f);
+                SlotInput(equipSlot, EquipSource + e, _equipment[e]);
+                if (e == (int)EquipSlot.Accessory)
+                {
+                    GUI.DrawTexture(equipSlot, _darkSlot);
+                }
+
+                if (_equipment[e] != 0)
+                {
+                    GUI.DrawTexture(new Rect(equipSlot.x + 3f, equipSlot.y + 3f, equipSlot.width - 6f, equipSlot.height - 6f), _darkSlotFill);
+                    DrawItemSlot(equipSlot, _equipment[e], 1, drawFrame: false);
+                    if (equipSlot.Contains(mouse))
+                    {
+                        hoveredEquipment = _equipment[e];
+                    }
+                }
             }
 
             // Columna derecha: «NIVEL» y «EXP» vienen pintados; aquí van los números y el relleno.
@@ -1934,9 +2187,9 @@ namespace Avelora.Client
                 _stats.FreeReset != 0 ? "Reajuste gratis hasta el nivel 10" : "Reajustar cuesta una piedra de reajuste",
                 _darkSmallStyle);
 
-            if (_equippedItemId != 0 && weaponSlot.Contains(mouse))
+            if (hoveredEquipment != 0)
             {
-                DrawItemTooltip(_equippedItemId, mouse);
+                DrawItemTooltip(hoveredEquipment, mouse);
             }
         }
 
@@ -2099,6 +2352,12 @@ namespace Avelora.Client
             if (_showInventory)
             {
                 DrawInventory();
+            }
+
+            HandleDrag();
+            if (_discardSlot >= 0)
+            {
+                DrawDiscardDialog();
             }
 
             if (_ownDead)

@@ -231,6 +231,7 @@ namespace Avelora.Bots
             long sentPickups = 0;
             long sentPotions = 0;
             long equipped = 0;
+            long armorsEquipped = 0;
             long pointsAllocated = 0;
             long statsReceived = 0;
             long levelUps = 0;
@@ -274,6 +275,7 @@ namespace Avelora.Bots
                 sentPickups += bot.SentPickups;
                 sentPotions += bot.SentPotions;
                 equipped += bot.Equipped;
+                armorsEquipped += bot.ArmorsEquipped;
                 pointsAllocated += bot.PointsAllocated;
                 statsReceived += bot.StatsReceived;
                 levelUps += bot.LevelUps;
@@ -337,6 +339,7 @@ namespace Avelora.Bots
                         " recogidas=" + bot.SentPickups +
                         " pociones=" + bot.SentPotions +
                         " equipados=" + bot.Equipped +
+                        " armaduras_equipadas=" + bot.ArmorsEquipped +
                         " puntos_repartidos=" + bot.PointsAllocated +
                         " stats_recibidos=" + bot.StatsReceived);
                 }
@@ -395,7 +398,8 @@ namespace Avelora.Bots
                 Console.WriteLine(
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
                     deathsSeen + " muertes vistas, " + sentPickups + " recogidas, " +
-                    sentPotions + " pociones usadas, " + equipped + " equipados, " +
+                    sentPotions + " pociones usadas, " + equipped + " armas equipadas, " +
+                    armorsEquipped + " armaduras_equipadas, " +
                     "puntos_repartidos=" + pointsAllocated + ", stats_recibidos=" + statsReceived + ", " +
                     "subidas_nivel=" + levelUps + ", nivel_max=" + maxLevelReached);
             }
@@ -540,6 +544,7 @@ namespace Avelora.Bots
                 BotBehavior.Replay => "replay (secuencias viejas)",
                 BotBehavior.BadLogin => "badlogin (contraseña incorrecta)",
                 BotBehavior.Chat => "chat (mensajes de zona)",
+                BotBehavior.Inventory => "inventory (pelea como fight y manda acciones de inventario al azar)",
                 _ => "direcciones al azar",
             };
 
@@ -800,7 +805,7 @@ namespace Avelora.Bots
                         if (!TryParseBehavior(value, out BotBehavior behavior))
                         {
                             error = "Comportamiento desconocido: " + value +
-                                " (random|crowd|fight|flood|garbage|speed|replay|badlogin|chat)";
+                                " (random|crowd|fight|flood|garbage|speed|replay|badlogin|chat|inventory)";
                             return false;
                         }
 
@@ -981,6 +986,12 @@ namespace Avelora.Bots
             if (string.Equals(value, "chat", StringComparison.OrdinalIgnoreCase))
             {
                 behavior = BotBehavior.Chat;
+                return true;
+            }
+
+            if (string.Equals(value, "inventory", StringComparison.OrdinalIgnoreCase))
+            {
+                behavior = BotBehavior.Inventory;
                 return true;
             }
 

@@ -21,7 +21,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 4;
+        public const int SchemaVersion = 5;
 
         /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
         public const int MaxCharactersPerAccount = 3;
@@ -141,13 +141,19 @@ namespace Avelora.Server.Persistence
 
                         MigrateV2ToV3(connection);
                         MigrateV3ToV4(connection);
+                        MigrateV4ToV5(connection);
                         break;
                     case 2:
                         MigrateV2ToV3(connection);
                         MigrateV3ToV4(connection);
+                        MigrateV4ToV5(connection);
                         break;
                     case 3:
                         MigrateV3ToV4(connection);
+                        MigrateV4ToV5(connection);
+                        break;
+                    case 4:
+                        MigrateV4ToV5(connection);
                         break;
                     case SchemaVersion:
                         break;
@@ -335,7 +341,7 @@ namespace Avelora.Server.Persistence
             update.CommandText =
                 "UPDATE characters SET " +
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
-                "zone_id = @zone, x = @x, y = @y, map_hash = @map, equipped_item_id = @equipped, " +
+                "zone_id = @zone, x = @x, y = @y, map_hash = @map, " +
                 "class_id = @class, alloc_str = @allocStr, alloc_dex = @allocDex, " +
                 "alloc_int = @allocInt, alloc_vit = @allocVit, updated_utc = @updated " +
                 "WHERE id = @id AND account_id = @account;";
@@ -347,7 +353,6 @@ namespace Avelora.Server.Persistence
             update.Parameters.AddWithValue("@x", (double)character.Position.X);
             update.Parameters.AddWithValue("@y", (double)character.Position.Y);
             update.Parameters.AddWithValue("@map", character.MapHash);
-            update.Parameters.AddWithValue("@equipped", character.EquippedItemId);
             update.Parameters.AddWithValue("@class", character.ClassId);
             update.Parameters.AddWithValue("@allocStr", character.AllocStr);
             update.Parameters.AddWithValue("@allocDex", character.AllocDex);
@@ -387,6 +392,37 @@ namespace Avelora.Server.Persistence
                 insert.Parameters.AddWithValue("@item", item.ItemId);
                 insert.Parameters.AddWithValue("@count", item.Count);
                 insert.ExecuteNonQuery();
+            }
+
+            if (character.Equipment.Length != ProtocolConstants.EquipSlotCount)
+            {
+                throw new InvalidOperationException("El personaje " + character.Id + " no tiene diez huecos de equipo.");
+            }
+
+            using (SqliteCommand deleteEquipment = connection.CreateCommand())
+            {
+                deleteEquipment.Transaction = transaction;
+                deleteEquipment.CommandText = "DELETE FROM character_equipment WHERE character_id = @id;";
+                deleteEquipment.Parameters.AddWithValue("@id", character.Id);
+                deleteEquipment.ExecuteNonQuery();
+            }
+
+            for (int slot = 0; slot < character.Equipment.Length; slot++)
+            {
+                ushort itemId = character.Equipment[slot];
+                if (itemId == 0)
+                {
+                    continue;
+                }
+
+                using SqliteCommand insertEquipment = connection.CreateCommand();
+                insertEquipment.Transaction = transaction;
+                insertEquipment.CommandText =
+                    "INSERT INTO character_equipment (character_id, slot, item_id) VALUES (@character, @slot, @item);";
+                insertEquipment.Parameters.AddWithValue("@character", character.Id);
+                insertEquipment.Parameters.AddWithValue("@slot", slot);
+                insertEquipment.Parameters.AddWithValue("@item", itemId);
+                insertEquipment.ExecuteNonQuery();
             }
 
             transaction.Commit();
@@ -454,6 +490,7 @@ CREATE INDEX characters_account_idx ON characters(account_id);
 ";
             command.ExecuteNonQuery();
             CreateInventorySchema(connection, transaction);
+            CreateEquipmentSchema(connection, transaction);
         }
 
         private static void MigrateV2ToV3(SqliteConnection connection)
@@ -480,6 +517,26 @@ ALTER TABLE characters ADD COLUMN alloc_int INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN alloc_vit INTEGER NOT NULL DEFAULT 0;
 ";
             command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, 4);
+            transaction.Commit();
+        }
+
+        private static void MigrateV4ToV5(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = @"
+CREATE TABLE character_equipment (
+    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    slot         INTEGER NOT NULL,
+    item_id      INTEGER NOT NULL,
+    PRIMARY KEY (character_id, slot)
+);
+INSERT INTO character_equipment (character_id, slot, item_id)
+SELECT id, 0, equipped_item_id FROM characters WHERE equipped_item_id <> 0;
+";
+            command.ExecuteNonQuery();
             SetUserVersion(connection, transaction, SchemaVersion);
             transaction.Commit();
         }
@@ -494,6 +551,21 @@ CREATE TABLE inventory_items (
     slot         INTEGER NOT NULL,
     item_id      INTEGER NOT NULL,
     count        INTEGER NOT NULL,
+    PRIMARY KEY (character_id, slot)
+);
+";
+            command.ExecuteNonQuery();
+        }
+
+        private static void CreateEquipmentSchema(SqliteConnection connection, SqliteTransaction transaction)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = @"
+CREATE TABLE character_equipment (
+    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    slot         INTEGER NOT NULL,
+    item_id      INTEGER NOT NULL,
     PRIMARY KEY (character_id, slot)
 );
 ";
@@ -581,13 +653,14 @@ CREATE TABLE inventory_items (
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
-                "map_hash, created_utc, updated_utc, equipped_item_id, class_id, " +
+                "map_hash, created_utc, updated_utc, class_id, " +
                 "alloc_str, alloc_dex, alloc_int, alloc_vit " +
                 "FROM characters WHERE account_id = @account AND name = @name COLLATE NOCASE LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@name", characterName);
 
             CharacterRecord? character;
+            ushort[]? equipment = null;
             using (SqliteDataReader reader = command.ExecuteReader())
             {
                 if (!reader.Read())
@@ -652,7 +725,7 @@ CREATE TABLE inventory_items (
                     experience = (int)rawExperience;
                 }
 
-                long rawClassId = reader.GetInt64(14);
+                long rawClassId = reader.GetInt64(13);
                 int classId;
                 if (rawClassId < 1 || rawClassId > byte.MaxValue || _classes.Find((int)rawClassId) == null)
                 {
@@ -666,10 +739,10 @@ CREATE TABLE inventory_items (
                     classId = (int)rawClassId;
                 }
 
-                long rawAllocStr = reader.GetInt64(15);
-                long rawAllocDex = reader.GetInt64(16);
-                long rawAllocInt = reader.GetInt64(17);
-                long rawAllocVit = reader.GetInt64(18);
+                long rawAllocStr = reader.GetInt64(14);
+                long rawAllocDex = reader.GetInt64(15);
+                long rawAllocInt = reader.GetInt64(16);
+                long rawAllocVit = reader.GetInt64(17);
                 long maxAllocated = (long)_levels.PointsPerLevel * level;
                 bool validAllocations = rawAllocStr >= 0 && rawAllocDex >= 0 && rawAllocInt >= 0 && rawAllocVit >= 0 &&
                     rawAllocStr <= int.MaxValue && rawAllocDex <= int.MaxValue && rawAllocInt <= int.MaxValue &&
@@ -688,8 +761,10 @@ CREATE TABLE inventory_items (
                         "AVISO: se corrigieron alloc_* inválidos del personaje " + reader.GetInt32(0) + " (→ 0). ");
                 }
 
+                // El equipo puede subir la vida máxima (bonus de VIT): se lee antes de recortar la vida.
+                equipment = LoadEquipment(connection, reader.GetInt32(0));
                 DerivedCharacterStats stats = CharacterStats.Calculate(
-                    _classes, classId, level, allocStr, allocDex, allocInt, allocVit);
+                    _classes, classId, level, allocStr, allocDex, allocInt, allocVit, _items, equipment);
                 long rawHealth = reader.GetInt64(5);
                 int health = rawHealth > stats.MaxHealth ? stats.MaxHealth :
                     rawHealth < 0 ? 0 : rawHealth > int.MaxValue ? stats.MaxHealth : (int)rawHealth;
@@ -723,31 +798,51 @@ CREATE TABLE inventory_items (
                     ParseTime(reader.GetString(11)),
                     ParseTime(reader.GetString(12)),
                     inventoryItems: null,
-                    equippedItemId: 0,
                     classId: classId,
                     allocStr: allocStr,
                     allocDex: allocDex,
                     allocInt: allocInt,
                     allocVit: allocVit);
 
-                long rawEquippedItemId = reader.GetInt64(13);
-                if (rawEquippedItemId != 0)
-                {
-                    if (rawEquippedItemId > 0 && rawEquippedItemId <= ushort.MaxValue &&
-                        _items?.Find((int)rawEquippedItemId) is ItemType equipped && equipped.IsWeapon)
-                    {
-                        character = character.WithEquippedItem((ushort)rawEquippedItemId);
-                    }
-                    else
-                    {
-                        Console.Error.WriteLine(
-                            "AVISO: se descartó equipped_item_id inválido del personaje " +
-                            character.Id + " (equipped_item_id=" + rawEquippedItemId + ").");
-                    }
-                }
             }
 
-            return character.WithInventory(LoadInventory(connection, character.Id));
+            return character
+                .WithInventory(LoadInventory(connection, character.Id))
+                .WithEquipment(equipment!);
+        }
+
+        private ushort[] LoadEquipment(SqliteConnection connection, int characterId)
+        {
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT slot, item_id FROM character_equipment " +
+                "WHERE character_id = @character ORDER BY slot;";
+            command.Parameters.AddWithValue("@character", characterId);
+
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                long slot = reader.GetInt64(0);
+                long itemId = reader.GetInt64(1);
+                ItemType? item = itemId > 0 && itemId <= ushort.MaxValue
+                    ? _items?.Find((int)itemId)
+                    : null;
+                bool valid = slot >= 0 && slot < ProtocolConstants.EquipSlotCount &&
+                    item != null && item.TryGetEquipSlot(out byte itemSlot) && itemSlot == slot;
+
+                if (!valid)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se descartó equipo inválido del personaje " + characterId +
+                        " (slot=" + slot + ", item_id=" + itemId + ").");
+                    continue;
+                }
+
+                equipment[(int)slot] = (ushort)itemId;
+            }
+
+            return equipment;
         }
 
         private InventoryItemRecord[] LoadInventory(SqliteConnection connection, int characterId)
