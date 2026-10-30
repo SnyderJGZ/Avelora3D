@@ -40,6 +40,7 @@ namespace Avelora.Server.Net
         private readonly IServerTransport _transport;
         private readonly byte[] _mapHash;
         private readonly IPlayerRepository? _repository;
+        private readonly InMemoryPlayerRepository? _memoryRepository;
         private readonly CharacterSaveService? _saves;
         private readonly LoginWorker? _login;
         private readonly string _registrationCode;
@@ -64,6 +65,7 @@ namespace Avelora.Server.Net
         // Frontera entre hilos.
         private readonly ConcurrentQueue<ControlEvent> _control = new ConcurrentQueue<ControlEvent>();
         private readonly ConcurrentQueue<OutboundMessage> _outbound = new ConcurrentQueue<OutboundMessage>();
+        private readonly ConcurrentQueue<CharacterRecord> _memorySaves = new ConcurrentQueue<CharacterRecord>();
         private readonly ConcurrentDictionary<int, int> _connectionToEntity = new ConcurrentDictionary<int, int>();
         private readonly ConcurrentDictionary<int, int> _connectionToAccount = new ConcurrentDictionary<int, int>();
         private readonly ConcurrentDictionary<int, string> _connectionToCharacterName =
@@ -73,9 +75,12 @@ namespace Avelora.Server.Net
         // Solo hilo de red.
         private readonly Dictionary<int, long> _handshakeDeadlines = new Dictionary<int, long>();
         private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+        private readonly Dictionary<int, long> _connectionGenerations = new Dictionary<int, long>();
         private readonly Dictionary<int, PendingDisconnect> _pendingDisconnects =
             new Dictionary<int, PendingDisconnect>();
         private readonly Dictionary<int, HelloMessage> _pendingLogins = new Dictionary<int, HelloMessage>();
+        private readonly Dictionary<int, CharacterSelectState> _characterSelections =
+            new Dictionary<int, CharacterSelectState>();
         private readonly Dictionary<string, int> _failedLogins =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -97,6 +102,7 @@ namespace Avelora.Server.Net
 
         private long _currentSecond;
         private long _currentMinute;
+        private long _nextConnectionGeneration;
 
         /// <summary>
         /// Minuto de la ventana del límite de frecuencia. Va aparte de <see cref="_currentMinute"/>
@@ -180,6 +186,10 @@ namespace Avelora.Server.Net
 
             _mapHash = mapHash;
             _repository = repository;
+            _memoryRepository = repository == null
+                ? new InMemoryPlayerRepository(zone.Classes, config.FirstCharacterId)
+                : null;
+            _memoryRepository?.Initialize();
             _saves = saves;
             _registrationCode = registrationCode ?? string.Empty;
             _nextCharacterId = config.FirstCharacterId;
@@ -277,6 +287,8 @@ namespace Avelora.Server.Net
             // Los cortes vencidos van primero: un rechazo apuntado en esta misma vuelta espera a
             // la siguiente, aunque el retardo sea 0. Así el mensaje fiable siempre sale antes.
             ExpirePendingDisconnects();
+            DrainMemorySaves();
+            ExpireCharacterSelections();
             _transport.Poll();
             DrainLogins();
             DrainOutbound();
@@ -291,6 +303,10 @@ namespace Avelora.Server.Net
                 {
                     AddPlayer(zone, control);
                 }
+                else if (control.Kind == ControlEventKind.Eject)
+                {
+                    RemoveSession(control.ConnectionId, RejectReason.LoggedInElsewhere);
+                }
                 else
                 {
                     RemovePlayer(control.ConnectionId);
@@ -299,7 +315,7 @@ namespace Avelora.Server.Net
 
             // El guardado periódico se engancha al hilo de simulación, después de aplicar altas y
             // bajas. Encolar una foto es barato; escribir en SQLite lo hace el hilo de guardado.
-            if (_saves != null && zone.TickCount >= _nextSaveTick)
+            if ((_saves != null || _memoryRepository != null) && zone.TickCount >= _nextSaveTick)
             {
                 SaveAllPlayers(zone);
                 _nextSaveTick = zone.TickCount + _saveEveryTicks;
@@ -312,7 +328,7 @@ namespace Avelora.Server.Net
         /// </summary>
         public void SaveAll(Zone zone)
         {
-            if (_saves != null)
+            if (_saves != null || _memoryRepository != null)
             {
                 SaveAllPlayers(zone);
             }
@@ -386,6 +402,7 @@ namespace Avelora.Server.Net
 
         private void OnConnected(int connectionId)
         {
+            _connectionGenerations[connectionId] = ++_nextConnectionGeneration;
             _handshakeDeadlines[connectionId] = Environment.TickCount64 +
                 (long)Math.Round(_config.HandshakeTimeoutSeconds * 1000d, MidpointRounding.AwayFromZero);
 
@@ -410,6 +427,7 @@ namespace Avelora.Server.Net
         private void OnDisconnected(int connectionId, DisconnectReason reason)
         {
             _handshakeDeadlines.Remove(connectionId);
+            _connectionGenerations.Remove(connectionId);
             _pendingDisconnects.Remove(connectionId);
             _messagesThisSecond.Remove(connectionId);
             _chatBuckets.Remove(connectionId);
@@ -420,6 +438,7 @@ namespace Avelora.Server.Net
             // Si estaba autenticándose, su resultado ya no interesa. Nada que reservar: la
             // conexión se ha ido antes de que el login terminara.
             _pendingLogins.Remove(connectionId);
+            _characterSelections.Remove(connectionId);
 
             // La baja se aplica en el hilo de simulación: aquí solo se avisa.
             _control.Enqueue(ControlEvent.Leave(connectionId));
@@ -460,6 +479,29 @@ namespace Avelora.Server.Net
             if (_handshakeDeadlines.ContainsKey(connectionId))
             {
                 HandleHello(connectionId, buffer, offset, length);
+                return;
+            }
+
+            if (_characterSelections.ContainsKey(connectionId))
+            {
+                RateLimitVerdict selectionVerdict = CheckRate(connectionId);
+                if (selectionVerdict == RateLimitVerdict.Disconnect)
+                {
+                    Interlocked.Increment(ref _rateLimited);
+                    Interlocked.Increment(ref _rateLimitedDisconnects);
+                    byte[] reject = MessageCodec.EncodeReject(new RejectMessage(RejectReason.RateLimited));
+                    _transport.Send(connectionId, reject, reject.Length, DeliveryMode.ReliableOrdered);
+                    ScheduleDisconnect(connectionId, DisconnectReason.Rejected);
+                    return;
+                }
+
+                if (selectionVerdict == RateLimitVerdict.Drop)
+                {
+                    Interlocked.Increment(ref _rateLimited);
+                    return;
+                }
+
+                HandleCharacterSelectionMessage(connectionId, buffer, offset, length);
                 return;
             }
 
@@ -660,6 +702,12 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            if (!_connectionGenerations.TryGetValue(connectionId, out long connectionGeneration))
+            {
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
             if (hello.ProtocolVersion != ProtocolConstants.Version)
             {
                 RejectHandshake(connectionId, RejectReason.ProtocolVersion);
@@ -690,24 +738,33 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            if (_repository == null)
-            {
-                _handshakeDeadlines.Remove(connectionId);
-
-                // Modo sin persistencia (pruebas o configuración explícita): la identidad es local.
-                // No hay hilo de login donde descifrar, así que las credenciales no se validan.
-                _control.Enqueue(ControlEvent.Join(connectionId, hello, 0, string.Empty, null));
-                return;
-            }
-
             string accountName = LoginValidation.NormalizeAccount(hello.AccountName);
-            string characterName = LoginValidation.ResolveCharacterName(hello.CharacterName, accountName);
-
-            if (!LoginValidation.IsValidAccountName(accountName) ||
-                !LoginValidation.IsValidCharacterName(characterName))
+            if (!LoginValidation.IsValidAccountName(accountName))
             {
                 Interlocked.Increment(ref _loginsRejected);
                 RejectHandshake(connectionId, RejectReason.InvalidCredentials);
+                return;
+            }
+
+            if (_repository == null)
+            {
+                _handshakeDeadlines.Remove(connectionId);
+                AccountLoginResult localLogin = _memoryRepository!.Login(
+                    accountName,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty);
+                int replaced = ReserveAccount(localLogin.AccountId, connectionId);
+                _connectionToAccount[connectionId] = localLogin.AccountId;
+                Interlocked.Increment(ref _loginsSucceeded);
+                HandleReplacedConnection(replaced);
+                BeginCharacterSelection(
+                    connectionId,
+                    connectionGeneration,
+                    hello,
+                    localLogin.AccountId,
+                    accountName,
+                    _memoryRepository.ListCharacters(localLogin.AccountId));
                 return;
             }
 
@@ -742,10 +799,10 @@ namespace Avelora.Server.Net
             // El alta la resolverá el hilo de login y llegará por la cola de resultados.
             _login!.Enqueue(new LoginRequest(
                 connectionId,
+                connectionGeneration,
                 accountName,
                 hello.EncryptedSecrets,
                 nonce,
-                characterName,
                 _zone.Id,
                 _config.Spawn,
                 _mapHash));
@@ -767,6 +824,20 @@ namespace Avelora.Server.Net
                 // El intento deja de estar en vuelo aunque la conexión se haya ido: el hueco del
                 // tope global y el de la cuenta se liberan al sacar el resultado, como antes.
                 ReleaseLoginInFlight(result.AccountName);
+
+                if (result.Operation != CharacterOperationKind.Login)
+                {
+                    HandleCharacterOperationResult(result);
+                    continue;
+                }
+
+                if (!_connectionGenerations.TryGetValue(result.ConnectionId, out long currentGeneration) ||
+                    currentGeneration != result.ConnectionGeneration)
+                {
+                    // LiteNetLib puede reutilizar el id mientras el hilo de login aún calcula.
+                    // El resultado pertenece a una conexión cerrada, nunca a la nueva.
+                    continue;
+                }
 
                 if (!_pendingLogins.TryGetValue(result.ConnectionId, out HelloMessage hello))
                 {
@@ -811,20 +882,291 @@ namespace Avelora.Server.Net
                     continue;
                 }
 
-                // La reserva es por cuenta: si ya estaba conectada, pasa a la conexión nueva y la
-                // simulación echará a la anterior al procesar el alta.
+                // La cuenta queda reservada desde la pantalla de selección, no solo al entrar al mundo.
                 int replacedConnectionId = ReserveAccount(result.AccountId, result.ConnectionId);
                 _connectionToAccount[result.ConnectionId] = result.AccountId;
                 Interlocked.Increment(ref _loginsSucceeded);
-
-                _control.Enqueue(ControlEvent.Join(
+                HandleReplacedConnection(replacedConnectionId);
+                BeginCharacterSelection(
                     result.ConnectionId,
+                    result.ConnectionGeneration,
                     hello,
                     result.AccountId,
                     result.AccountName,
-                    result.Character,
-                    replacedConnectionId));
+                    result.Characters);
             }
+        }
+
+        private void BeginCharacterSelection(
+            int connectionId,
+            long connectionGeneration,
+            HelloMessage hello,
+            int accountId,
+            string accountName,
+            CharacterRecord[] characters)
+        {
+            long timeoutMs = (long)Math.Ceiling(_config.CharacterSelectTimeoutSeconds * 1000d);
+            _characterSelections[connectionId] = new CharacterSelectState(
+                connectionId,
+                connectionGeneration,
+                hello,
+                accountId,
+                accountName,
+                _clock() + timeoutMs);
+            EnqueueCharacterList(connectionId, characters);
+        }
+
+        private void EnqueueCharacterList(int connectionId, CharacterRecord[] characters)
+        {
+            CharacterListEntry[] entries = new CharacterListEntry[characters.Length];
+            for (int i = 0; i < characters.Length; i++)
+            {
+                CharacterRecord character = characters[i];
+                entries[i] = new CharacterListEntry(
+                    character.Id,
+                    character.Name,
+                    checked((byte)character.ClassId),
+                    checked((byte)character.Level));
+            }
+
+            List<CharacterClass> definitions = _zone.Classes.Classes!;
+            var classes = new CharacterClassEntry[definitions.Count];
+            for (int i = 0; i < definitions.Count; i++)
+            {
+                CharacterClass definition = definitions[i];
+                classes[i] = new CharacterClassEntry(checked((byte)definition.Id), definition.Name);
+            }
+
+            byte[] bytes = MessageCodec.EncodeCharacterList(new CharacterListMessage(
+                checked((byte)_config.MaxCharactersPerAccount),
+                entries,
+                classes));
+            Enqueue(connectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+        }
+
+        private void HandleCharacterOperationResult(LoginResult result)
+        {
+            if (!_characterSelections.TryGetValue(result.ConnectionId, out CharacterSelectState? state) ||
+                state.AccountId != result.AccountId ||
+                state.ConnectionGeneration != result.ConnectionGeneration ||
+                !_connectionGenerations.TryGetValue(result.ConnectionId, out long currentGeneration) ||
+                currentGeneration != result.ConnectionGeneration)
+            {
+                return;
+            }
+
+            if (state.Deadline <= _clock())
+            {
+                ExpireCharacterSelection(result.ConnectionId);
+                return;
+            }
+
+            state.OperationPending = false;
+            if (result.Error != null)
+            {
+                Console.Error.WriteLine("ERROR: no se pudo operar con el personaje: " + result.Error);
+                EnqueueCharacterRejected(result.ConnectionId, RejectReason.InternalError);
+                return;
+            }
+
+            if (!result.Success)
+            {
+                EnqueueCharacterRejected(result.ConnectionId, result.Failure);
+                return;
+            }
+
+            if (result.Operation == CharacterOperationKind.Select && result.Character != null)
+            {
+                _characterSelections.Remove(result.ConnectionId);
+                _control.Enqueue(ControlEvent.Join(
+                    result.ConnectionId,
+                    state.Hello,
+                    state.AccountId,
+                    state.AccountName,
+                    result.Character));
+                return;
+            }
+
+            if (result.Operation == CharacterOperationKind.Create ||
+                result.Operation == CharacterOperationKind.Delete)
+            {
+                EnqueueCharacterList(result.ConnectionId, result.Characters);
+                return;
+            }
+
+            EnqueueCharacterRejected(result.ConnectionId, RejectReason.CharacterNotFound);
+        }
+
+        private void HandleReplacedConnection(int connectionId)
+        {
+            if (connectionId == NoConnection)
+            {
+                return;
+            }
+
+            if (_characterSelections.Remove(connectionId))
+            {
+                byte[] reject = MessageCodec.EncodeReject(new RejectMessage(RejectReason.LoggedInElsewhere));
+                Enqueue(connectionId, reject, DeliveryMode.ReliableOrdered, disconnectAfter: true);
+                return;
+            }
+
+            _control.Enqueue(ControlEvent.Eject(connectionId));
+        }
+
+        private void HandleCharacterSelectionMessage(int connectionId, byte[] buffer, int offset, int length)
+        {
+            if (!_characterSelections.TryGetValue(connectionId, out CharacterSelectState? state))
+            {
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (state.Deadline <= _clock())
+            {
+                ExpireCharacterSelection(connectionId);
+                return;
+            }
+
+            if (state.OperationPending)
+            {
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            if (MessageCodec.TryReadCreateCharacter(buffer, offset, length, out CreateCharacterMessage create))
+            {
+                string name = LoginValidation.NormalizeCharacterName(create.Name);
+                if (!LoginValidation.IsValidCharacterName(name))
+                {
+                    EnqueueCharacterRejected(connectionId, RejectReason.NameInvalid);
+                    return;
+                }
+
+                if (_zone.Classes.Find(create.ClassId) == null)
+                {
+                    EnqueueCharacterRejected(connectionId, RejectReason.ClassUnknown);
+                    return;
+                }
+
+                if (_repository == null)
+                {
+                    CharacterCreateResult created = _memoryRepository!.CreateCharacter(
+                        state.AccountId,
+                        name,
+                        create.ClassId,
+                        _config.MaxCharactersPerAccount,
+                        _zone.Id,
+                        _config.Spawn,
+                        _mapHash);
+                    if (created.Success)
+                    {
+                        EnqueueCharacterList(connectionId, _memoryRepository.ListCharacters(state.AccountId));
+                    }
+                    else
+                    {
+                        EnqueueCharacterRejected(connectionId, created.Failure);
+                    }
+
+                    return;
+                }
+
+                EnqueueCharacterOperation(state, CharacterOperationKind.Create, name, create.ClassId, 0);
+                return;
+            }
+
+            if (MessageCodec.TryReadDeleteCharacter(buffer, offset, length, out DeleteCharacterMessage delete))
+            {
+                if (_repository == null)
+                {
+                    RejectReason failure = _memoryRepository!.DeleteCharacter(
+                        state.AccountId,
+                        delete.CharacterId,
+                        delete.ConfirmationName);
+                    if (failure == RejectReason.Unknown)
+                    {
+                        EnqueueCharacterList(connectionId, _memoryRepository.ListCharacters(state.AccountId));
+                    }
+                    else
+                    {
+                        EnqueueCharacterRejected(connectionId, failure);
+                    }
+
+                    return;
+                }
+
+                EnqueueCharacterOperation(
+                    state,
+                    CharacterOperationKind.Delete,
+                    delete.ConfirmationName,
+                    0,
+                    delete.CharacterId);
+                return;
+            }
+
+            if (MessageCodec.TryReadSelectCharacter(buffer, offset, length, out SelectCharacterMessage select))
+            {
+                if (_repository == null)
+                {
+                    if (!_memoryRepository!.TryGetCharacter(state.AccountId, select.CharacterId, out CharacterRecord? character) ||
+                        character == null)
+                    {
+                        EnqueueCharacterRejected(connectionId, RejectReason.CharacterNotFound);
+                        return;
+                    }
+
+                    _characterSelections.Remove(connectionId);
+                    _control.Enqueue(ControlEvent.Join(
+                        connectionId,
+                        state.Hello,
+                        state.AccountId,
+                        state.AccountName,
+                        character));
+                    return;
+                }
+
+                EnqueueCharacterOperation(state, CharacterOperationKind.Select, string.Empty, 0, select.CharacterId);
+                return;
+            }
+
+            // Durante la selección no se admiten acciones del juego ni otros tipos de mensaje.
+            Interlocked.Increment(ref _messagesRejected);
+        }
+
+        private void EnqueueCharacterOperation(
+            CharacterSelectState state,
+            CharacterOperationKind operation,
+            string name,
+            byte classId,
+            int characterId)
+        {
+            if (_login == null || _login.InFlight >= _config.MaxPendingLogins)
+            {
+                Interlocked.Increment(ref _messagesRejected);
+                return;
+            }
+
+            state.OperationPending = true;
+            _login.EnqueueCharacterOperation(new CharacterOperationRequest(
+                state.ConnectionId,
+                state.ConnectionGeneration,
+                state.AccountId,
+                state.AccountName,
+                operation,
+                name,
+                classId,
+                characterId,
+                _config.MaxCharactersPerAccount,
+                _zone.Id,
+                _config.Spawn,
+                _mapHash));
+        }
+
+        private void EnqueueCharacterRejected(int connectionId, RejectReason reason)
+        {
+            Interlocked.Increment(ref _messagesRejected);
+            byte[] bytes = MessageCodec.EncodeCharacterRejected(new CharacterRejectedMessage(reason));
+            Enqueue(connectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
         }
 
         /// <summary>
@@ -951,6 +1293,46 @@ namespace Avelora.Server.Net
                 _transport.Send(connectionId, bytes, bytes.Length, DeliveryMode.ReliableOrdered);
                 ScheduleDisconnect(connectionId, DisconnectReason.Timeout);
             }
+        }
+
+        private void ExpireCharacterSelections()
+        {
+            if (_characterSelections.Count == 0)
+            {
+                return;
+            }
+
+            long now = _clock();
+            List<int>? expired = null;
+            foreach (KeyValuePair<int, CharacterSelectState> pair in _characterSelections)
+            {
+                if (pair.Value.Deadline <= now)
+                {
+                    (expired ??= new List<int>()).Add(pair.Key);
+                }
+            }
+
+            if (expired == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < expired.Count; i++)
+            {
+                ExpireCharacterSelection(expired[i]);
+            }
+        }
+
+        private void ExpireCharacterSelection(int connectionId)
+        {
+            if (!_characterSelections.Remove(connectionId))
+            {
+                return;
+            }
+
+            byte[] bytes = MessageCodec.EncodeReject(new RejectMessage(RejectReason.Timeout));
+            _transport.Send(connectionId, bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            ScheduleDisconnect(connectionId, DisconnectReason.Timeout);
         }
 
         private void DrainOutbound()
@@ -1199,9 +1581,7 @@ namespace Avelora.Server.Net
 
             player.ConnectionId = connectionId;
 
-            string characterName = character?.Name ?? LoginValidation.ResolveCharacterName(
-                control.Hello.CharacterName,
-                LoginValidation.NormalizeAccount(control.Hello.AccountName));
+            string characterName = character?.Name ?? control.AccountName;
             characterName = TruncateUtf8(characterName, ProtocolConstants.MaxChatNameBytes);
 
             _sessions[connectionId] = new Session(
@@ -1249,6 +1629,12 @@ namespace Avelora.Server.Net
                 // Puede ser una conexión que reservó cuenta y se fue antes de que la simulación
                 // procesara el alta. Hay que soltar la reserva igualmente.
                 ReleaseConnection(connectionId);
+                if (rejectReason.HasValue)
+                {
+                    byte[] bytes = MessageCodec.EncodeReject(new RejectMessage(rejectReason.Value));
+                    Enqueue(connectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: true);
+                }
+
                 return;
             }
 
@@ -1302,7 +1688,7 @@ namespace Avelora.Server.Net
 
         private void SaveSession(Session session, PlayerEntity player, Zone zone)
         {
-            if (_saves == null || session.Character == null)
+            if (session.Character == null || (_saves == null && _memoryRepository == null))
             {
                 return;
             }
@@ -1351,7 +1737,27 @@ namespace Avelora.Server.Net
                 Experience = player.Experience,
                 UpdatedUtc = DateTime.UtcNow,
             };
-            _saves.Enqueue(session.Character);
+            if (_saves != null)
+            {
+                _saves.Enqueue(session.Character);
+            }
+            else
+            {
+                _memorySaves.Enqueue(session.Character);
+            }
+        }
+
+        private void DrainMemorySaves()
+        {
+            if (_memoryRepository == null)
+            {
+                return;
+            }
+
+            while (_memorySaves.TryDequeue(out CharacterRecord? character))
+            {
+                _memoryRepository.SaveCharacter(character);
+            }
         }
 
         private void OnInventoryChanged(PlayerEntity player)
@@ -1695,6 +2101,7 @@ namespace Avelora.Server.Net
                     healthPercent,
                     entity.Action,
                     entity is NpcEntity typed ? (ushort)typed.TypeId :
+                    entity is PlayerEntity classed ? checked((ushort)classed.ClassId) :
                     entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0,
                     entity is NpcEntity ranked ? ranked.Rank : (byte)0);
             }
@@ -1728,6 +2135,7 @@ namespace Avelora.Server.Net
         {
             Join = 0,
             Leave = 1,
+            Eject = 2,
         }
 
         /// <summary>Qué hacer con un mensaje según la frecuencia con la que llega.</summary>
@@ -1830,6 +2238,16 @@ namespace Avelora.Server.Net
                     string.Empty,
                     null,
                     NoConnection);
+
+            public static ControlEvent Eject(int connectionId) =>
+                new ControlEvent(
+                    ControlEventKind.Eject,
+                    connectionId,
+                    default,
+                    0,
+                    string.Empty,
+                    null,
+                    NoConnection);
         }
 
         private readonly struct OutboundMessage
@@ -1878,6 +2296,34 @@ namespace Avelora.Server.Net
 
             /// <summary>Última foto conocida del personaje; se actualiza al guardar.</summary>
             public CharacterRecord? Character { get; set; }
+        }
+
+        /// <summary>Estado de una cuenta autenticada que aún no seleccionó un personaje.</summary>
+        private sealed class CharacterSelectState
+        {
+            public CharacterSelectState(
+                int connectionId,
+                long connectionGeneration,
+                HelloMessage hello,
+                int accountId,
+                string accountName,
+                long deadline)
+            {
+                ConnectionId = connectionId;
+                ConnectionGeneration = connectionGeneration;
+                Hello = hello;
+                AccountId = accountId;
+                AccountName = accountName ?? string.Empty;
+                Deadline = deadline;
+            }
+
+            public int ConnectionId { get; }
+            public long ConnectionGeneration { get; }
+            public HelloMessage Hello { get; }
+            public int AccountId { get; }
+            public string AccountName { get; }
+            public long Deadline { get; }
+            public bool OperationPending { get; set; }
         }
 
         /// <summary>Cubo de fichas que repone usando los ticks publicados por la zona.</summary>

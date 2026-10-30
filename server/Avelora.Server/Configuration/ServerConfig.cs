@@ -51,6 +51,12 @@ namespace Avelora.Server.Configuration
         /// <summary>Identificador del primer personaje cuando la persistencia está desactivada.</summary>
         public int FirstCharacterId { get; set; } = 1;
 
+        /// <summary>Máximo de personajes vivos por cuenta (I-10), entre 1 y 10.</summary>
+        public int MaxCharactersPerAccount { get; set; } = 3;
+
+        /// <summary>Segundos máximos que una cuenta puede permanecer eligiendo personaje (I-10).</summary>
+        public double CharacterSelectTimeoutSeconds { get; set; } = 300d;
+
         /// <summary>Activa cuentas, personajes y guardado en SQLite (Etapa F).</summary>
         public bool PersistenceEnabled { get; set; } = true;
 
@@ -768,6 +774,19 @@ namespace Avelora.Server.Configuration
             if (MaxFailedLoginsPerAccountPerMinute < 1)
             {
                 throw new InvalidOperationException("maxFailedLoginsPerAccountPerMinute debe ser >= 1.");
+            }
+
+            if (MaxCharactersPerAccount < 1 || MaxCharactersPerAccount > ProtocolConstants.MaxCharactersPerAccount)
+            {
+                throw new InvalidOperationException(
+                    "maxCharactersPerAccount debe estar entre 1 y " + ProtocolConstants.MaxCharactersPerAccount + ".");
+            }
+
+            if (CharacterSelectTimeoutSeconds <= 0d ||
+                double.IsNaN(CharacterSelectTimeoutSeconds) ||
+                double.IsInfinity(CharacterSelectTimeoutSeconds))
+            {
+                throw new InvalidOperationException("characterSelectTimeoutSeconds debe ser positivo y finito.");
             }
         }
 

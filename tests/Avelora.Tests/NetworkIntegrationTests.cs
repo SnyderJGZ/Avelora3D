@@ -81,6 +81,15 @@ namespace Avelora.Tests
                     return;
                 }
 
+                if (MessageCodec.TryReadCharacterList(buffer, offset, length, out CharacterListMessage characterList))
+                {
+                    byte[] request = characterList.Characters.Length > 0
+                        ? MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(characterList.Characters[0].CharacterId))
+                        : MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("Heroe", characterList.Classes[0].ClassId));
+                    client.Send(request, request.Length, DeliveryMode.ReliableOrdered);
+                    return;
+                }
+
                 if (MessageCodec.TryReadWelcome(buffer, offset, length, out WelcomeMessage decodedWelcome))
                 {
                     welcome = decodedWelcome;
@@ -125,11 +134,10 @@ namespace Avelora.Tests
                     byte[] helloBytes = MessageCodec.EncodeHello(new HelloMessage(
                         ProtocolConstants.Version,
                         (ushort)SimulationConstants.TickRate,
-                        mapHash,
-                        7u,
-                        "dev",
-                        encrypted,
-                        "dev"));
+                         mapHash,
+                         7u,
+                         "dev",
+                         encrypted));
 
                     client.Send(helloBytes, helloBytes.Length, DeliveryMode.ReliableOrdered);
                     helloSent = true;
@@ -345,6 +353,15 @@ namespace Avelora.Tests
 
                 first.Received += (connectionId, buffer, offset, length) =>
                 {
+                    if (MessageCodec.TryReadCharacterList(buffer, offset, length, out CharacterListMessage list))
+                    {
+                        byte[] request = list.Characters.Length > 0
+                            ? MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(list.Characters[0].CharacterId))
+                            : MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("heroe", list.Classes[0].ClassId));
+                        first.Send(request, request.Length, DeliveryMode.ReliableOrdered);
+                        return;
+                    }
+
                     if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
                     {
                         firstNonce = challenge.Nonce;
@@ -369,6 +386,15 @@ namespace Avelora.Tests
 
                 second.Received += (connectionId, buffer, offset, length) =>
                 {
+                    if (MessageCodec.TryReadCharacterList(buffer, offset, length, out CharacterListMessage list))
+                    {
+                        byte[] request = list.Characters.Length > 0
+                            ? MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(list.Characters[0].CharacterId))
+                            : MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("heroe", list.Classes[0].ClassId));
+                        second.Send(request, request.Length, DeliveryMode.ReliableOrdered);
+                        return;
+                    }
+
                     if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
                     {
                         secondNonce = challenge.Nonce;
@@ -409,8 +435,7 @@ namespace Avelora.Tests
                             mapHash,
                             11u,
                             "cuenta",
-                            encrypted,
-                            "heroe"));
+                            encrypted));
 
                         first.Send(firstHello, firstHello.Length, DeliveryMode.ReliableOrdered);
                         sentFirstHello = true;
@@ -436,8 +461,7 @@ namespace Avelora.Tests
                             mapHash,
                             12u,
                             "cuenta",
-                            encrypted,
-                            "heroe"));
+                            encrypted));
 
                         second.Send(secondHello, secondHello.Length, DeliveryMode.ReliableOrdered);
                         sentSecondHello = true;

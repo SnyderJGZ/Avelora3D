@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using Avelora.Net;
 using Avelora.Server.Configuration;
@@ -82,6 +83,12 @@ namespace Avelora.Tests
         private sealed class Harness : IDisposable
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+            private readonly Dictionary<int, string> _selectionNames = new Dictionary<int, string>();
+            private readonly Dictionary<int, byte> _selectionClasses = new Dictionary<int, byte>();
+            private readonly HashSet<int> _automaticCharactersCreated = new HashSet<int>();
+            private readonly HashSet<int> _automaticSelectionsSent = new HashSet<int>();
+            private readonly HashSet<int> _pendingAutomaticHandshakes = new HashSet<int>();
+            private readonly bool _persistent;
 
             public Harness(
                 Action<ServerConfig>? configure = null,
@@ -91,6 +98,7 @@ namespace Avelora.Tests
                 IPlayerRepository? repository = null,
                 CharacterSaveService? saves = null)
             {
+                _persistent = repository != null;
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
                 Zone = NewZone(Config, withItems, npcs);
@@ -147,8 +155,14 @@ namespace Avelora.Tests
                 int connectionId,
                 ushort? version = null,
                 byte[]? mapHash = null,
-                string characterName = "dev")
+                string characterName = "dev",
+                byte classId = 1,
+                bool automaticallySelect = true,
+                string? accountNameOverride = null)
             {
+                string accountName = accountNameOverride ?? (_persistent
+                    ? "dev"
+                    : "dev" + connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 byte[] encrypted = HelloSecrets.Encrypt(
                     Server.PublicKey,
                     _challengeNonces[connectionId],
@@ -160,18 +174,167 @@ namespace Avelora.Tests
                     (ushort)SimulationConstants.TickRate,
                     mapHash ?? MapHash,
                     4242u + (uint)connectionId,
-                    "dev",
-                    encrypted,
-                    characterName);
+                    accountName,
+                    encrypted);
 
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
+                if (!automaticallySelect)
+                {
+                    return;
+                }
+
+                _selectionNames[connectionId] = _persistent || characterName != "dev"
+                    ? characterName
+                    : "dev" + connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                _selectionClasses[connectionId] = classId;
+                _pendingAutomaticHandshakes.Add(connectionId);
             }
 
-            /// <summary>Una vuelta de los dos hilos: altas/bajas y luego envío de lo encolado.</summary>
+            /// <summary>Alterna red y simulación hasta completar los saludos pendientes.</summary>
             public void Pump()
             {
+                long deadline = Environment.TickCount64 + 5_000;
+                while (_pendingAutomaticHandshakes.Count > 0)
+                {
+                    Server.BeforeTick(Zone);
+                    Server.PollOnce();
+                    ProcessCharacterLists();
+
+                    var completed = new List<int>();
+                    foreach (int connectionId in _pendingAutomaticHandshakes)
+                    {
+                        if (HasOutcome(connectionId))
+                        {
+                            completed.Add(connectionId);
+                        }
+                    }
+
+                    for (int i = 0; i < completed.Count; i++)
+                    {
+                        if (TryCharacterReject(completed[i], out CharacterRejectedMessage characterReject))
+                        {
+                            throw new InvalidOperationException(
+                                "El flujo automático rechazó el personaje de " + completed[i] + ": " + characterReject.Reason);
+                        }
+
+                        _pendingAutomaticHandshakes.Remove(completed[i]);
+                        RemoveCharacterMessages(completed[i]);
+                    }
+
+                    if (_pendingAutomaticHandshakes.Count == 0)
+                    {
+                        return;
+                    }
+
+                    if (Environment.TickCount64 >= deadline)
+                    {
+                        throw new TimeoutException("No se completó el flujo automático de selección de personaje.");
+                    }
+
+                    Thread.Sleep(1);
+                }
+
                 Server.BeforeTick(Zone);
                 Server.PollOnce();
+            }
+
+            public CharacterListMessage WaitForCharacterList(int connectionId)
+            {
+                long deadline = Environment.TickCount64 + 5_000;
+                while (Environment.TickCount64 < deadline)
+                {
+                    Server.PollOnce();
+                    for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                    {
+                        SentMessage sent = Transport.Sent[i];
+                        if (sent.ConnectionId == connectionId &&
+                            MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out CharacterListMessage list))
+                        {
+                            return list;
+                        }
+                    }
+
+                    Thread.Sleep(1);
+                }
+
+                throw new TimeoutException("No se recibió CharacterList para la conexión " + connectionId + ".");
+            }
+
+            private void ProcessCharacterLists()
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (!_pendingAutomaticHandshakes.Contains(sent.ConnectionId) ||
+                        !MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out CharacterListMessage list))
+                    {
+                        continue;
+                    }
+
+                    if (list.Characters.Length > 0)
+                    {
+                        if (_automaticSelectionsSent.Add(sent.ConnectionId))
+                        {
+                            byte[] select = MessageCodec.EncodeSelectCharacter(
+                                new SelectCharacterMessage(list.Characters[0].CharacterId));
+                            Transport.RaiseReceived(sent.ConnectionId, select);
+                        }
+                    }
+                    else if (_automaticCharactersCreated.Add(sent.ConnectionId))
+                    {
+                        byte[] create = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(
+                            _selectionNames[sent.ConnectionId],
+                            classId: _selectionClasses[sent.ConnectionId]));
+                        Transport.RaiseReceived(sent.ConnectionId, create);
+                    }
+                }
+            }
+
+            private bool HasOutcome(int connectionId)
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        (MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _) ||
+                         MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out _) ||
+                         MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out _)))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            private bool TryCharacterReject(int connectionId, out CharacterRejectedMessage reject)
+            {
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out reject))
+                    {
+                        return true;
+                    }
+                }
+
+                reject = default;
+                return false;
+            }
+
+            private void RemoveCharacterMessages(int connectionId)
+            {
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        (MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out _) ||
+                         MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out _)))
+                    {
+                        Transport.Sent.RemoveAt(i);
+                    }
+                }
             }
 
             public void Dispose() => Server.Dispose();
@@ -247,6 +410,176 @@ namespace Avelora.Tests
             Assert.Equal((byte)0, stats.DamageType);
             Assert.Equal((byte)1, stats.FreeReset);
             Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void Seleccion_Exige_Personaje_Rechaza_Acciones_De_Juego_Y_Expone_ClassId()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false);
+
+            CharacterListMessage initial = harness.WaitForCharacterList(1);
+            Assert.Empty(initial.Characters);
+            Assert.Equal(3, initial.MaxCharacters);
+            Assert.Equal(4, initial.Classes.Length);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeMoveInput(new MoveInputMessage(1, 1, 0)));
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(99)));
+            harness.Server.PollOnce();
+
+            Assert.Empty(harness.Zone.Entities.All);
+            Assert.Equal(2, harness.Server.Snapshot().MessagesRejected);
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.CharacterNotFound);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Mago", 255)));
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.ClassUnknown);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Mago", 2)));
+            harness.Server.PollOnce();
+            CharacterListMessage created = harness.WaitForCharacterList(1);
+            CharacterListEntry character = Assert.Single(created.Characters);
+            Assert.Equal("Mago", character.Name);
+            Assert.Equal((byte)2, character.ClassId);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeDeleteCharacter(
+                new DeleteCharacterMessage(character.CharacterId, "mago")));
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.ConfirmMismatch);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(character.CharacterId)));
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            PlayerEntity player = Assert.IsType<PlayerEntity>(Assert.Single(harness.Zone.Entities.All));
+            Assert.Equal(2, player.ClassId);
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _));
+
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            SnapshotMessage snapshot = SnapshotFor(harness, 1);
+            EntityState playerState = Assert.Single(snapshot.Entities, entity => entity.Id == player.Id);
+            Assert.Equal((ushort)2, playerState.TypeId);
+            Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void La_Seleccion_De_Personaje_Tiene_Un_Tope_De_Tiempo()
+        {
+            long now = 1000;
+            using var harness = new Harness(
+                config => config.CharacterSelectTimeoutSeconds = 1d,
+                clock: () => now);
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false);
+            Assert.Empty(harness.WaitForCharacterList(1).Characters);
+
+            now += 1001;
+            harness.Server.PollOnce();
+
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out RejectMessage reject) &&
+                reject.Reason == RejectReason.Timeout);
+            Assert.Empty(harness.Zone.Entities.All);
+        }
+
+        [Fact]
+        public void Seleccion_Que_Termina_Despues_Del_Plazo_No_Entra_Al_Mundo()
+        {
+            long now = 1000;
+            var repository = new BlockingSelectRepository();
+            try
+            {
+                using var saves = new CharacterSaveService(repository);
+                using var harness = new Harness(
+                    config => config.CharacterSelectTimeoutSeconds = 1d,
+                    clock: () => now,
+                    repository: repository,
+                    saves: saves);
+
+                harness.Connect(1);
+                harness.Handshake(1, automaticallySelect: false);
+                CharacterListMessage list = harness.WaitForCharacterList(1);
+                CharacterListEntry character = Assert.Single(list.Characters);
+
+                harness.Transport.RaiseReceived(1, MessageCodec.EncodeSelectCharacter(
+                    new SelectCharacterMessage(character.CharacterId)));
+                harness.Server.PollOnce();
+                Assert.True(repository.SelectionStarted.Wait(5_000), "La selección no llegó al repositorio.");
+
+                now += 1001;
+                repository.SelectionGate.Set();
+                Assert.True(repository.SelectionFinished.Wait(5_000), "La selección no terminó.");
+
+                harness.Server.PollOnce();
+                harness.Server.BeforeTick(harness.Zone);
+                harness.Server.PollOnce();
+
+                Assert.Empty(harness.Zone.Entities.All);
+                Assert.Contains(harness.Transport.Sent, sent =>
+                    sent.ConnectionId == 1 &&
+                    MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out RejectMessage reject) &&
+                    reject.Reason == RejectReason.Timeout);
+                Assert.DoesNotContain(harness.Transport.Sent, sent =>
+                    sent.ConnectionId == 1 &&
+                    MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _));
+            }
+            finally
+            {
+                repository.SelectionGate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Una_Cuenta_Nueva_Echa_A_La_Conexion_Que_Sigue_En_Seleccion()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false, accountNameOverride: "compartida");
+            Assert.Empty(harness.WaitForCharacterList(1).Characters);
+
+            harness.Connect(2);
+            harness.Handshake(2, automaticallySelect: false, accountNameOverride: "compartida");
+            Assert.Empty(harness.WaitForCharacterList(2).Characters);
+
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 1 &&
+                MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out RejectMessage reject) &&
+                reject.Reason == RejectReason.LoggedInElsewhere);
+
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Duo", 1)));
+            harness.Server.PollOnce();
+            CharacterListEntry character = Assert.Single(harness.WaitForCharacterList(2).Characters);
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(character.CharacterId)));
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            Assert.Single(harness.Zone.Entities.All);
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 2 &&
+                MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _));
         }
 
         [Fact]
@@ -464,8 +797,14 @@ namespace Avelora.Tests
             repository.Initialize();
             AccountLoginResult account = repository.Login("dev", "avelora-dev", "avelora-dev", "avelora-dev");
             Assert.True(account.Success);
-            CharacterRecord character = repository.GetOrCreateCharacter(
-                account.AccountId, "dev", 1, new Vec2(-1.5f, -2.5f), mapHash)!;
+            CharacterRecord character = repository.CreateCharacter(
+                account.AccountId,
+                "dev",
+                1,
+                3,
+                1,
+                new Vec2(-1.5f, -2.5f),
+                mapHash).Character!;
             repository.SaveCharacter(character);
 
             using var saves = new CharacterSaveService(repository);
@@ -525,6 +864,12 @@ namespace Avelora.Tests
             harness.Handshake(2, characterName: "Bruno");
             harness.Pump();
 
+            Assert.True(harness.Zone.Entities.Count >= 2,
+                string.Join(",", harness.Transport.Sent.Select(sent =>
+                    MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out RejectMessage reject)
+                        ? sent.ConnectionId + ":" + reject.Reason
+                        : sent.ConnectionId + ":" + (sent.Data.Length > 0 ? sent.Data[0].ToString() : "empty"))));
+
             ((PlayerEntity)harness.Zone.Entities.Get(1)!).Position = new Vec2(-7f, 5f);
             ((PlayerEntity)harness.Zone.Entities.Get(2)!).Position = new Vec2(7f, -5f);
             harness.Zone.Tick();
@@ -554,7 +899,7 @@ namespace Avelora.Tests
         {
             using var harness = new Harness();
             harness.Connect(1);
-            harness.Handshake(1, characterName: "😀😀😀😀😀😀😀");
+            harness.Handshake(1, characterName: new string('á', 16));
             harness.Pump();
             harness.Transport.Sent.Clear();
 
@@ -563,7 +908,7 @@ namespace Avelora.Tests
 
             SentMessage sent = Assert.Single(harness.Transport.Sent);
             Assert.True(MessageCodec.TryReadChat(sent.Data, 0, sent.Data.Length, out ChatMessage chat));
-            Assert.Equal("😀😀😀😀😀😀", chat.SenderName);
+            Assert.Equal(new string('á', 12), chat.SenderName);
         }
 
         [Fact]
@@ -1219,7 +1564,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Snapshot_Lleva_El_TypeId_Jugador_Cero_Y_Orco_2002()
+        public void El_Snapshot_Lleva_El_ClassId_Del_Jugador_Y_El_TypeId_Del_Orco()
         {
             using var harness = new Harness(config =>
             {
@@ -1229,7 +1574,7 @@ namespace Avelora.Tests
             });
 
             harness.Connect(1);
-            harness.Handshake(1);
+            harness.Handshake(1, characterName: "Mago", classId: 2);
             harness.Pump();
 
             PlayerEntity player = (PlayerEntity)harness.Zone.Entities.Get(1)!;
@@ -1266,10 +1611,10 @@ namespace Avelora.Tests
 
             SnapshotMessage snapshot = SnapshotFor(harness, 1);
 
-            // El jugador siempre manda TypeId = 0.
+            // El jugador manda classId = 2 en TypeId.
             EntityState playerState = Assert.Single(snapshot.Entities, e => e.Id == player.Id);
             Assert.Equal(EntityKind.Player, playerState.Kind);
-            Assert.Equal((ushort)0, playerState.TypeId);
+            Assert.Equal((ushort)2, playerState.TypeId);
             Assert.Equal((byte)0, playerState.Rank);
 
             // El orco 2002 manda su tipo en TypeId.
@@ -1659,6 +2004,183 @@ namespace Avelora.Tests
             }
 
             throw new InvalidOperationException("La conexión " + connectionId + " no recibió ningún snapshot.");
+        }
+
+        [Fact]
+        public void Fallo_Al_Crear_Rechaza_Y_Permite_Otro_Mensaje()
+        {
+            using var repository = new FailingCreateRepository();
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves);
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false);
+            harness.WaitForCharacterList(1);
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("Ana", 1)));
+
+            long deadline = Environment.TickCount64 + 5_000;
+            while (harness.Transport.Sent.Count == 0 && Environment.TickCount64 < deadline)
+            {
+                harness.Server.PollOnce();
+                Thread.Sleep(1);
+            }
+
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.InternalError);
+            Assert.Empty(harness.Transport.DisconnectedConnections);
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("Ana", 255)));
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.ClassUnknown);
+            Assert.Empty(harness.Transport.DisconnectedConnections);
+        }
+
+        [Fact]
+        public void Borrar_Antes_De_Procesar_La_Expulsion_No_Resucita_El_Personaje()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1, characterName: "Ana", accountNameOverride: "compartida");
+            harness.Pump();
+            Assert.Single(harness.Zone.Entities.All);
+            harness.Connect(2);
+            harness.Handshake(2, automaticallySelect: false, accountNameOverride: "compartida");
+            CharacterListEntry character = Assert.Single(harness.WaitForCharacterList(2).Characters);
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeDeleteCharacter(
+                new DeleteCharacterMessage(character.CharacterId, character.Name)));
+            Assert.Empty(harness.WaitForCharacterList(2).Characters);
+            Assert.Single(harness.Zone.Entities.All);
+
+            harness.Pump();
+
+            Assert.Empty(harness.Zone.Entities.All);
+            harness.Connect(3);
+            harness.Handshake(3, automaticallySelect: false, accountNameOverride: "compartida");
+            Assert.Empty(harness.WaitForCharacterList(3).Characters);
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(3, MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(character.CharacterId)));
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.CharacterNotFound);
+        }
+
+        [Fact]
+        public void Limite_Reducido_Permite_Listar_Seleccionar_Y_Borrar_Pero_No_Crear()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false, accountNameOverride: "compartida");
+            harness.WaitForCharacterList(1);
+            foreach (string name in new[] { "Ana", "Juan", "Luis" })
+            {
+                harness.Transport.Sent.Clear();
+                harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(name, 1)));
+                harness.WaitForCharacterList(1);
+            }
+
+            harness.Config.MaxCharactersPerAccount = 2;
+            harness.Connect(2);
+            harness.Handshake(2, automaticallySelect: false, accountNameOverride: "compartida");
+            CharacterListMessage list = harness.WaitForCharacterList(2);
+            Assert.Equal(2, list.MaxCharacters);
+            Assert.Equal(3, list.Characters.Length);
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage("Pedro", 1)));
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent =>
+                sent.ConnectionId == 2 &&
+                MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out CharacterRejectedMessage rejected) &&
+                rejected.Reason == RejectReason.CharacterLimit);
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(list.Characters[2].CharacterId)));
+            harness.Pump();
+            Assert.Contains(harness.Transport.Sent, sent => sent.ConnectionId == 2 &&
+                MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _));
+
+            harness.Connect(3);
+            harness.Handshake(3, automaticallySelect: false, accountNameOverride: "compartida");
+            Assert.Equal(3, harness.WaitForCharacterList(3).Characters.Length);
+            harness.Pump();
+            for (int i = 2; i >= 0; i--)
+            {
+                harness.Transport.Sent.Clear();
+                harness.Transport.RaiseReceived(3, MessageCodec.EncodeDeleteCharacter(
+                    new DeleteCharacterMessage(list.Characters[i].CharacterId, list.Characters[i].Name)));
+                Assert.Equal(i, harness.WaitForCharacterList(3).Characters.Length);
+            }
+        }
+
+        private sealed class FailingCreateRepository : IPlayerRepository
+        {
+            public void Initialize() { }
+            public AccountLoginResult Login(string accountName, string password, string invitationCode, string registrationCode) =>
+                AccountLoginResult.Ok(1);
+            public CharacterCreateResult CreateCharacter(int accountId, string name, byte classId,
+                int maxCharacters, int zoneId, Vec2 spawn, byte[] mapHash) =>
+                throw new InvalidOperationException("Fallo de creación simulado.");
+            public void SaveCharacter(CharacterRecord character) { }
+            public void Dispose() { }
+        }
+
+        private sealed class BlockingSelectRepository : IPlayerRepository
+        {
+            private readonly CharacterRecord _character = new CharacterRecord(
+                1,
+                1,
+                "Jugador",
+                1,
+                0,
+                100,
+                100,
+                1,
+                new Vec2(-1.5f, -2.5f),
+                new byte[ProtocolConstants.MapHashSize],
+                DateTime.UtcNow,
+                DateTime.UtcNow);
+
+            public ManualResetEventSlim SelectionStarted { get; } = new ManualResetEventSlim(false);
+            public ManualResetEventSlim SelectionGate { get; } = new ManualResetEventSlim(false);
+            public ManualResetEventSlim SelectionFinished { get; } = new ManualResetEventSlim(false);
+
+            public void Initialize()
+            {
+            }
+
+            public AccountLoginResult Login(
+                string accountName,
+                string password,
+                string invitationCode,
+                string registrationCode) => AccountLoginResult.Ok(1);
+
+            public CharacterRecord[] ListCharacters(int accountId) =>
+                accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();
+
+            public bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+            {
+                SelectionStarted.Set();
+                SelectionGate.Wait(TimeSpan.FromSeconds(10));
+                SelectionFinished.Set();
+                character = accountId == _character.AccountId && characterId == _character.Id
+                    ? _character
+                    : null;
+                return character != null;
+            }
+
+            public void SaveCharacter(CharacterRecord character)
+            {
+            }
+
+            public void Dispose()
+            {
+                SelectionStarted.Dispose();
+                SelectionGate.Dispose();
+                SelectionFinished.Dispose();
+            }
         }
 
         /// <summary>Transporte en memoria: los eventos los dispara la prueba, no un socket.</summary>

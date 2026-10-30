@@ -26,9 +26,13 @@ namespace Avelora.Shared.Protocol
         /// I-09 a 11 por <c>AllocatePoints</c>, <c>ResetPoints</c> y <c>Stats</c>; I-14 a 12
         /// por los mensajes y datos de equipo e inventario interactivo; I-20 a 13 porque el byte
         /// de acción de <c>EntityState</c> también transporta el rango de los PNJ; I-21 a 14 por
-        /// trocear <c>ItemCatalog</c> y retirar el mensaje <c>DropItem</c>.
+        /// trocear <c>ItemCatalog</c> y retirar <c>DropItem</c>; I-10 a 15 por el saludo sin
+        /// personaje y la selección posterior.
         /// </summary>
-        public const ushort Version = 14;
+        public const ushort Version = 15;
+
+        /// <summary>Máximo de personajes que puede transportar una lista por cuenta (I-10).</summary>
+        public const int MaxCharactersPerAccount = 10;
 
         /// <summary>Rango máximo representable en los dos bits asignados en el snapshot.</summary>
         public const byte MaxEntityRank = 3;
@@ -69,7 +73,7 @@ namespace Avelora.Shared.Protocol
         /// <summary>Tope de bytes UTF-8 de la contraseña que viaja en el saludo.</summary>
         public const int MaxPasswordBytes = 128;
 
-        /// <summary>Tope de bytes UTF-8 del nombre de personaje que viaja en el saludo.</summary>
+        /// <summary>Tope de bytes UTF-8 del nombre de personaje (I-10).</summary>
         public const int MaxCharacterNameBytes = 32;
 
         /// <summary>Tope de bytes UTF-8 del código de invitación que viaja en el saludo.</summary>

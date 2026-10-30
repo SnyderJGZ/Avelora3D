@@ -148,6 +148,39 @@ namespace Avelora.Tests
             }
         }
 
+        [Fact]
+        public void Resultado_De_Login_Antiguo_No_Autentica_Una_Conexion_Con_Id_Reutilizado()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository);
+
+                harness.Connect(1);
+                harness.Handshake(1, "cuenta1");
+                harness.Server.PollOnce();
+                Assert.True(repository.Started.Wait(5_000), "El primer login no empezó.");
+
+                harness.Transport.RaiseDisconnected(1);
+                harness.Connect(1);
+                harness.Handshake(1, "cuenta2");
+                harness.Server.PollOnce();
+
+                repository.Gate.Set();
+                Assert.True(repository.AllFinished.Wait(5_000), "No terminaron los dos logins.");
+                harness.Pump(1);
+
+                PlayerEntity player = Assert.IsType<PlayerEntity>(Assert.Single(harness.Zone.Entities.All));
+                Assert.Equal(2, player.CharacterId);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
         // ---------------------------------------------------------------- 4: tope de cola
 
         [Fact]
@@ -530,6 +563,7 @@ namespace Avelora.Tests
         {
             private readonly object _gate = new object();
             private readonly List<string> _accounts = new List<string>();
+            private readonly Dictionary<int, List<CharacterRecord>> _characters = new Dictionary<int, List<CharacterRecord>>();
             private int _finished;
 
             public ManualResetEventSlim Gate { get; } = new ManualResetEventSlim(false);
@@ -561,9 +595,12 @@ namespace Avelora.Tests
                 string invitationCode,
                 string registrationCode)
             {
+                int accountId;
                 lock (_gate)
                 {
                     _accounts.Add(accountName);
+                    accountId = _accounts.Count;
+                    _characters[accountId] = new List<CharacterRecord>();
                 }
 
                 Started.Set();
@@ -574,7 +611,7 @@ namespace Avelora.Tests
                     AllFinished.Set();
                 }
 
-                return AccountLoginResult.Ok(_accounts.Count);
+                return AccountLoginResult.Ok(accountId);
             }
 
             public CharacterRecord GetOrCreateCharacter(
@@ -596,6 +633,62 @@ namespace Avelora.Tests
                     mapHash,
                     DateTime.UtcNow,
                     DateTime.UtcNow);
+
+            public CharacterRecord[] ListCharacters(int accountId)
+            {
+                lock (_gate)
+                {
+                    return _characters.TryGetValue(accountId, out List<CharacterRecord>? characters)
+                        ? characters.ToArray()
+                        : Array.Empty<CharacterRecord>();
+                }
+            }
+
+            public CharacterCreateResult CreateCharacter(
+                int accountId,
+                string name,
+                byte classId,
+                int maxCharacters,
+                int zoneId,
+                Vec2 spawn,
+                byte[] mapHash)
+            {
+                var character = new CharacterRecord(
+                    accountId,
+                    accountId,
+                    name,
+                    1,
+                    0,
+                    100,
+                    100,
+                    zoneId,
+                    spawn,
+                    mapHash,
+                    DateTime.UtcNow,
+                    DateTime.UtcNow,
+                    classId: classId);
+                lock (_gate)
+                {
+                    _characters[accountId].Add(character);
+                }
+
+                return CharacterCreateResult.Created(character);
+            }
+
+            public bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+            {
+                lock (_gate)
+                {
+                    if (_characters.TryGetValue(accountId, out List<CharacterRecord>? characters))
+                    {
+                        character = characters.Find(candidate => candidate.Id == characterId);
+                        return character != null;
+                    }
+                }
+
+                character = null;
+                return false;
+            }
 
             public void SaveCharacter(CharacterRecord character)
             {
@@ -781,6 +874,8 @@ namespace Avelora.Tests
         private sealed class Harness : IDisposable
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+            private readonly HashSet<int> _creationRequestsSent = new HashSet<int>();
+            private readonly HashSet<int> _selectionRequestsSent = new HashSet<int>();
 
             public Harness(IPlayerRepository repository, Action<ServerConfig>? configure = null)
             {
@@ -865,8 +960,7 @@ namespace Avelora.Tests
                     MapHash,
                     1000u + (uint)connectionId,
                     account,
-                    encrypted,
-                    account);
+                    encrypted);
 
                 return MessageCodec.EncodeHello(hello);
             }
@@ -874,6 +968,7 @@ namespace Avelora.Tests
             /// <summary>Alterna los dos hilos hasta que la conexión reciba su desenlace.</summary>
             public void Pump(int connectionId)
             {
+                string characterName = "bot" + connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 long deadline = Environment.TickCount64 + 5_000;
 
                 while (true)
@@ -881,7 +976,31 @@ namespace Avelora.Tests
                     Server.BeforeTick(Zone);
                     Server.PollOnce();
 
-                    if (HasWelcome(connectionId) || HasReject(connectionId))
+                    for (int i = 0; i < Transport.Sent.Count; i++)
+                    {
+                        SentMessage sent = Transport.Sent[i];
+                        if (sent.ConnectionId != connectionId ||
+                            !MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out CharacterListMessage list))
+                        {
+                            continue;
+                        }
+
+                        if (list.Characters.Length > 0 && _selectionRequestsSent.Add(connectionId))
+                        {
+                            byte[] select = MessageCodec.EncodeSelectCharacter(
+                                new SelectCharacterMessage(list.Characters[0].CharacterId));
+                            Transport.RaiseReceived(connectionId, select);
+                        }
+                        else if (list.Characters.Length == 0 && list.Classes.Length > 0 &&
+                            _creationRequestsSent.Add(connectionId))
+                        {
+                            byte[] create = MessageCodec.EncodeCreateCharacter(
+                                new CreateCharacterMessage(characterName, list.Classes[0].ClassId));
+                            Transport.RaiseReceived(connectionId, create);
+                        }
+                    }
+
+                    if (HasWelcome(connectionId) || HasReject(connectionId) || HasCharacterRejected(connectionId))
                     {
                         return;
                     }
@@ -910,8 +1029,49 @@ namespace Avelora.Tests
 
                     Server.BeforeTick(Zone);
                     Server.PollOnce();
+                    PumpCharacterLists();
                     Thread.Sleep(1);
                 }
+            }
+
+            private void PumpCharacterLists()
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out CharacterListMessage list))
+                    {
+                        if (list.Characters.Length > 0 && _selectionRequestsSent.Add(sent.ConnectionId))
+                        {
+                            byte[] select = MessageCodec.EncodeSelectCharacter(
+                                new SelectCharacterMessage(list.Characters[0].CharacterId));
+                            Transport.RaiseReceived(sent.ConnectionId, select);
+                        }
+                        else if (list.Characters.Length == 0 && list.Classes.Length > 0 &&
+                            _creationRequestsSent.Add(sent.ConnectionId))
+                        {
+                            byte[] create = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(
+                                "bot" + sent.ConnectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                list.Classes[0].ClassId));
+                            Transport.RaiseReceived(sent.ConnectionId, create);
+                        }
+                    }
+                }
+            }
+
+            private bool HasCharacterRejected(int connectionId)
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out _))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             public bool HasWelcome(int connectionId)

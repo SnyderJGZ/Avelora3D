@@ -250,6 +250,12 @@ namespace Avelora.Bots
         private ushort _pendingAllocationPoints;
         private int _primaryAttribute = -1;
         private bool _hasStats;
+        private long _charactersCreated;
+        private long _characterRejects;
+        private bool _creatingCharacter;
+        private bool _selectionSent;
+        private string _characterNameAttempt = string.Empty;
+        private byte _lastCharacterClassId;
 
         // Mediciones de toda la vida del bot.
         private long _firstAttemptAt = -1;
@@ -374,6 +380,10 @@ namespace Avelora.Bots
 
         /// <summary>Reintentos hechos por <c>RateLimited</c>.</summary>
         public int Retries => _retries;
+
+        public long CharactersCreated => Interlocked.Read(ref _charactersCreated);
+
+        public long CharacterRejects => Interlocked.Read(ref _characterRejects);
 
         /// <summary>Hueco máximo, en ms, entre dos snapshots consecutivos después del <c>Welcome</c>.</summary>
         public long MaxSnapshotGapMs => _maxSnapshotGapMs;
@@ -949,6 +959,8 @@ namespace Avelora.Bots
             _challengeReceived = false;
             _keyMismatch = false;
             _challengeNonce = null;
+            _creatingCharacter = false;
+            _selectionSent = false;
 
             // La sesión es nueva: los inputs del intento anterior no sirven como redundancia.
             _recentCount = 0;
@@ -1034,12 +1046,25 @@ namespace Avelora.Bots
                 _mapHash,
                 _clientToken,
                 _accountName,
-                encrypted,
-                _accountName));
+                encrypted));
 
             // Se guarda el saludo tal cual para que el modo replay lo reenvíe en otra conexión.
             _helloBytes = hello;
             _transport!.Send(hello, hello.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        private void SendCreateCharacter(byte classId)
+        {
+            if (string.IsNullOrEmpty(_characterNameAttempt))
+            {
+                _characterNameAttempt = "bot" + Index.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            _creatingCharacter = true;
+            byte[] create = MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage(_characterNameAttempt, classId));
+            _transport!.Send(create, create.Length, DeliveryMode.ReliableOrdered);
         }
 
         /// <summary>
@@ -1461,6 +1486,73 @@ namespace Avelora.Bots
 
                 _rejectCounts.TryGetValue(reject.Reason, out int count);
                 _rejectCounts[reject.Reason] = count + 1;
+                return;
+            }
+
+            if (MessageCodec.TryReadCharacterRejected(
+                buffer, offset, length, out CharacterRejectedMessage characterRejected))
+            {
+                Interlocked.Increment(ref _characterRejects);
+                if (characterRejected.Reason == RejectReason.NameTaken && !_selectionSent)
+                {
+                    _characterNameAttempt += "x";
+                    if (_characterNameAttempt.Length <= 16)
+                    {
+                        SendCreateCharacter(_lastCharacterClassId);
+                        return;
+                    }
+                }
+
+                Status = "personaje rechazado (" + characterRejected.Reason + ")";
+                RejectReasonText = characterRejected.Reason.ToString();
+                return;
+            }
+
+            if (MessageCodec.TryReadCharacterList(buffer, offset, length, out CharacterListMessage characterList))
+            {
+                if (_creatingCharacter)
+                {
+                    for (int i = 0; i < characterList.Characters.Length; i++)
+                    {
+                        if (characterList.Characters[i].Name == _characterNameAttempt)
+                        {
+                            Interlocked.Increment(ref _charactersCreated);
+                            break;
+                        }
+                    }
+
+                    _creatingCharacter = false;
+                }
+
+                if (_selectionSent)
+                {
+                    return;
+                }
+
+                if (characterList.Characters.Length > 0)
+                {
+                    _selectionSent = true;
+                    byte[] select = MessageCodec.EncodeSelectCharacter(
+                        new SelectCharacterMessage(characterList.Characters[0].CharacterId));
+                    _transport!.Send(select, select.Length, DeliveryMode.ReliableOrdered);
+                    return;
+                }
+
+                if (characterList.Classes.Length == 0)
+                {
+                    Status = "el servidor no ofrece clases";
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_characterNameAttempt))
+                {
+                    _characterNameAttempt = "bot" + Index.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                CharacterClassEntry chosenClass = characterList.Classes[_random.Next(characterList.Classes.Length)];
+                _lastCharacterClassId = chosenClass.ClassId;
+                SendCreateCharacter(chosenClass.ClassId);
                 return;
             }
 

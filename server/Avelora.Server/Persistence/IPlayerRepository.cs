@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Persistence
 {
@@ -24,17 +25,30 @@ namespace Avelora.Server.Persistence
             string invitationCode,
             string registrationCode);
 
-        /// <summary>
-        /// Devuelve el personaje de esa cuenta o lo crea en <paramref name="spawn"/> si es la
-        /// primera vez. El nombre se compara sin distinguir mayúsculas. Devuelve <c>null</c> si la
-        /// cuenta ya tiene el máximo de personajes que admite la implementación.
-        /// </summary>
-        CharacterRecord? GetOrCreateCharacter(
+        /// <summary>Lista los personajes activos de la cuenta en orden de creación.</summary>
+        CharacterRecord[] ListCharacters(int accountId) => Array.Empty<CharacterRecord>();
+
+        /// <summary>Crea un personaje con la clase y los límites configurados.</summary>
+        CharacterCreateResult CreateCharacter(
             int accountId,
-            string characterName,
+            string name,
+            byte classId,
+            int maxCharacters,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash);
+            byte[] mapHash) => throw new NotSupportedException(
+                "Este repositorio no implementa la creación de personajes.");
+
+        /// <summary>Borra lógicamente un personaje tras confirmar su nombre exacto.</summary>
+        RejectReason DeleteCharacter(int accountId, int characterId, string confirmationName) =>
+            RejectReason.CharacterNotFound;
+
+        /// <summary>Busca un personaje activo perteneciente a la cuenta.</summary>
+        bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+        {
+            character = null;
+            return false;
+        }
 
         /// <summary>Guarda el estado actual del personaje. Debe ser seguro llamarlo desde la cola de guardado.</summary>
         void SaveCharacter(CharacterRecord character);

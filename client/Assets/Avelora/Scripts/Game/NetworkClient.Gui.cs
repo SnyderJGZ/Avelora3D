@@ -31,6 +31,10 @@ namespace Avelora.Client
         private GUIStyle _darkSmallStyle;
         private GUIStyle _darkTitleStyle;
         private GUIStyle _darkButtonStyle;
+        private GUIStyle _characterStatusStyle;
+        private Rect _characterPanel;
+        private string _deleteControlName = "avelora-character-delete";
+        private string _createControlName = "avelora-character-create";
 
         // Arte de la interfaz (Resources/GUI). Los iconos van por id de objeto (GUI/Items/<id>):
         // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
@@ -39,22 +43,20 @@ namespace Avelora.Client
 
         private void OnGUI()
         {
+            if (connectOnStart && !_welcomeReceived && (_connecting || _selectionActive))
+            {
+                EnsureOverlayStyles();
+                EnsureGuiArt();
+                DrawCharacterSelection();
+                return;
+            }
+
             if (!showOverlay)
             {
                 return;
             }
 
-            if (_overlayStyle == null)
-            {
-                _overlayStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 13,
-                    wordWrap = true,
-                };
-                _overlayStyle.normal.textColor = Color.white;
-                // Sin texto enriquecido: un <size=400> escrito en el chat taparía la pantalla de todos.
-                _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
-            }
+            EnsureOverlayStyles();
 
             RemotePlayerView selected = SelectedTarget();
             string rank = selected == null || selected.Rank == 0 ? string.Empty
@@ -88,6 +90,245 @@ namespace Avelora.Client
                 DrawOwnHealth();
                 DrawChat();
             }
+        }
+
+        private void EnsureOverlayStyles()
+        {
+            if (_overlayStyle != null)
+            {
+                return;
+            }
+
+            _overlayStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                wordWrap = true,
+            };
+            _overlayStyle.normal.textColor = Color.white;
+            // Sin texto enriquecido: un <size=400> escrito en el chat taparía la pantalla de todos.
+            _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
+        }
+
+        private void DrawCharacterSelection()
+        {
+            if (!_characterListReceived)
+            {
+                Rect waiting = new Rect((Screen.width - 440f) / 2f, (Screen.height - 76f) / 2f, 440f, 76f);
+                GUI.DrawTexture(waiting, _darkSlotFill);
+                GUI.Label(new Rect(waiting.x + 16f, waiting.y + 12f, waiting.width - 32f, 52f), _status, _darkTextStyle);
+                return;
+            }
+
+            CharacterListEntry[] characters = _characterList.Characters;
+            CharacterClassEntry[] classes = _characterList.Classes;
+            int classRows = (classes.Length + 1) / 2;
+            float contentHeight = 56f + (characters.Length * 32f) + 92f + (classRows * 36f) + 58f;
+            float width = Mathf.Min(560f, Screen.width - 24f);
+            float height = Mathf.Min(Screen.height - 24f, contentHeight + 82f);
+            _characterPanel = new Rect((Screen.width - width) / 2f, (Screen.height - height) / 2f, width, height);
+            GUI.DrawTexture(_characterPanel, _darkSlotFill);
+            GUI.Label(new Rect(_characterPanel.x + 16f, _characterPanel.y + 10f, width - 32f, 28f),
+                "Selección de personaje", _darkTitleStyle);
+
+            if (_confirmDelete)
+            {
+                DrawDeleteConfirmation();
+                DrawCharacterStatus(width);
+                return;
+            }
+
+            Rect viewport = new Rect(_characterPanel.x + 12f, _characterPanel.y + 42f, width - 24f, height - 82f);
+            Rect content = new Rect(0f, 0f, viewport.width - 18f, contentHeight);
+            _characterScroll = GUI.BeginScrollView(viewport, _characterScroll, content, false, true);
+            float y = 0f;
+
+            GUI.Label(new Rect(4f, y, content.width - 8f, 24f),
+                "Personajes (" + characters.Length + "/" + _characterList.MaxCharacters + ")", _darkTextStyle);
+            y += 25f;
+
+            for (int i = 0; i < characters.Length; i++)
+            {
+                CharacterListEntry character = characters[i];
+                var row = new Rect(4f, y, content.width - 8f, 30f);
+                if (character.CharacterId == _selectedCharacterId)
+                {
+                    GUI.color = new Color(0.34f, 0.4f, 0.48f, 0.9f);
+                    GUI.DrawTexture(row, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+
+                int clickCount = Event.current.clickCount;
+                if (LeftButton(row, GUIContent.none, GUIStyle.none))
+                {
+                    _selectedCharacterId = character.CharacterId;
+                    if (clickCount >= 2)
+                    {
+                        SelectCharacter(character.CharacterId);
+                    }
+                }
+
+                DrawClassSwatch(new Rect(row.x + 7f, row.y + 7f, 16f, 16f), character.ClassId);
+                GUI.Label(new Rect(row.x + 32f, row.y + 2f, row.width - 40f, 26f),
+                    character.Name + " · " + ClassName(classes, character.ClassId) + " · Nv " + character.Level,
+                    _darkTextStyle);
+                y += 32f;
+            }
+
+            if (characters.Length == 0)
+            {
+                GUI.Label(new Rect(8f, y, content.width - 16f, 26f), "Todavía no tienes personajes", _darkSmallStyle);
+                y += 28f;
+            }
+
+            bool canEnter = _selectedCharacterId != 0 && !_characterSelectionPending && !_characterOperationPending;
+            GUI.enabled = canEnter;
+            if (LeftButton(new Rect(8f, y, 110f, 30f), "Entrar", _darkButtonStyle))
+            {
+                SelectCharacter(_selectedCharacterId);
+            }
+
+            GUI.enabled = _selectedCharacterId != 0 && !_characterOperationPending && !_characterSelectionPending;
+            if (LeftButton(new Rect(126f, y, 110f, 30f), "Borrar", _darkButtonStyle))
+            {
+                _deleteConfirmationName = string.Empty;
+                _confirmDelete = true;
+            }
+
+            GUI.enabled = true;
+            y += 40f;
+            if (characters.Length < _characterList.MaxCharacters)
+            {
+                GUI.Label(new Rect(4f, y, content.width - 8f, 22f), "Crear personaje", _darkTextStyle);
+                y += 23f;
+
+                GUI.SetNextControlName(_createControlName);
+                _newCharacterName = GUI.TextField(new Rect(8f, y, Mathf.Min(260f, content.width - 16f), 26f),
+                    _newCharacterName, 32);
+                y += 32f;
+
+                for (int i = 0; i < classes.Length; i++)
+                {
+                    int column = i % 2;
+                    int row = i / 2;
+                    float cellWidth = (content.width - 20f) / 2f;
+                    var button = new Rect(8f + (column * (cellWidth + 4f)), y + (row * 34f), cellWidth, 30f);
+                    if (classes[i].ClassId == _createClassId)
+                    {
+                        GUI.color = new Color(0.34f, 0.4f, 0.48f, 0.9f);
+                        GUI.DrawTexture(button, Texture2D.whiteTexture);
+                        GUI.color = Color.white;
+                    }
+
+                    if (LeftButton(button, GUIContent.none, GUIStyle.none))
+                    {
+                        _createClassId = classes[i].ClassId;
+                    }
+
+                    DrawClassSwatch(new Rect(button.x + 6f, button.y + 7f, 16f, 16f), classes[i].ClassId);
+                    GUI.Label(new Rect(button.x + 28f, button.y + 2f, button.width - 34f, 26f), classes[i].Name, _darkSmallStyle);
+                }
+
+                y += classRows * 34f + 4f;
+                bool canCreate = classes.Length > 0 && _createClassId != 0 &&
+                    !_characterOperationPending && !_characterSelectionPending;
+                GUI.enabled = canCreate;
+                if (LeftButton(new Rect(8f, y, 150f, 30f), "Crear", _darkButtonStyle))
+                {
+                    CreateCharacter(_createClassId);
+                }
+
+                GUI.enabled = true;
+            }
+            else
+            {
+                GUI.Label(new Rect(8f, y, content.width - 16f, 26f), "Ya tienes el máximo de personajes", _darkSmallStyle);
+            }
+
+            GUI.EndScrollView();
+
+            DrawCharacterStatus(width);
+        }
+
+        private void DrawCharacterStatus(float width)
+        {
+            if (_characterStatusStyle == null)
+            {
+                _characterStatusStyle = new GUIStyle(_darkSmallStyle)
+                {
+                    wordWrap = false,
+                    clipping = TextClipping.Clip,
+                    richText = false,
+                };
+            }
+
+            GUI.Label(new Rect(_characterPanel.x + 14f, _characterPanel.yMax - 34f, width - 28f, 24f), _status, _characterStatusStyle);
+        }
+
+        private void DrawDeleteConfirmation()
+        {
+            CharacterListEntry selected = FindCharacter(_selectedCharacterId);
+            if (selected.CharacterId == 0)
+            {
+                _confirmDelete = false;
+                return;
+            }
+
+            const float width = 390f;
+            const float height = 154f;
+            var dialog = new Rect((Screen.width - width) / 2f, (Screen.height - height) / 2f, width, height);
+            GUI.DrawTexture(dialog, _darkSlotFill);
+            GUI.Label(new Rect(dialog.x + 14f, dialog.y + 10f, width - 28f, 28f),
+                "Escribe el nombre para borrar a " + selected.Name, _darkTextStyle);
+            GUI.SetNextControlName(_deleteControlName);
+            _deleteConfirmationName = GUI.TextField(
+                new Rect(dialog.x + 14f, dialog.y + 48f, width - 28f, 28f), _deleteConfirmationName, 32);
+
+            GUI.enabled = !_characterOperationPending && !_characterSelectionPending;
+            if (LeftButton(new Rect(dialog.x + 42f, dialog.y + 100f, 140f, 32f), "Confirmar", _darkButtonStyle))
+            {
+                DeleteCharacter(selected.CharacterId, _deleteConfirmationName);
+            }
+
+            GUI.enabled = true;
+            if (LeftButton(new Rect(dialog.x + 208f, dialog.y + 100f, 140f, 32f), "Cancelar", _darkButtonStyle))
+            {
+                _confirmDelete = false;
+            }
+        }
+
+        private void DrawClassSwatch(Rect rect, byte classId)
+        {
+            Color previous = GUI.color;
+            GUI.color = ClassColor(classId);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
+        private static string ClassName(CharacterClassEntry[] classes, byte classId)
+        {
+            for (int i = 0; i < classes.Length; i++)
+            {
+                if (classes[i].ClassId == classId)
+                {
+                    return classes[i].Name;
+                }
+            }
+
+            return "Clase " + classId;
+        }
+
+        private CharacterListEntry FindCharacter(int characterId)
+        {
+            CharacterListEntry[] characters = _characterList.Characters;
+            for (int i = 0; i < characters.Length; i++)
+            {
+                if (characters[i].CharacterId == characterId)
+                {
+                    return characters[i];
+                }
+            }
+
+            return default;
         }
 
         /// <summary>

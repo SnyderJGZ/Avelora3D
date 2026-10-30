@@ -1,7 +1,9 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using Avelora.Server.Items;
 using Avelora.Server.Progression;
 using Avelora.Shared;
@@ -21,10 +23,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 5;
-
-        /// <summary>Personajes que puede tener una cuenta. Frena la creación de filas por login.</summary>
-        public const int MaxCharactersPerAccount = 3;
+        public const int SchemaVersion = 6;
 
         private const string TimeFormat = "O";
 
@@ -142,18 +141,25 @@ namespace Avelora.Server.Persistence
                         MigrateV2ToV3(connection);
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
+                        MigrateV5ToV6(connection);
                         break;
                     case 2:
                         MigrateV2ToV3(connection);
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
+                        MigrateV5ToV6(connection);
                         break;
                     case 3:
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
+                        MigrateV5ToV6(connection);
                         break;
                     case 4:
                         MigrateV4ToV5(connection);
+                        MigrateV5ToV6(connection);
+                        break;
+                    case 5:
+                        MigrateV5ToV6(connection);
                         break;
                     case SchemaVersion:
                         break;
@@ -243,9 +249,47 @@ namespace Avelora.Server.Persistence
             return AccountLoginResult.Ok(accountId);
         }
 
-        public CharacterRecord? GetOrCreateCharacter(
+        public CharacterRecord[] ListCharacters(int accountId)
+        {
+            ThrowIfNotInitialized();
+
+            if (accountId <= 0)
+            {
+                return Array.Empty<CharacterRecord>();
+            }
+
+            using SqliteConnection connection = OpenConnection();
+            var characterIds = new List<int>();
+            using (SqliteCommand command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    "SELECT id FROM characters WHERE account_id = @account AND deleted_utc IS NULL ORDER BY id;";
+                command.Parameters.AddWithValue("@account", accountId);
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    characterIds.Add(reader.GetInt32(0));
+                }
+            }
+
+            var characters = new List<CharacterRecord>(characterIds.Count);
+            for (int i = 0; i < characterIds.Count; i++)
+            {
+                CharacterRecord? character = LoadCharacter(connection, accountId, characterIds[i]);
+                if (character != null)
+                {
+                    characters.Add(character);
+                }
+            }
+
+            return characters.ToArray();
+        }
+
+        public CharacterCreateResult CreateCharacter(
             int accountId,
-            string characterName,
+            string name,
+            byte classId,
+            int maxCharacters,
             int zoneId,
             Vec2 spawn,
             byte[] mapHash)
@@ -257,9 +301,14 @@ namespace Avelora.Server.Persistence
                 throw new ArgumentOutOfRangeException(nameof(accountId));
             }
 
-            if (!LoginValidation.IsValidCharacterName(characterName))
+            if (maxCharacters < 1 || maxCharacters > 10)
             {
-                throw new ArgumentException("El nombre del personaje no es válido.", nameof(characterName));
+                throw new ArgumentOutOfRangeException(nameof(maxCharacters), "El máximo debe estar entre 1 y 10.");
+            }
+
+            if (name is null)
+            {
+                throw new ArgumentNullException(nameof(name));
             }
 
             if (mapHash is null || mapHash.Length != ProtocolConstants.MapHashSize)
@@ -269,50 +318,91 @@ namespace Avelora.Server.Persistence
                     nameof(mapHash));
             }
 
-            using SqliteConnection connection = OpenConnection();
-
-            CharacterRecord? existing = FindCharacter(connection, accountId, characterName);
-
-            if (existing != null)
+            if (_classes.Find(classId) == null)
             {
-                return existing;
+                return CharacterCreateResult.Rejected(RejectReason.ClassUnknown);
             }
 
-            if (CountCharacters(connection, accountId) >= MaxCharactersPerAccount)
+            using SqliteConnection connection = OpenConnection();
+            using SqliteTransaction transaction = connection.BeginTransaction();
+
+            using (SqliteCommand account = connection.CreateCommand())
             {
-                // El llamador traduce el null a Reject(CharacterLimit): la cuenta existe y las
-                // credenciales eran válidas, pero no hay sitio para otro personaje.
-                return null;
+                account.Transaction = transaction;
+                account.CommandText = "SELECT 1 FROM accounts WHERE id = @account;";
+                account.Parameters.AddWithValue("@account", accountId);
+                if (account.ExecuteScalar() == null)
+                {
+                    return CharacterCreateResult.Rejected(RejectReason.CharacterNotFound);
+                }
+            }
+
+            string nameKey = name.ToLowerInvariant();
+            using (SqliteCommand duplicate = connection.CreateCommand())
+            {
+                duplicate.Transaction = transaction;
+                duplicate.CommandText =
+                    "SELECT 1 FROM characters WHERE name_key = @key AND deleted_utc IS NULL LIMIT 1;";
+                duplicate.Parameters.AddWithValue("@key", nameKey);
+                if (duplicate.ExecuteScalar() != null)
+                {
+                    return CharacterCreateResult.Rejected(RejectReason.NameTaken);
+                }
+            }
+
+            using (SqliteCommand count = connection.CreateCommand())
+            {
+                count.Transaction = transaction;
+                count.CommandText =
+                    "SELECT COUNT(*) FROM characters WHERE account_id = @account AND deleted_utc IS NULL;";
+                count.Parameters.AddWithValue("@account", accountId);
+                if (Convert.ToInt32(count.ExecuteScalar(), CultureInfo.InvariantCulture) >= maxCharacters)
+                {
+                    return CharacterCreateResult.Rejected(RejectReason.CharacterLimit);
+                }
             }
 
             DateTime now = DateTime.UtcNow;
-            DerivedCharacterStats stats = CharacterStats.Calculate(_classes, 1, 1, 0, 0, 0, 0);
+            DerivedCharacterStats stats = CharacterStats.Calculate(_classes, classId, 1, 0, 0, 0, 0);
 
             using SqliteCommand insert = connection.CreateCommand();
+            insert.Transaction = transaction;
             insert.CommandText =
                 "INSERT INTO characters " +
-                "(account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, " +
+                "(account_id, name, name_key, level, experience, health, mana, zone_id, x, y, map_hash, " +
                 "class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc) " +
-                "VALUES (@account, @name, 1, 0, @health, @mana, @zone, @x, @y, @map, 1, 0, 0, 0, 0, @created, @updated) " +
+                "VALUES (@account, @name, @key, 1, 0, @health, @mana, @zone, @x, @y, @map, @class, 0, 0, 0, 0, @created, @updated) " +
                 "RETURNING id;";
             insert.Parameters.AddWithValue("@account", accountId);
-            insert.Parameters.AddWithValue("@name", characterName);
+            insert.Parameters.AddWithValue("@name", name);
+            insert.Parameters.AddWithValue("@key", nameKey);
             insert.Parameters.AddWithValue("@health", stats.MaxHealth);
             insert.Parameters.AddWithValue("@mana", stats.MaxResource);
             insert.Parameters.AddWithValue("@zone", zoneId);
             insert.Parameters.AddWithValue("@x", (double)spawn.X);
             insert.Parameters.AddWithValue("@y", (double)spawn.Y);
             insert.Parameters.AddWithValue("@map", mapHash);
+            insert.Parameters.AddWithValue("@class", classId);
             insert.Parameters.AddWithValue("@created", FormatTime(now));
             insert.Parameters.AddWithValue("@updated", FormatTime(now));
 
-            object? result = insert.ExecuteScalar();
-            int characterId = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+            int characterId;
+            try
+            {
+                object? result = insert.ExecuteScalar();
+                characterId = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && IsNameKeyTaken(connection, transaction, nameKey))
+            {
+                return CharacterCreateResult.Rejected(RejectReason.NameTaken);
+            }
 
-            return new CharacterRecord(
+            transaction.Commit();
+
+            return CharacterCreateResult.Created(new CharacterRecord(
                 characterId,
                 accountId,
-                characterName,
+                name,
                 1,
                 0,
                 stats.MaxHealth,
@@ -322,7 +412,72 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 now,
                 now,
-                classId: 1);
+                classId: classId));
+        }
+
+        public RejectReason DeleteCharacter(int accountId, int characterId, string confirmationName)
+        {
+            ThrowIfNotInitialized();
+
+            if (accountId <= 0 || characterId <= 0)
+            {
+                return RejectReason.CharacterNotFound;
+            }
+
+            using SqliteConnection connection = OpenConnection();
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            string? name;
+            using (SqliteCommand find = connection.CreateCommand())
+            {
+                find.Transaction = transaction;
+                find.CommandText =
+                    "SELECT name FROM characters WHERE id = @id AND account_id = @account AND deleted_utc IS NULL;";
+                find.Parameters.AddWithValue("@id", characterId);
+                find.Parameters.AddWithValue("@account", accountId);
+                name = find.ExecuteScalar() as string;
+            }
+
+            if (name == null)
+            {
+                return RejectReason.CharacterNotFound;
+            }
+
+            if (!string.Equals(name, confirmationName, StringComparison.Ordinal))
+            {
+                return RejectReason.ConfirmMismatch;
+            }
+
+            using (SqliteCommand delete = connection.CreateCommand())
+            {
+                delete.Transaction = transaction;
+                delete.CommandText =
+                    "UPDATE characters SET deleted_utc = @deleted " +
+                    "WHERE id = @id AND account_id = @account AND deleted_utc IS NULL;";
+                delete.Parameters.AddWithValue("@deleted", FormatTime(DateTime.UtcNow));
+                delete.Parameters.AddWithValue("@id", characterId);
+                delete.Parameters.AddWithValue("@account", accountId);
+                if (delete.ExecuteNonQuery() != 1)
+                {
+                    return RejectReason.CharacterNotFound;
+                }
+            }
+
+            transaction.Commit();
+            return RejectReason.Unknown;
+        }
+
+        public bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+        {
+            ThrowIfNotInitialized();
+            if (accountId <= 0 || characterId <= 0)
+            {
+                character = null;
+                return false;
+            }
+
+            using SqliteConnection connection = OpenConnection();
+            character = LoadCharacter(connection, accountId, characterId);
+            return character != null;
         }
 
         public void SaveCharacter(CharacterRecord character)
@@ -344,7 +499,7 @@ namespace Avelora.Server.Persistence
                 "zone_id = @zone, x = @x, y = @y, map_hash = @map, " +
                 "class_id = @class, alloc_str = @allocStr, alloc_dex = @allocDex, " +
                 "alloc_int = @allocInt, alloc_vit = @allocVit, updated_utc = @updated " +
-                "WHERE id = @id AND account_id = @account;";
+                "WHERE id = @id AND account_id = @account AND deleted_utc IS NULL;";
             update.Parameters.AddWithValue("@level", character.Level);
             update.Parameters.AddWithValue("@experience", character.Experience);
             update.Parameters.AddWithValue("@health", character.Health);
@@ -366,6 +521,18 @@ namespace Avelora.Server.Persistence
 
             if (rows != 1)
             {
+                using SqliteCommand deleted = connection.CreateCommand();
+                deleted.Transaction = transaction;
+                deleted.CommandText =
+                    "SELECT 1 FROM characters WHERE id = @id AND account_id = @account AND deleted_utc IS NOT NULL;";
+                deleted.Parameters.AddWithValue("@id", character.Id);
+                deleted.Parameters.AddWithValue("@account", character.AccountId);
+                if (rows == 0 && deleted.ExecuteScalar() != null)
+                {
+                    // Un guardado pendiente de una sesión expulsada no debe recuperar un personaje borrado.
+                    return;
+                }
+
                 throw new InvalidOperationException(
                     "No se pudo guardar el personaje " + character.Id +
                     ": la base de datos no conoce esa combinación de personaje y cuenta.");
@@ -466,7 +633,9 @@ CREATE TABLE accounts (
 CREATE TABLE characters (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id      INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL COLLATE NOCASE,
+    name            TEXT NOT NULL,
+    name_key        TEXT NOT NULL,
+    deleted_utc     TEXT NULL,
     level           INTEGER NOT NULL DEFAULT 1,
     experience      INTEGER NOT NULL DEFAULT 0,
     health          INTEGER NOT NULL DEFAULT 100,
@@ -482,11 +651,11 @@ CREATE TABLE characters (
     alloc_int       INTEGER NOT NULL DEFAULT 0,
     alloc_vit       INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
-    updated_utc     TEXT NOT NULL,
-    UNIQUE (account_id, name)
+    updated_utc     TEXT NOT NULL
 );
 
 CREATE INDEX characters_account_idx ON characters(account_id);
+CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE deleted_utc IS NULL;
 ";
             command.ExecuteNonQuery();
             CreateInventorySchema(connection, transaction);
@@ -537,8 +706,154 @@ INSERT INTO character_equipment (character_id, slot, item_id)
 SELECT id, 0, equipped_item_id FROM characters WHERE equipped_item_id <> 0;
 ";
             command.ExecuteNonQuery();
-            SetUserVersion(connection, transaction, SchemaVersion);
+            SetUserVersion(connection, transaction, 5);
             transaction.Commit();
+        }
+
+        private static void MigrateV5ToV6(SqliteConnection connection)
+        {
+            using (SqliteCommand pragma = connection.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA foreign_keys=OFF;";
+                pragma.ExecuteNonQuery();
+            }
+
+            try
+            {
+                using SqliteTransaction transaction = connection.BeginTransaction();
+                var rows = new List<object[]>();
+                using (SqliteCommand read = connection.CreateCommand())
+                {
+                    read.Transaction = transaction;
+                    read.CommandText =
+                        "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, " +
+                        "equipped_item_id, class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc " +
+                        "FROM characters ORDER BY id;";
+                    using SqliteDataReader reader = read.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        var row = new object[19];
+                        for (int i = 0; i < row.Length; i++)
+                        {
+                            row[i] = reader.GetValue(i);
+                        }
+
+                        rows.Add(row);
+                    }
+                }
+
+                using (SqliteCommand create = connection.CreateCommand())
+                {
+                    create.Transaction = transaction;
+                    create.CommandText = @"
+CREATE TABLE characters_v6 (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id      INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    name_key        TEXT NOT NULL,
+    deleted_utc     TEXT NULL,
+    level           INTEGER NOT NULL DEFAULT 1,
+    experience      INTEGER NOT NULL DEFAULT 0,
+    health          INTEGER NOT NULL DEFAULT 100,
+    mana            INTEGER NOT NULL DEFAULT 100,
+    zone_id         INTEGER NOT NULL,
+    x               REAL NOT NULL,
+    y               REAL NOT NULL,
+    map_hash        BLOB NOT NULL,
+    equipped_item_id INTEGER NOT NULL DEFAULT 0,
+    class_id        INTEGER NOT NULL DEFAULT 1,
+    alloc_str       INTEGER NOT NULL DEFAULT 0,
+    alloc_dex       INTEGER NOT NULL DEFAULT 0,
+    alloc_int       INTEGER NOT NULL DEFAULT 0,
+    alloc_vit       INTEGER NOT NULL DEFAULT 0,
+    created_utc     TEXT NOT NULL,
+    updated_utc     TEXT NOT NULL
+);";
+                    create.ExecuteNonQuery();
+                }
+
+                var usedKeys = new HashSet<string>(StringComparer.Ordinal);
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    object[] row = rows[i];
+                    string originalName = Convert.ToString(row[2], CultureInfo.InvariantCulture) ?? string.Empty;
+                    string name = originalName;
+                    if (!IsValidLegacyCharacterName(originalName))
+                    {
+                        Console.Error.WriteLine(
+                            "AVISO: el nombre legacy del personaje " + row[0] + " ('" + originalName +
+                            "') no cumple las reglas nuevas; se conserva salvo que deba renombrarse por duplicado.");
+                    }
+
+                    string nameKey = name.ToLowerInvariant();
+                    if (!usedKeys.Add(nameKey))
+                    {
+                        int suffix = 2;
+                        do
+                        {
+                            name = CreateDuplicateName(originalName, suffix++);
+                            nameKey = name.ToLowerInvariant();
+                        }
+                        while (!usedKeys.Add(nameKey));
+
+                        Console.Error.WriteLine(
+                            "AVISO: el nombre legacy duplicado del personaje " + row[0] + " ('" + originalName +
+                            "') se renombró a '" + name + "'.");
+                    }
+
+                    using SqliteCommand insert = connection.CreateCommand();
+                    insert.Transaction = transaction;
+                    insert.CommandText = @"
+INSERT INTO characters_v6
+(id, account_id, name, name_key, deleted_utc, level, experience, health, mana, zone_id, x, y, map_hash,
+ equipped_item_id, class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc)
+VALUES
+(@id, @account, @name, @key, NULL, @level, @experience, @health, @mana, @zone, @x, @y, @map,
+ @equipped, @class, @str, @dex, @int, @vit, @created, @updated);";
+                    insert.Parameters.AddWithValue("@id", row[0]);
+                    insert.Parameters.AddWithValue("@account", row[1]);
+                    insert.Parameters.AddWithValue("@name", name);
+                    insert.Parameters.AddWithValue("@key", nameKey);
+                    insert.Parameters.AddWithValue("@level", row[3]);
+                    insert.Parameters.AddWithValue("@experience", row[4]);
+                    insert.Parameters.AddWithValue("@health", row[5]);
+                    insert.Parameters.AddWithValue("@mana", row[6]);
+                    insert.Parameters.AddWithValue("@zone", row[7]);
+                    insert.Parameters.AddWithValue("@x", row[8]);
+                    insert.Parameters.AddWithValue("@y", row[9]);
+                    insert.Parameters.AddWithValue("@map", row[10]);
+                    insert.Parameters.AddWithValue("@equipped", row[11]);
+                    insert.Parameters.AddWithValue("@class", row[12]);
+                    insert.Parameters.AddWithValue("@str", row[13]);
+                    insert.Parameters.AddWithValue("@dex", row[14]);
+                    insert.Parameters.AddWithValue("@int", row[15]);
+                    insert.Parameters.AddWithValue("@vit", row[16]);
+                    insert.Parameters.AddWithValue("@created", row[17]);
+                    insert.Parameters.AddWithValue("@updated", row[18]);
+                    insert.ExecuteNonQuery();
+                }
+
+                using (SqliteCommand replace = connection.CreateCommand())
+                {
+                    replace.Transaction = transaction;
+                    replace.CommandText = @"
+DROP INDEX IF EXISTS characters_account_idx;
+DROP TABLE characters;
+ALTER TABLE characters_v6 RENAME TO characters;
+CREATE INDEX characters_account_idx ON characters(account_id);
+CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE deleted_utc IS NULL;";
+                    replace.ExecuteNonQuery();
+                }
+
+                SetUserVersion(connection, transaction, SchemaVersion);
+                transaction.Commit();
+            }
+            finally
+            {
+                using SqliteCommand pragma = connection.CreateCommand();
+                pragma.CommandText = "PRAGMA foreign_keys=ON;";
+                pragma.ExecuteNonQuery();
+            }
         }
 
         private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
@@ -636,28 +951,100 @@ CREATE TABLE character_equipment (
                 reader.GetInt32(3));
         }
 
-        private static int CountCharacters(SqliteConnection connection, int accountId)
+        private static bool IsNameKeyTaken(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string nameKey)
         {
             using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM characters WHERE account_id = @account;";
-            command.Parameters.AddWithValue("@account", accountId);
-
-            return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+            command.Transaction = transaction;
+            command.CommandText =
+                "SELECT 1 FROM characters WHERE name_key = @key AND deleted_utc IS NULL LIMIT 1;";
+            command.Parameters.AddWithValue("@key", nameKey);
+            return command.ExecuteScalar() != null;
         }
 
-        private CharacterRecord? FindCharacter(
+        private static bool IsValidLegacyCharacterName(string name)
+        {
+            if (name.Length < 3 || name.Length > 16 || name != name.Trim() ||
+                Encoding.UTF8.GetByteCount(name) > ProtocolConstants.MaxChatNameBytes ||
+                !IsLetter(name[0]))
+            {
+                return false;
+            }
+
+            bool previousWasSpace = false;
+            for (int i = 0; i < name.Length; i++)
+            {
+                char value = name[i];
+                if (value == ' ')
+                {
+                    if (previousWasSpace || i == name.Length - 1)
+                    {
+                        return false;
+                    }
+
+                    previousWasSpace = true;
+                    continue;
+                }
+
+                if (!IsLetter(value) && (value < '0' || value > '9'))
+                {
+                    return false;
+                }
+
+                previousWasSpace = false;
+            }
+
+            string key = name.ToLowerInvariant();
+            return key != "admin" && key != "administrador" && key != "gm" && key != "moderador" &&
+                key != "mod" && key != "avelora" && key != "sistema" && key != "servidor" &&
+                key != "server" && key != "system";
+        }
+
+        private static bool IsLetter(char value) =>
+            (value >= 'a' && value <= 'z') ||
+            (value >= 'A' && value <= 'Z') ||
+            value == 'á' || value == 'é' || value == 'í' || value == 'ó' || value == 'ú' ||
+            value == 'ü' || value == 'ñ' || value == 'Á' || value == 'É' || value == 'Í' ||
+            value == 'Ó' || value == 'Ú' || value == 'Ü' || value == 'Ñ';
+
+        private static string CreateDuplicateName(string originalName, int suffix)
+        {
+            string suffixText = suffix.ToString(CultureInfo.InvariantCulture);
+            string prefix = IsValidLegacyCharacterName(originalName) ? originalName : "Nombre";
+            int maxPrefixLength = 16 - suffixText.Length;
+            if (maxPrefixLength < 1)
+            {
+                throw new InvalidOperationException("Hay demasiados nombres duplicados para renombrar en la migración v6.");
+            }
+
+            if (prefix.Length > maxPrefixLength)
+            {
+                prefix = prefix.Substring(0, maxPrefixLength).TrimEnd();
+            }
+
+            if (prefix.Length == 0)
+            {
+                prefix = "N";
+            }
+
+            return prefix + suffixText;
+        }
+
+        private CharacterRecord? LoadCharacter(
             SqliteConnection connection,
             int accountId,
-            string characterName)
+            int characterId)
         {
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
                 "map_hash, created_utc, updated_utc, class_id, " +
                 "alloc_str, alloc_dex, alloc_int, alloc_vit " +
-                "FROM characters WHERE account_id = @account AND name = @name COLLATE NOCASE LIMIT 1;";
+                "FROM characters WHERE account_id = @account AND id = @id AND deleted_utc IS NULL LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
-            command.Parameters.AddWithValue("@name", characterName);
+            command.Parameters.AddWithValue("@id", characterId);
 
             CharacterRecord? character;
             ushort[]? equipment = null;

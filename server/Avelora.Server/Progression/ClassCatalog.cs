@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Progression
 {
@@ -116,6 +117,20 @@ namespace Avelora.Server.Progression
             if (!hasWarrior)
             {
                 throw new InvalidOperationException("classes.json: debe existir la clase 1.");
+            }
+
+            int maxCharacterListSize = 4 +
+                ProtocolConstants.MaxCharactersPerAccount * (8 + ProtocolConstants.MaxCharacterNameBytes);
+            for (int i = 0; i < Classes.Count; i++)
+            {
+                maxCharacterListSize += 3 + Encoding.UTF8.GetByteCount(Classes[i]!.Name);
+            }
+
+            if (maxCharacterListSize > ProtocolConstants.MaxMessageSize)
+            {
+                throw new InvalidOperationException(
+                    "classes.json: CharacterList podría ocupar " + maxCharacterListSize +
+                    " bytes y superar el tope de " + ProtocolConstants.MaxMessageSize + ".");
             }
         }
 

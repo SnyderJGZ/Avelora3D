@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Avelora.Net;
 using Avelora.Server.Configuration;
 using Avelora.Server.Entities;
@@ -53,6 +55,80 @@ namespace Avelora.Tests
         }
 
         private string DatabasePath => Path.Combine(_folder, "avelora.db");
+
+        private static CharacterRecord? CreateOrLoadCharacterForTest(
+            IPlayerRepository repository,
+            int accountId,
+            string name,
+            int zoneId,
+            Vec2 spawn,
+            byte[] mapHash,
+            byte classId = 1)
+        {
+            CharacterRecord[] existing = repository.ListCharacters(accountId);
+            string nameKey = name.ToLowerInvariant();
+            for (int i = 0; i < existing.Length; i++)
+            {
+                if (existing[i].Name.ToLowerInvariant() == nameKey)
+                {
+                    return existing[i];
+                }
+            }
+
+            CharacterCreateResult result = repository.CreateCharacter(
+                accountId,
+                name,
+                classId,
+                10,
+                zoneId,
+                spawn,
+                mapHash);
+            return result.Success ? result.Character : null;
+        }
+
+        private void ConvertCharactersToVersion5()
+        {
+            using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+PRAGMA foreign_keys=OFF;
+DROP INDEX characters_name_key_unique;
+DROP INDEX characters_account_idx;
+CREATE TABLE characters_v5 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    level INTEGER NOT NULL DEFAULT 1,
+    experience INTEGER NOT NULL DEFAULT 0,
+    health INTEGER NOT NULL DEFAULT 100,
+    mana INTEGER NOT NULL DEFAULT 100,
+    zone_id INTEGER NOT NULL,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    map_hash BLOB NOT NULL,
+    equipped_item_id INTEGER NOT NULL DEFAULT 0,
+    class_id INTEGER NOT NULL DEFAULT 1,
+    alloc_str INTEGER NOT NULL DEFAULT 0,
+    alloc_dex INTEGER NOT NULL DEFAULT 0,
+    alloc_int INTEGER NOT NULL DEFAULT 0,
+    alloc_vit INTEGER NOT NULL DEFAULT 0,
+    created_utc TEXT NOT NULL,
+    updated_utc TEXT NOT NULL,
+    UNIQUE(account_id, name)
+);
+INSERT INTO characters_v5
+(id, account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, equipped_item_id,
+ class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc)
+SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, equipped_item_id,
+ class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc FROM characters;
+DROP TABLE characters;
+ALTER TABLE characters_v5 RENAME TO characters;
+CREATE INDEX characters_account_idx ON characters(account_id);
+PRAGMA user_version=5;
+PRAGMA foreign_keys=ON;";
+            command.ExecuteNonQuery();
+        }
 
         [Fact]
         public void CharacterRecord_Conserva_Las_Validaciones_Y_Copia_Los_Arrays_Al_Crear()
@@ -241,7 +317,7 @@ namespace Avelora.Tests
                 Assert.True(login.Success);
                 accountId = login.AccountId;
 
-                CharacterRecord? created = repository.GetOrCreateCharacter(
+                CharacterRecord? created = CreateOrLoadCharacterForTest(repository,
                     accountId,
                     "Heroe",
                     1,
@@ -274,7 +350,7 @@ namespace Avelora.Tests
                 Assert.True(login.Success);
                 Assert.Equal(accountId, login.AccountId);
 
-                CharacterRecord? loaded = reopened.GetOrCreateCharacter(
+                CharacterRecord? loaded = CreateOrLoadCharacterForTest(reopened,
                     login.AccountId,
                     "heroe",
                     1,
@@ -290,6 +366,278 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Crear_Lista_Y_Borrar_Usa_Clase_Orden_Y_Confirmacion_Exacta()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            int accountId = repository.Login("personajes", "secreto1", "inv", "inv").AccountId;
+            int otherAccountId = repository.Login("otra-cuenta", "secreto1", "inv", "inv").AccountId;
+
+            CharacterCreateResult firstResult = repository.CreateCharacter(
+                accountId, "Primero", 2, 10, 1, new Vec2(1, 2), NewHash(41));
+            CharacterCreateResult secondResult = repository.CreateCharacter(
+                accountId, "Segundo", 3, 10, 1, new Vec2(3, 4), NewHash(42));
+
+            Assert.True(firstResult.Success);
+            Assert.NotNull(firstResult.Character);
+            Assert.Equal(2, firstResult.Character.ClassId);
+            DerivedCharacterStats mage = CharacterStats.Calculate(ClassCatalog.Default, 2, 1, 0, 0, 0, 0);
+            Assert.Equal(mage.MaxHealth, firstResult.Character.Health);
+            Assert.Equal(mage.MaxResource, firstResult.Character.Mana);
+            Assert.True(secondResult.Success);
+            Assert.Equal(new[] { "Primero", "Segundo" }, repository.ListCharacters(accountId).Select(c => c.Name));
+
+            Assert.False(repository.TryGetCharacter(otherAccountId, firstResult.Character.Id, out CharacterRecord? foreign));
+            Assert.Null(foreign);
+            Assert.True(repository.TryGetCharacter(accountId, firstResult.Character.Id, out CharacterRecord? found));
+            Assert.Equal("Primero", found!.Name);
+
+            Assert.Equal(RejectReason.ConfirmMismatch,
+                repository.DeleteCharacter(accountId, firstResult.Character.Id, "primero"));
+            Assert.Equal(RejectReason.CharacterNotFound,
+                repository.DeleteCharacter(otherAccountId, firstResult.Character.Id, "Primero"));
+            Assert.Equal(RejectReason.Unknown,
+                repository.DeleteCharacter(accountId, firstResult.Character.Id, "Primero"));
+            Assert.False(repository.TryGetCharacter(accountId, firstResult.Character.Id, out _));
+            Assert.Equal(new[] { "Segundo" }, repository.ListCharacters(accountId).Select(c => c.Name));
+
+            CharacterCreateResult reused = repository.CreateCharacter(
+                otherAccountId, "primero", 1, 10, 1, new Vec2(0, 0), NewHash(43));
+            Assert.True(reused.Success);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Guardar_Personaje_Borrado_No_Lanza_Ni_Lo_Recupera(bool sqlite)
+        {
+            using IPlayerRepository repository = sqlite
+                ? new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000)
+                : new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            int accountId = repository.Login("personajes", "secreto1", "inv", "inv").AccountId;
+            CharacterRecord character = repository.CreateCharacter(
+                accountId, "Ana", 1, 3, 1, new Vec2(1, 2), NewHash(41)).Character!;
+            Assert.Equal(RejectReason.Unknown, repository.DeleteCharacter(accountId, character.Id, character.Name));
+
+            repository.SaveCharacter(character);
+
+            Assert.Empty(repository.ListCharacters(accountId));
+            Assert.False(repository.TryGetCharacter(accountId, character.Id, out _));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Guardar_Personaje_Inexistente_Lanza(bool sqlite)
+        {
+            using IPlayerRepository repository = sqlite
+                ? new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000)
+                : new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            int accountId = repository.Login("personajes", "secreto1", "inv", "inv").AccountId;
+            CharacterRecord character = repository.CreateCharacter(
+                accountId, "Ana", 1, 3, 1, new Vec2(1, 2), NewHash(41)).Character!;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                repository.SaveCharacter(character with { Id = character.Id + 100 }));
+            Assert.Single(repository.ListCharacters(accountId));
+        }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public void Guardar_Personaje_De_Otra_Cuenta_Lanza_Incluso_Si_Esta_Borrado(bool sqlite, bool deleted)
+        {
+            using IPlayerRepository repository = sqlite
+                ? new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000)
+                : new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            int accountId = repository.Login("personajes", "secreto1", "inv", "inv").AccountId;
+            int otherAccountId = repository.Login("otra-cuenta", "secreto1", "inv", "inv").AccountId;
+            CharacterRecord character = repository.CreateCharacter(
+                accountId, "Ana", 1, 3, 1, new Vec2(1, 2), NewHash(41)).Character!;
+            if (deleted)
+            {
+                Assert.Equal(RejectReason.Unknown, repository.DeleteCharacter(accountId, character.Id, character.Name));
+            }
+
+            Assert.Throws<InvalidOperationException>(() =>
+                repository.SaveCharacter(character with { AccountId = otherAccountId }));
+            Assert.Empty(repository.ListCharacters(otherAccountId));
+            Assert.Equal(!deleted, repository.TryGetCharacter(accountId, character.Id, out _));
+        }
+
+        [Fact]
+        public void Crear_Rechaza_Clase_Desconocida_Limite_Y_Nombres_Globales_Sin_Distinguir_Tildes()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            int firstAccount = repository.Login("cuenta-a", "secreto1", "inv", "inv").AccountId;
+            int secondAccount = repository.Login("cuenta-b", "secreto1", "inv", "inv").AccountId;
+
+            CharacterCreateResult unknownClass = repository.CreateCharacter(
+                firstAccount, "Personaje", 99, 10, 1, new Vec2(0, 0), NewHash(44));
+            Assert.False(unknownClass.Success);
+            Assert.Equal(RejectReason.ClassUnknown, unknownClass.Failure);
+
+            CharacterCreateResult first = repository.CreateCharacter(
+                firstAccount, "Ána", 1, 1, 1, new Vec2(0, 0), NewHash(45));
+            Assert.True(first.Success);
+            CharacterCreateResult sameName = repository.CreateCharacter(
+                secondAccount, "ána", 1, 10, 1, new Vec2(0, 0), NewHash(46));
+            Assert.False(sameName.Success);
+            Assert.Equal(RejectReason.NameTaken, sameName.Failure);
+
+            CharacterCreateResult overLimit = repository.CreateCharacter(
+                firstAccount, "Otro", 1, 1, 1, new Vec2(0, 0), NewHash(47));
+            Assert.False(overLimit.Success);
+            Assert.Equal(RejectReason.CharacterLimit, overLimit.Failure);
+
+            Assert.Equal(RejectReason.Unknown,
+                repository.DeleteCharacter(firstAccount, first.Character!.Id, "Ána"));
+            CharacterCreateResult afterDelete = repository.CreateCharacter(
+                firstAccount, "Otro", 1, 1, 1, new Vec2(0, 0), NewHash(55));
+            Assert.True(afterDelete.Success);
+        }
+
+        [Fact]
+        public void Borrado_Logico_Conserva_Inventario_Y_Equipo_Y_Libera_El_Nombre()
+        {
+            using var repository = new SqlitePlayerRepository(
+                DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
+            repository.Initialize();
+            int accountId = repository.Login("borrado", "secreto1", "inv", "inv").AccountId;
+            CharacterRecord character = repository.CreateCharacter(
+                accountId, "Conservado", 1, 10, 1, new Vec2(0, 0), NewHash(48)).Character!;
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Weapon] = 3101;
+            repository.SaveCharacter(character with
+            {
+                InventoryItems = new[] { new InventoryItemRecord(0, 3001, 2) },
+                Equipment = equipment,
+            });
+
+            Assert.Equal(RejectReason.Unknown,
+                repository.DeleteCharacter(accountId, character.Id, character.Name));
+            Assert.False(repository.TryGetCharacter(accountId, character.Id, out _));
+            CharacterRecord replacement = repository.CreateCharacter(
+                accountId, "Conservado", 1, 10, 1, new Vec2(1, 1), NewHash(49)).Character!;
+            Assert.NotEqual(character.Id, replacement.Id);
+
+            using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+            connection.Open();
+            using SqliteCommand counts = connection.CreateCommand();
+            counts.CommandText = @"
+SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
+       (SELECT COUNT(*) FROM character_equipment WHERE character_id=@id),
+       (SELECT deleted_utc IS NOT NULL FROM characters WHERE id=@id);";
+            counts.Parameters.AddWithValue("@id", character.Id);
+            using SqliteDataReader reader = counts.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
+            Assert.Equal(1, reader.GetInt32(1));
+            Assert.Equal(1, reader.GetInt32(2));
+        }
+
+        [Fact]
+        public async Task Creaciones_Concurrentes_Del_Mismo_Nombre_Solo_Aceptan_Una()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            int firstAccount = repository.Login("concurrente-a", "secreto1", "inv", "inv").AccountId;
+            int secondAccount = repository.Login("concurrente-b", "secreto1", "inv", "inv").AccountId;
+            using var barrier = new Barrier(2);
+
+            Task<CharacterCreateResult> Create(int accountId) => Task.Run(() =>
+            {
+                Assert.True(barrier.SignalAndWait(TimeSpan.FromSeconds(5)));
+                return repository.CreateCharacter(accountId, "Carrera", 1, 10, 1, new Vec2(0, 0), NewHash(50));
+            });
+
+            Task<CharacterCreateResult> first = Create(firstAccount);
+            Task<CharacterCreateResult> second = Create(secondAccount);
+            CharacterCreateResult[] results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(1, (results[0].Success ? 1 : 0) + (results[1].Success ? 1 : 0));
+            CharacterCreateResult rejected = results[0].Success ? results[1] : results[0];
+            Assert.Equal(RejectReason.NameTaken, rejected.Failure);
+        }
+
+        [Fact]
+        public void Migracion_V5_Renombra_Claves_Duplicadas_Y_Avisa_Sin_Cambiar_Nombres_Invalidos()
+        {
+            int firstAccount;
+            int secondAccount;
+            int thirdAccount;
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+                firstAccount = repository.Login("migrar-a", "secreto1", "inv", "inv").AccountId;
+                secondAccount = repository.Login("migrar-b", "secreto1", "inv", "inv").AccountId;
+                thirdAccount = repository.Login("migrar-c", "secreto1", "inv", "inv").AccountId;
+                repository.CreateCharacter(firstAccount, "Ana", 1, 10, 1, new Vec2(0, 0), NewHash(51));
+                repository.CreateCharacter(secondAccount, "Otra", 1, 10, 1, new Vec2(0, 0), NewHash(52));
+                repository.CreateCharacter(thirdAccount, "Bad_Name", 1, 10, 1, new Vec2(0, 0), NewHash(53));
+            }
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand update = connection.CreateCommand();
+                update.CommandText = "UPDATE characters SET name='ANA' WHERE account_id=@account;";
+                update.Parameters.AddWithValue("@account", secondAccount);
+                update.ExecuteNonQuery();
+            }
+
+            ConvertCharactersToVersion5();
+            TextWriter previousError = Console.Error;
+            using var warningLog = new StringWriter(CultureInfo.InvariantCulture);
+            try
+            {
+                Console.SetError(warningLog);
+                using var migrated = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+                migrated.Initialize();
+                Assert.Equal("Ana", Assert.Single(migrated.ListCharacters(firstAccount)).Name);
+                Assert.Equal("ANA2", Assert.Single(migrated.ListCharacters(secondAccount)).Name);
+                Assert.Equal("Bad_Name", Assert.Single(migrated.ListCharacters(thirdAccount)).Name);
+                Assert.Equal(6, QuerySchemaVersion());
+            }
+            finally
+            {
+                Console.SetError(previousError);
+            }
+
+            Assert.Contains("renombró", warningLog.ToString());
+            Assert.Contains("no cumple las reglas nuevas", warningLog.ToString());
+        }
+
+        [Fact]
+        public void Migracion_V5_Sin_Duplicados_Rellena_Las_Claves_Y_Crea_Indice_Parcial()
+        {
+            int accountId;
+            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                repository.Initialize();
+                accountId = repository.Login("migrar-solo", "secreto1", "inv", "inv").AccountId;
+                repository.CreateCharacter(accountId, "Único", 1, 10, 1, new Vec2(0, 0), NewHash(54));
+            }
+
+            ConvertCharactersToVersion5();
+            using (var migrated = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            {
+                migrated.Initialize();
+                CharacterRecord character = Assert.Single(migrated.ListCharacters(accountId));
+                Assert.Equal("único", ReadNameKey(character.Id));
+                Assert.Equal(6, QuerySchemaVersion());
+            }
+
+            Assert.True(IndexIsPartialAndUnique());
+        }
+
+        [Fact]
         public void Al_Cargar_Se_Corrigen_Level_Y_Experience_Invalidos_Sin_Cambiar_El_Esquema()
         {
             using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
@@ -298,7 +646,7 @@ namespace Avelora.Tests
             byte[] mapHash = NewHash(4);
             Vec2 spawn = new Vec2(1.5f, 1.5f);
 
-            CharacterRecord character = repository.GetOrCreateCharacter(
+            CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
 
             void SetProgress(long level, long experience)
@@ -313,7 +661,7 @@ namespace Avelora.Tests
                 update.ExecuteNonQuery();
             }
 
-            CharacterRecord Load() => repository.GetOrCreateCharacter(
+            CharacterRecord Load() => CreateOrLoadCharacterForTest(repository,
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
 
             SetProgress(-1, 10);
@@ -347,7 +695,7 @@ namespace Avelora.Tests
             AccountLoginResult login = repository.Login("cuenta", "secreto1", "invita", "invita");
             byte[] mapHash = NewHash(5);
             Vec2 spawn = new Vec2(1.5f, 1.5f);
-            CharacterRecord character = repository.GetOrCreateCharacter(
+            CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
 
             repository.SaveCharacter(character with
@@ -357,7 +705,7 @@ namespace Avelora.Tests
                 UpdatedUtc = DateTime.UtcNow,
             });
 
-            CharacterRecord loaded = repository.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(repository,
                 login.AccountId, "personaje", 1, spawn, mapHash)!;
             Assert.Equal(4, loaded.Level);
             Assert.Equal(275, loaded.Experience);
@@ -373,7 +721,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("clase", "secreto1", "inv", "inv").AccountId;
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
                 repository.SaveCharacter(character with
                 {
@@ -394,7 +742,7 @@ namespace Avelora.Tests
             using var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
             reopened.Initialize();
             int loadedAccount = reopened.Login("clase", "secreto1", "", "").AccountId;
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
 
             Assert.Equal(2, loaded.ClassId);
@@ -413,7 +761,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("correcciones-clase", "secreto1", "inv", "inv").AccountId;
-                characterId = repository.GetOrCreateCharacter(
+                characterId = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!.Id;
             }
 
@@ -430,7 +778,7 @@ namespace Avelora.Tests
 
             using var reopened = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
             reopened.Initialize();
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
 
             Assert.Equal(1, loaded.ClassId);
@@ -448,7 +796,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 AccountLoginResult login = repository.Login("bolsa", "secreto1", "inv", "inv");
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     login.AccountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
                 repository.SaveCharacter(character with
                 {
@@ -465,7 +813,7 @@ namespace Avelora.Tests
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3);
             reopened.Initialize();
             AccountLoginResult again = reopened.Login("bolsa", "secreto1", "", "");
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 again.AccountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             Assert.Equal(2, loaded.InventoryItems.Length);
             Assert.Contains(loaded.InventoryItems, item => item.Slot == 0 && item.ItemId == 3001 && item.Count == 5);
@@ -481,7 +829,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 int accountId = repository.Login("equipo", "secreto1", "inv", "inv").AccountId;
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
                 var equipment = new ushort[ProtocolConstants.EquipSlotCount];
                 equipment[(int)EquipSlot.Weapon] = 3101;
@@ -499,7 +847,7 @@ namespace Avelora.Tests
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
             reopened.Initialize();
             int loadedAccount = reopened.Login("equipo", "secreto1", "", "").AccountId;
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)3301, loaded.Equipment[(int)EquipSlot.Head]);
@@ -517,7 +865,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 int accountId = repository.Login("anillo", "secreto1", "inv", "inv").AccountId;
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!;
                 var equipment = new ushort[ProtocolConstants.EquipSlotCount];
                 equipment[(int)EquipSlot.Ring] = 3308; // +2 VIT = +10 de vida máxima
@@ -535,7 +883,7 @@ namespace Avelora.Tests
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
             reopened.Initialize();
             int loadedAccount = reopened.Login("anillo", "secreto1", "", "").AccountId;
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 loadedAccount, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             Assert.Equal(fullHealth, loaded.Health);
         }
@@ -554,7 +902,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("equipo-invalido", "secreto1", "inv", "inv").AccountId;
-                characterId = repository.GetOrCreateCharacter(
+                characterId = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!.Id;
             }
 
@@ -572,7 +920,7 @@ namespace Avelora.Tests
             using var reopened = new SqlitePlayerRepository(
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
             reopened.Initialize();
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             Assert.Equal((ushort)0, loaded.Equipment[(int)EquipSlot.Weapon]);
         }
@@ -585,7 +933,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 AccountLoginResult login = repository.Login("migracion", "secreto1", "inv", "inv");
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     login.AccountId, "Heroe", 1, new Vec2(1, 1), NewHash(9))!;
                 characterId = character.Id;
             }
@@ -597,6 +945,9 @@ namespace Avelora.Tests
                 command.CommandText =
                     "DROP TABLE inventory_items; " +
                     "DROP TABLE character_equipment; " +
+                    "DROP INDEX characters_name_key_unique; " +
+                    "ALTER TABLE characters DROP COLUMN name_key; " +
+                    "ALTER TABLE characters DROP COLUMN deleted_utc; " +
                     "ALTER TABLE characters DROP COLUMN equipped_item_id; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
@@ -616,7 +967,7 @@ namespace Avelora.Tests
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(5, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(6, Convert.ToInt32(version.ExecuteScalar()));
             using SqliteCommand characters = verify.CreateCommand();
             characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
             characters.Parameters.AddWithValue("@id", characterId);
@@ -634,7 +985,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("migracion2", "secreto1", "inv", "inv").AccountId;
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(2, 3), mapHash)!;
                 characterId = character.Id;
                 repository.SaveCharacter(character with
@@ -650,6 +1001,9 @@ namespace Avelora.Tests
                 using SqliteCommand command = connection.CreateCommand();
                 command.CommandText =
                     "DROP TABLE character_equipment; " +
+                    "DROP INDEX characters_name_key_unique; " +
+                    "ALTER TABLE characters DROP COLUMN name_key; " +
+                    "ALTER TABLE characters DROP COLUMN deleted_utc; " +
                     "ALTER TABLE characters DROP COLUMN equipped_item_id; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
@@ -664,7 +1018,7 @@ namespace Avelora.Tests
                        DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3))
             {
                 migrated.Initialize();
-                CharacterRecord character = migrated.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(migrated,
                     accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
                 Assert.Equal(characterId, character.Id);
                 Assert.Contains(character.InventoryItems, item => item.Slot == 1 && item.ItemId == 3001 && item.Count == 2);
@@ -675,7 +1029,7 @@ namespace Avelora.Tests
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(5, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(6, Convert.ToInt32(version.ExecuteScalar()));
         }
 
         [Fact]
@@ -689,7 +1043,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("migracion3", "secreto1", "inv", "inv").AccountId;
-                CharacterRecord character = repository.GetOrCreateCharacter(
+                CharacterRecord character = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(2, 3), mapHash)!;
                 characterId = character.Id;
                 var equipment = new ushort[ProtocolConstants.EquipSlotCount];
@@ -716,6 +1070,9 @@ namespace Avelora.Tests
                 command.CommandText =
                     "DROP TABLE character_equipment; " +
                     "UPDATE characters SET equipped_item_id=3101; " +
+                    "DROP INDEX characters_name_key_unique; " +
+                    "ALTER TABLE characters DROP COLUMN name_key; " +
+                    "ALTER TABLE characters DROP COLUMN deleted_utc; " +
                     "ALTER TABLE characters DROP COLUMN alloc_vit; " +
                     "ALTER TABLE characters DROP COLUMN alloc_int; " +
                     "ALTER TABLE characters DROP COLUMN alloc_dex; " +
@@ -729,7 +1086,7 @@ namespace Avelora.Tests
                        DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 3))
             {
                 migrated.Initialize();
-                CharacterRecord loaded = migrated.GetOrCreateCharacter(
+                CharacterRecord loaded = CreateOrLoadCharacterForTest(migrated,
                     accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
                 Assert.Equal(characterId, loaded.Id);
                 Assert.Equal(4, loaded.Level);
@@ -742,7 +1099,7 @@ namespace Avelora.Tests
                 Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
             }
 
-            Assert.Equal(5, QuerySchemaVersion());
+            Assert.Equal(6, QuerySchemaVersion());
         }
 
         [Fact]
@@ -755,7 +1112,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
                 accountId = repository.Login("migracion-v4", "secreto1", "inv", "inv").AccountId;
-                repository.GetOrCreateCharacter(accountId, "Heroe", 1, new Vec2(1, 1), mapHash);
+                CreateOrLoadCharacterForTest(repository,accountId, "Heroe", 1, new Vec2(1, 1), mapHash);
             }
 
             using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
@@ -765,6 +1122,9 @@ namespace Avelora.Tests
                 command.CommandText = @"
 DROP TABLE character_equipment;
 UPDATE characters SET equipped_item_id = 3101;
+DROP INDEX characters_name_key_unique;
+ALTER TABLE characters DROP COLUMN name_key;
+ALTER TABLE characters DROP COLUMN deleted_utc;
 PRAGMA user_version = 4;";
                 command.ExecuteNonQuery();
             }
@@ -772,10 +1132,10 @@ PRAGMA user_version = 4;";
             using var migrated = new SqlitePlayerRepository(
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
             migrated.Initialize();
-            CharacterRecord loaded = migrated.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(migrated,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
 
-            Assert.Equal(5, QuerySchemaVersion());
+            Assert.Equal(6, QuerySchemaVersion());
             Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
             Assert.All(loaded.Equipment.Skip(1), itemId => Assert.Equal((ushort)0, itemId));
         }
@@ -812,7 +1172,7 @@ PRAGMA user_version = 4;";
             {
                 repository.Initialize();
                 accountId = repository.Login("filas", "secreto1", "inv", "inv").AccountId;
-                characterId = repository.GetOrCreateCharacter(
+                characterId = CreateOrLoadCharacterForTest(repository,
                     accountId, "Heroe", 1, new Vec2(1, 1), mapHash)!.Id;
             }
 
@@ -834,7 +1194,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             using var reopened = new SqlitePlayerRepository(
                 DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests(), inventorySlots: 2);
             reopened.Initialize();
-            CharacterRecord loaded = reopened.GetOrCreateCharacter(
+            CharacterRecord loaded = CreateOrLoadCharacterForTest(reopened,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
             InventoryItemRecord only = Assert.Single(loaded.InventoryItems);
             Assert.Equal(0, only.Slot);
@@ -859,7 +1219,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
                 Assert.True(login.Success);
 
-                CharacterRecord? created = repository.GetOrCreateCharacter(
+                CharacterRecord? created = CreateOrLoadCharacterForTest(repository,
                     login.AccountId,
                     "Heroe",
                     1,
@@ -884,7 +1244,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 AccountLoginResult login = reopened.Login("vida", "secreto1", string.Empty, string.Empty);
                 Assert.True(login.Success);
 
-                CharacterRecord? loaded = reopened.GetOrCreateCharacter(
+                CharacterRecord? loaded = CreateOrLoadCharacterForTest(reopened,
                     login.AccountId,
                     "Heroe",
                     1,
@@ -944,7 +1304,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
                 Assert.True(login.Success);
 
-                CharacterRecord? created = repository.GetOrCreateCharacter(
+                CharacterRecord? created = CreateOrLoadCharacterForTest(repository,
                     login.AccountId,
                     "Heroe",
                     1,
@@ -1265,6 +1625,27 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             return Convert.ToInt32(query.ExecuteScalar());
         }
 
+        private string ReadNameKey(int characterId)
+        {
+            using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+            connection.Open();
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "SELECT name_key FROM characters WHERE id=@id;";
+            query.Parameters.AddWithValue("@id", characterId);
+            return Convert.ToString(query.ExecuteScalar(), CultureInfo.InvariantCulture)!;
+        }
+
+        private bool IndexIsPartialAndUnique()
+        {
+            using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+            connection.Open();
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='characters_name_key_unique';";
+            string? sql = Convert.ToString(query.ExecuteScalar(), CultureInfo.InvariantCulture);
+            return sql != null && sql.Contains("CREATE UNIQUE INDEX", StringComparison.OrdinalIgnoreCase) &&
+                sql.Contains("WHERE deleted_utc IS NULL", StringComparison.OrdinalIgnoreCase);
+        }
+
         [Fact]
         public void La_Misma_Cuenta_Desde_Dos_Conexiones_Echa_A_La_Conexion_Cero()
         {
@@ -1317,7 +1698,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             harness.Handshake(4, "dev", "avelora-dev", "cuatro");
             harness.Pump(4);
 
-            Assert.True(harness.LastReject(4, out RejectMessage reject));
+            Assert.True(harness.LastCharacterRejected(4, out CharacterRejectedMessage reject));
             Assert.Equal(RejectReason.CharacterLimit, reject.Reason);
 
             // Los tres personajes que ya existían siguen valiendo: el tope no los invalida.
@@ -1328,7 +1709,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 "avelora-dev");
 
             Assert.True(login.Success);
-            Assert.NotNull(harness.Repository.GetOrCreateCharacter(
+            Assert.NotNull(CreateOrLoadCharacterForTest(harness.Repository,
                 login.AccountId,
                 "uno",
                 1,
@@ -1376,6 +1757,9 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
         private sealed class ServerHarness : IDisposable
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
+            private readonly Dictionary<int, string> _characterNames = new Dictionary<int, string>();
+            private readonly HashSet<int> _creationRequestsSent = new HashSet<int>();
+            private readonly HashSet<int> _selectionRequestsSent = new HashSet<int>();
 
             public ServerHarness(string databasePath, NpcCatalog? npcs = null, ItemCatalog? items = null)
             {
@@ -1477,10 +1861,10 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                     MapHash,
                     1000u + (uint)connectionId,
                     account,
-                    encrypted,
-                    character);
+                    encrypted);
 
                 Transport.RaiseReceived(connectionId, MessageCodec.EncodeHello(hello));
+                _characterNames[connectionId] = character;
             }
 
             /// <summary>
@@ -1496,6 +1880,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 {
                     Server.BeforeTick(Zone);
                     Server.PollOnce();
+                    ProcessCharacterLists(connectionId);
 
                     if (HasOutcome(connectionId))
                     {
@@ -1512,6 +1897,44 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 }
             }
 
+            private void ProcessCharacterLists(int connectionId)
+            {
+                for (int i = 0; i < Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId != connectionId ||
+                        !MessageCodec.TryReadCharacterList(sent.Data, 0, sent.Data.Length, out CharacterListMessage list))
+                    {
+                        continue;
+                    }
+
+                    CharacterListEntry? requested = null;
+                    for (int j = 0; j < list.Characters.Length; j++)
+                    {
+                        if (list.Characters[j].Name == _characterNames[connectionId])
+                        {
+                            requested = list.Characters[j];
+                            break;
+                        }
+                    }
+
+                    if (requested.HasValue && _selectionRequestsSent.Add(connectionId))
+                    {
+                        byte[] select = MessageCodec.EncodeSelectCharacter(
+                            new SelectCharacterMessage(requested.Value.CharacterId));
+                        Transport.RaiseReceived(connectionId, select);
+                    }
+                    else if (!requested.HasValue && list.Classes.Length > 0 &&
+                        _creationRequestsSent.Add(connectionId))
+                    {
+                        byte[] create = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(
+                            _characterNames[connectionId],
+                            list.Classes[0].ClassId));
+                        Transport.RaiseReceived(connectionId, create);
+                    }
+                }
+            }
+
             private bool HasOutcome(int connectionId)
             {
                 for (int i = 0; i < Transport.Sent.Count; i++)
@@ -1524,7 +1947,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                     }
 
                     if (MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _) ||
-                        MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out _))
+                        MessageCodec.TryReadReject(sent.Data, 0, sent.Data.Length, out _) ||
+                        MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out _))
                     {
                         return true;
                     }
@@ -1566,6 +1990,22 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 return false;
             }
 
+            public bool LastCharacterRejected(int connectionId, out CharacterRejectedMessage reject)
+            {
+                for (int i = Transport.Sent.Count - 1; i >= 0; i--)
+                {
+                    SentMessage sent = Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadCharacterRejected(sent.Data, 0, sent.Data.Length, out reject))
+                    {
+                        return true;
+                    }
+                }
+
+                reject = default;
+                return false;
+            }
+
             public void Dispose()
             {
                 Server.Dispose();
@@ -1594,14 +2034,6 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
                 string password,
                 string invitationCode,
                 string registrationCode) =>
-                throw new NotSupportedException();
-
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
                 throw new NotSupportedException();
 
             public void SaveCharacter(CharacterRecord character)

@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-09 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b/I-09b pendientes).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-10 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -22,14 +22,17 @@ calcular igual (movimiento y colisión).
 > Desde I-09 (**protocolo v11**) los jugadores reparten atributos y pueden reajustarlos con la piedra 3201.
 > Desde I-14 (**protocolo v12**, esquema v5) hay 10 huecos de equipo, armaduras e inventario interactivo.
 > Desde I-20 los PNJ pueden aparecer con rangos definidos por datos, con multiplicadores de estadísticas
-> y tiradas adicionales de botín. I-21 fija el protocolo actual en **v14**: el catálogo de objetos se
-> reparte entre varios mensajes y tirar un objeto lo destruye; la persistencia sigue en esquema v5.
+> y tiradas adicionales de botín. I-21 fijó el protocolo en **v14**: el catálogo de objetos se
+> reparte entre varios mensajes y tirar un objeto lo destruye. I-10 sube el protocolo a **v15** y el
+> esquema SQLite a **v6**: el saludo autentica la cuenta y, después, cada conexión lista, crea, borra o
+> selecciona uno de hasta 10 personajes con su clase. La persistencia actual es esquema v6.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
 > [I-07](#chat-i-07-protocolo-v10) [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11) e
 > [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5),
-> [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13) e [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14).
+> [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13), [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14)
+> e [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -338,7 +341,7 @@ pueden discrepar** del formato.
 
 | Tipo | Byte | Dirección | Tamaño | Contenido |
 | --- | --- | --- | --- | --- |
-| `Hello` | 1 | C → S | 41 B + cadenas | versión (u16), tick (u16), token (u32), huella del mapa (32 B), cuenta, contraseña, personaje e invitación (cada una: longitud u16 + UTF-8) |
+| `Hello` | 1 | C → S | 299 B + cuenta | versión (u16), tick (u16), token (u32), huella del mapa (32 B), credenciales cifradas (256 B) y cuenta (longitud u16 + UTF-8); no incluye personaje |
 | `MoveInput` | 2 | C → S | 7 B | secuencia (u32), dirX (i8), dirY (i8) |
 | `Attack` | 3 | C → S | 5 B | objetivo (i32) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
@@ -357,12 +360,18 @@ pueden discrepar** del formato.
 | `Stats` | 18 | S → C | **37 B** | clase/nivel (u8), atributos efectivos y repartidos, puntos libres, vida, daño/tipo, defensa/resistencia, recurso y reajuste gratis |
 | `ResetPoints` | 19 | C → S | **1 B** | sin cuerpo; devuelve todos los puntos repartidos |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
+| `CreateCharacter` | 23 | C → S | 4 B + nombre | nombre UTF-8 (≤32 B) y `classId` (u8) |
+| `DeleteCharacter` | 24 | C → S | 7 B + nombre | `characterId` (i32) y nombre UTF-8 de confirmación |
+| `SelectCharacter` | 25 | C → S | 5 B | `characterId` (i32) |
+| `CharacterList` | 26 | S → C | variable, ≤1400 B | máximo por cuenta, personajes (id, nombre, clase, nivel) y clases disponibles (id, nombre) |
+| `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
-  `Stats` y `Chat`.
+  `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList` y
+  `CharacterRejected`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 
@@ -373,9 +382,10 @@ Canales:
 > `equippedItemId` al final de `Inventory`; I-06 sube a **v9** por `Progress`; I-07 sube a **v10** por
 > `ChatSend` y `Chat`; I-09 sube a **v11** por `AllocatePoints`, `ResetPoints` y `Stats`; I-14 sube a **v12** por `MoveItem`,
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
-> `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot y I-21 a
-> **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. El tamaño de
-> `EntityState` se mantiene en 15 B.
+> `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
+> **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
+> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes.
+> El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
 
@@ -402,9 +412,9 @@ cliente                                   servidor
 - Al llenarse la zona, el siguiente recibe `Reject(ServerFull)`; por eso el transporte admite más
   conexiones que jugadores.
 
-> Desde el **protocolo v4** (H-02), el servidor manda primero un `Challenge` y el `Hello` lleva las
-> credenciales cifradas. El diagrama de arriba es el de la Etapa C; el flujo actual está en
-> [Etapa H](#qué-hace-la-etapa-h).
+> Desde el **protocolo v4** el servidor manda primero un `Challenge` y cifra las credenciales; desde
+> I-10 (`v15`) el `Hello` ya no lleva personaje. Tras autenticarse, el servidor envía `CharacterList`
+> y solo crea una entidad de juego después de `SelectCharacter`.
 
 ### Los dos hilos
 
@@ -745,16 +755,16 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 - En cualquier otro caso se responde `Reject(InvalidCredentials)`, lo mismo que una contraseña
   incorrecta: así no se puede averiguar qué cuentas existen (H-01). `RegistrationClosed` sigue en
   el enum, pero el servidor ya no lo envía, y este fallo no gasta el cupo de intentos de ese nombre.
-- Cada cuenta tiene como máximo **3 personajes** (`MaxCharactersPerAccount`); el 4.º se rechaza con
-  `Reject(CharacterLimit)`.
-- Nombres válidos: cuenta de 3 a 32 caracteres y personaje de 2 a 32, solo letras, dígitos, `_` y
-  `-`; contraseña de 6 a 128. Si el personaje llega vacío se usa el nombre de la cuenta.
+- Cada cuenta tiene como máximo **`maxCharactersPerAccount`** personajes (defecto 3, rango 1–10); los
+  borrados no cuentan. Los límites de cuenta/contraseña siguen siendo 3–32 y 6–128 caracteres.
+- La cuenta se autentica primero; el flujo posterior de lista, creación, borrado lógico y selección
+  está documentado en [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6).
 
 ### Login en el hilo `avelora-login`
 
-- El hilo de red solo valida lo barato (versión, tick, mapa, nombres, límites) y encola un
+- El hilo de red solo valida lo barato (versión, tick, mapa, cuenta, límites) y encola un
   `LoginRequest`. `LoginWorker` lo procesa en su propio hilo, **`avelora-login`**: ahí se hace
-  PBKDF2, se lee SQLite y se carga o crea el personaje.
+  PBKDF2, se lee SQLite y se lista, crea, borra o carga el personaje solicitado.
 - El resultado vuelve por una cola que el hilo de red vacía en `PollOnce`. Un login lento no frena
   ni el tick ni el socket.
 - **`maxPendingLogins` (16)** es el tope de logins *en vuelo*: los que esperan en la cola **y** el
@@ -768,9 +778,9 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 
 ### Una sola sesión por cuenta
 
-- La reserva es por **cuenta**, no por personaje. Si la misma cuenta entra desde otra conexión, la
-  nueva pasa a ser la dueña y la anterior recibe `Reject(LoggedInElsewhere)`: se guarda su posición,
-  se retira su entidad y se suelta su conexión.
+- La reserva es por **cuenta**, desde la selección y no solo desde el juego. Si la misma cuenta entra
+  desde otra conexión, la nueva pasa a ser la dueña y la anterior recibe `Reject(LoggedInElsewhere)`;
+  si estaba jugando, se guarda su estado y se retira su entidad.
 - Si es el **mismo personaje**, la sesión nueva parte de la **última foto encolada** en
   `CharacterSaveService` (`TryGetLatest`): posición, vida e inventario vivos. Así no hereda lo que el
   login leyó de la base, que puede ir hasta un intervalo de guardado atrasado. Vale para la sesión
@@ -801,10 +811,10 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 
 ### Cliente de Unity
 
-- `NetworkClient` manda cuenta, contraseña, personaje e invitación dentro del `Hello` y valida el
-  `Welcome` como antes. Si el nombre del personaje va vacío, el servidor usa el de la cuenta.
-- La escena `AveloraEtapaA` serializa las credenciales de desarrollo: `accountName: dev`,
-  `password: avelora-dev`, `characterName` vacío e `invitationCode: avelora-dev`.
+- El cliente backend de Unity requiere I-10b: enviará cuenta, contraseña e invitación en el `Hello`,
+  recibirá `CharacterList` y permitirá crear, borrar o seleccionar antes de recibir `Welcome`.
+- La escena `AveloraEtapaA` conserva las credenciales de desarrollo (`accountName: dev`,
+  `password: avelora-dev`, `invitationCode: avelora-dev`); su interfaz aún no implementa la selección.
 - Los rechazos nuevos tienen texto propio: `LoggedInElsewhere` se muestra como «tu cuenta se ha
   conectado desde otro sitio», `InvalidCredentials` como «cuenta, contraseña o invitación
   incorrectas» (desde H-01) y `CharacterLimit` como «la cuenta ya tiene el máximo de personajes».
@@ -820,6 +830,8 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 | `saveIntervalSeconds` | **60** | Segundos entre guardados periódicos; debe ser positivo. |
 | `maxPendingLogins` | **16** | Logins en vuelo (cola + cálculo) antes de responder `RateLimited`. |
 | `maxFailedLoginsPerAccountPerMinute` | **5** | Fallos de contraseña por cuenta y minuto. |
+| `maxCharactersPerAccount` | **3** | Personajes vivos por cuenta, entre 1 y 10. |
+| `characterSelectTimeoutSeconds` | **300** | Tiempo máximo en la pantalla de selección; al vencer se cierra con `Timeout`. |
 | `rejectDisconnectDelayMilliseconds` | **500** | Espera antes de cortar una conexión ya rechazada; `0` corta en la vuelta siguiente. |
 
 ### Verificación de la Etapa F
@@ -833,7 +845,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2**: el `Hello` lleva credenciales y personaje; `Welcome`, `Reject` y `Snapshot` no cambian |
+| Protocolo | **v2** al cerrar F; la versión actual es **v15** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -863,9 +875,15 @@ cliente                                   servidor
    │ ──────────────────────────────────────► │
    │  Challenge(nonce 16 B, módulo, exp.)    │  nonce aleatorio, de un solo uso
    │ ◄────────────────────────────────────── │
-   │  Hello(…, cuenta, personaje,            │
+   │  Hello(…, cuenta,                        │
    │        RSA-OAEP(nonce ‖ clave ‖ invit.))│  se descifra en avelora-login
    │ ──────────────────────────────────────► │
+   │  CharacterList                          │  cuenta autenticada; sin entidad en el mundo
+   │ ◄────────────────────────────────────── │
+   │  Create/Delete/SelectCharacter          │  operaciones permitidas en selección
+   │ ──────────────────────────────────────► │
+   │  Welcome                                 │  solo tras seleccionar un personaje
+   │ ◄────────────────────────────────────── │
 ```
 
 - El servidor tiene una clave **RSA de 2048 bits** en `serverKeyPath` (`data/server-key.pem`, fuera
@@ -891,7 +909,8 @@ cliente                                   servidor
 ### Arreglos de la auditoría (H-01)
 
 Límite de login sin distinguir mayúsculas y contando los saludos en vuelo; registro cerrado por
-defecto; respuesta única para no revelar qué cuentas existen; máximo de 3 personajes por cuenta;
+defecto; respuesta única para no revelar qué cuentas existen; máximo configurable de 3 personajes por
+cuenta (rango 1–10);
 reintento de guardados fallidos; guardado al cerrar la ventana o al apagar; y la sincronización con
 Unity ya no pisa archivos más nuevos. Detalle en `docs/agentes/informes/H-01.md`.
 
@@ -1063,7 +1082,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos y chat | ⏳ I-01 a I-09 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-10 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1074,6 +1093,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-14** | Equipo de 10 huecos, armaduras e inventario interactivo (protocolo v12; esquema SQLite v5) | ✅ servidor, bots y cliente I-14b |
 | **I-20** | Rangos de PNJ configurables y multiplicadores (protocolo v13; esquema SQLite v5) | ✅ servidor y bots; cliente I-20b pendiente |
 | **I-21** | Catálogo troceado y tirar objetos = destruir (protocolo v14; esquema SQLite v5) | ✅ servidor y bots; cliente I-21b pendiente |
+| **I-10** | Personajes por cuenta y elección de clase (protocolo v15; esquema SQLite v6) | ✅ servidor y bots; cliente I-10b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1580,6 +1600,50 @@ red y ninguna línea `[corrección]`. Acciones válidas: 80 equipados, 53 desequ
 destruidos; las divisiones (10) e intercambios (3) son subconjuntos de los movimientos. Hubo 6805
 rechazos semánticos de acciones, sin saturación de cola. El botín generó/recogió **281/281** objetos y
 `objetos_descartados=0`; terminó con el suelo vacío. Logs: `tools/carga/resultados/20261028-224633-inventory-30-redund4-corr/`.
+
+### Personajes por cuenta (I-10, protocolo v15, esquema v6)
+
+La autenticación ya no elige un personaje. El flujo es `Challenge` → `Hello` (cuenta y credenciales
+cifradas, sin nombre de personaje) → login en `avelora-login` → `CharacterList`. La cuenta queda
+reservada desde ese momento, también mientras selecciona. En selección solo se permiten
+`CreateCharacter`, `DeleteCharacter` y `SelectCharacter`; los mensajes de juego se descartan y cuentan
+como rechazados. Crear, borrar y cargar para seleccionar se ejecutan en el hilo de login. Al seleccionar,
+el servidor entra al mundo y envía `Welcome`, catálogo, inventario, progreso y estadísticas como antes.
+`characterSelectTimeoutSeconds` (300 s) cierra con `Timeout` si no se completa la selección.
+
+| Mensaje | Tipo | Contenido |
+| --- | ---: | --- |
+| `CreateCharacter` | 23 | nombre UTF-8 (≤32 B) y `classId` |
+| `DeleteCharacter` | 24 | id y confirmación exacta del nombre guardado |
+| `SelectCharacter` | 25 | id del personaje de la cuenta autenticada |
+| `CharacterList` | 26 | máximo configurado, personajes y clases de `classes.json` |
+| `CharacterRejected` | 27 | `NameTaken`, `NameInvalid`, `CharacterLimit`, `CharacterNotFound`, `ClassUnknown` o `ConfirmMismatch` |
+
+`maxCharactersPerAccount` vale **3** por defecto y admite 1–10; el códec permite listas de hasta 10.
+Los borrados no cuentan para el límite. Los nombres de personaje se recortan en los extremos y deben
+tener 3–16 caracteres: letras ASCII o `áéíóúüñ` (mayúsculas incluidas), dígitos y espacios simples
+entre palabras; deben empezar por letra y no pueden ser reservados (`admin`, `administrador`, `gm`,
+`moderador`, `mod`, `avelora`, `sistema`, `servidor`, `server`, `system`). Se truncan al límite de
+24 bytes UTF-8 de `MaxChatNameBytes`, sin partir una secuencia UTF-8. Los nombres son únicos en todo el
+servidor, sin distinguir mayúsculas ni tildes en su caja (`ToLowerInvariant`). Al cargar
+`classes.json` se comprueba que una lista con 10 nombres de personaje de 32 bytes y las clases
+anunciadas cabe en el límite de 1400 bytes; una configuración que lo supere impide arrancar.
+
+El borrado es lógico: `deleted_utc` excluye el personaje de la lista y de la selección, pero conserva
+sus filas de inventario y equipo; el nombre queda libre. El esquema **v6** agrega `name_key` y
+`deleted_utc`, y crea un índice único parcial para personajes vivos. La migración v5→v6 rellena las
+claves; si había colisiones globales, renombra los posteriores con sufijo numérico y avisa por consola.
+Los nombres legacy que no satisfacen las reglas se conservan y también se notifican.
+
+Con `persistenceEnabled: false` se mantiene el mismo protocolo y flujo usando un repositorio en memoria;
+cuentas y personajes duran hasta apagar el servidor. El snapshot ahora lleva el `classId` de cada jugador
+en `TypeId`. Los bots seleccionan el primer personaje existente, o crean `bot<N>` (añadiendo `x` si el
+nombre está ocupado) con una clase anunciada por el servidor; informan `personajes_creados` y
+`rechazos_personaje`.
+
+**Verificación I-10:** protocolo v15; esquema SQLite v6; pruebas de selección, validación de nombres,
+clases, migraciones, borrado, concurrencia y recuperación persistente. Las ejecuciones de carga de 50
+bots se detallan debajo tras completar ambas pasadas.
 
 ### Chat (I-07, protocolo v10)
 

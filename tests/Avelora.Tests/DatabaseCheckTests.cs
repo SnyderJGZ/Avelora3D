@@ -40,6 +40,19 @@ namespace Avelora.Tests
 
         private string DatabasePath => Path.Combine(_folder, "avelora.db");
 
+        private static CharacterRecord? CreateOrLoadCharacterForTest(
+            IPlayerRepository repository,
+            int accountId,
+            string name,
+            int zoneId,
+            Vec2 spawn,
+            byte[] mapHash)
+        {
+            CharacterCreateResult result = repository.CreateCharacter(
+                accountId, name, 1, 10, zoneId, spawn, mapHash);
+            return result.Success ? result.Character : null;
+        }
+
         [Fact]
         public void Una_Base_Sana_Devuelve_Ok_Con_Sus_Cuentas_Y_Personajes()
         {
@@ -55,7 +68,7 @@ namespace Avelora.Tests
 
                 Assert.True(login.Success);
 
-                repository.GetOrCreateCharacter(
+                CreateOrLoadCharacterForTest(repository,
                     login.AccountId,
                     "Heroe",
                     1,
@@ -113,8 +126,8 @@ namespace Avelora.Tests
                 using SqliteCommand insert = connection.CreateCommand();
                 insert.CommandText =
                     "INSERT INTO characters " +
-                    "(account_id, name, level, experience, health, mana, zone_id, x, y, map_hash, created_utc, updated_utc) " +
-                    "VALUES (999, 'Huerfano', 1, 0, 100, 100, 1, 0, 0, @map, '2026-01-01T00:00:00.0000000Z', " +
+                    "(account_id, name, name_key, deleted_utc, level, experience, health, mana, zone_id, x, y, map_hash, created_utc, updated_utc) " +
+                    "VALUES (999, 'Huerfano', 'huerfano', NULL, 1, 0, 100, 100, 1, 0, 0, @map, '2026-01-01T00:00:00.0000000Z', " +
                     "'2026-01-01T00:00:00.0000000Z');";
                 insert.Parameters.AddWithValue("@map", NewHash());
                 insert.ExecuteNonQuery();

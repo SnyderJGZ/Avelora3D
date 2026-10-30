@@ -8,6 +8,8 @@
   "spawnX": -6.5,
   "spawnY": 0.5,
   "firstCharacterId": 1,
+  "maxCharactersPerAccount": 3,
+  "characterSelectTimeoutSeconds": 300,
   "persistenceEnabled": true,
   "databasePath": "data/avelora.db",
   "itemsPath": "items.json",

@@ -106,6 +106,22 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void CharacterList_No_Admite_Tantas_Clases_Que_Supere_El_Tope_De_Mensaje()
+        {
+            ClassCatalog catalog = Load();
+            for (int id = 5; id <= 39; id++)
+            {
+                catalog.Classes!.Add(NewClass(id));
+            }
+
+            catalog.Validate();
+            catalog.Classes!.Add(NewClass(40));
+
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => catalog.Validate());
+            Assert.Contains("1400", error.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Classes_Json_Rechaza_Base_Vacia_Y_Nombre_Mayor_De_24_Bytes_UTF8()
         {
             string missingBase = ClassesJson.Replace(
@@ -125,6 +141,25 @@ namespace Avelora.Tests
             string path = Path.Combine(Path.GetTempPath(), "no-existe-" + Guid.NewGuid().ToString("N") + ".json");
             Assert.Throws<FileNotFoundException>(() => ClassCatalog.Load(path));
         }
+
+        private static CharacterClass NewClass(int id) => new CharacterClass
+        {
+            Id = id,
+            Name = new string('x', 24),
+            Primary = "int",
+            Base = new CharacterAttributes { Str = 1, Dex = 2, Int = 7, Vit = 8 },
+            HealthPerVit = 5,
+            Defense = 0,
+            MagicResist = 0,
+            Resource = new CharacterResource { Name = "Maná", Base = 60, PerInt = 4 },
+            Unarmed = new UnarmedAttack
+            {
+                Damage = 10,
+                DamageType = "magical",
+                Range = 1.2f,
+                CooldownSeconds = 1d,
+            },
+        };
 
         [Theory]
         [InlineData(1, 100, 12, 100)]

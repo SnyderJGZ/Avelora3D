@@ -75,5 +75,20 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Cliente → servidor: destruir objetos explícitamente (I-14).</summary>
         DestroyItem = 22,
+
+        /// <summary>Cliente → servidor: crear un personaje (I-10).</summary>
+        CreateCharacter = 23,
+
+        /// <summary>Cliente → servidor: borrar un personaje con confirmación (I-10).</summary>
+        DeleteCharacter = 24,
+
+        /// <summary>Cliente → servidor: seleccionar un personaje (I-10).</summary>
+        SelectCharacter = 25,
+
+        /// <summary>Servidor → cliente: personajes de la cuenta y clases disponibles (I-10).</summary>
+        CharacterList = 26,
+
+        /// <summary>Servidor → cliente: rechazo de una acción de personaje (I-10).</summary>
+        CharacterRejected = 27,
     }
 }

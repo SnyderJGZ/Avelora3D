@@ -53,9 +53,6 @@ namespace Avelora.Client
         [Tooltip("Contraseña de la cuenta. Viaja cifrada con RSA-OAEP-SHA1 dentro del saludo (protocolo v4).")]
         [SerializeField] private string password = "avelora-dev";
 
-        [Tooltip("Personaje a cargar. Vacío usa el mismo nombre que la cuenta.")]
-        [SerializeField] private string characterName = "";
-
         [Tooltip("Código para registrar la cuenta si todavía no existe. Vacío = no registrar.")]
         [SerializeField] private string invitationCode = "avelora-dev";
 
@@ -68,8 +65,6 @@ namespace Avelora.Client
         [Header("Predicción e interpolación")]
         [Tooltip("Retraso con el que se dibuja al resto: 100 ms son dos snapshots a 20 Hz.")]
         [SerializeField] private float interpolationDelay = 0.1f;
-
-        [SerializeField] private Color remotePlayerColor = new Color(0.45f, 0.8f, 1f, 1f);
 
         [SerializeField] private Color npcColor = new Color(1f, 0.6f, 0.2f, 1f);
 
@@ -189,6 +184,19 @@ namespace Avelora.Client
         private System.Security.Cryptography.RSAParameters _serverPublicKey;
         private string _status = "sin conectar";
         private RejectReason? _lastReject;
+        private CharacterListMessage _characterList;
+        private bool _characterListReceived;
+        private bool _selectionActive;
+        private bool _characterOperationPending;
+        private bool _characterSelectionPending;
+        private bool _confirmDelete;
+        private int _selectedCharacterId;
+        private byte _selectedClassId;
+        private byte _createClassId;
+        private string _newCharacterName = string.Empty;
+        private string _deleteConfirmationName = string.Empty;
+        private Vector2 _characterScroll;
+        private ClassLook _classLook;
 
         /// <summary>Estado legible para el overlay y las pruebas automáticas.</summary>
         public string Status => _status;
@@ -245,6 +253,7 @@ namespace Avelora.Client
             _map = GetComponent<AveloraMap>();
             _localRenderer = GetComponent<SpriteRenderer>();
             _offlineController = GetComponent<LocalPlayerController>();
+            _classLook = ClassLook.Load();
         }
 
         private void Start()
@@ -315,6 +324,15 @@ namespace Avelora.Client
             _catalogReceived = false;
             _accumulator = 0;
             _lastReject = null;
+            _characterList = default;
+            _characterListReceived = false;
+            _selectionActive = false;
+            _characterOperationPending = false;
+            _characterSelectionPending = false;
+            _confirmDelete = false;
+            _selectedCharacterId = 0;
+            _selectedClassId = 0;
+            _createClassId = 0;
             _welcomeReceived = false;
             _disconnectRequested = false;
             _challengeReceived = false;
@@ -911,9 +929,6 @@ namespace Avelora.Client
             }
 
             string account = accountName == null ? string.Empty : accountName.Trim();
-            string character = string.IsNullOrWhiteSpace(characterName)
-                ? account
-                : characterName.Trim();
 
             byte[] encrypted = HelloSecrets.Encrypt(
                 _serverPublicKey,
@@ -927,8 +942,7 @@ namespace Avelora.Client
                 _map.ContentHashBytes,
                 _clientToken,
                 account,
-                encrypted,
-                character);
+                encrypted);
 
             byte[] bytes = MessageCodec.EncodeHello(hello);
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
@@ -939,6 +953,10 @@ namespace Avelora.Client
         {
             _connecting = false;
             _welcomeReceived = false;
+            _selectionActive = false;
+            _characterListReceived = false;
+            _characterOperationPending = false;
+            _characterSelectionPending = false;
             _disconnectRequested = true;
             _challengeReceived = false;
             _challengeNonce = null;
@@ -976,6 +994,26 @@ namespace Avelora.Client
                     if (MessageCodec.TryReadWelcome(buffer, offset, length, out WelcomeMessage welcome))
                     {
                         HandleWelcome(welcome);
+                    }
+
+                    break;
+
+                case MessageType.CharacterList:
+                    if (!_welcomeReceived &&
+                        MessageCodec.TryReadCharacterList(buffer, offset, length, out CharacterListMessage characterList))
+                    {
+                        HandleCharacterList(characterList);
+                    }
+
+                    break;
+
+                case MessageType.CharacterRejected:
+                    if (!_welcomeReceived &&
+                        MessageCodec.TryReadCharacterRejected(buffer, offset, length, out CharacterRejectedMessage characterRejected))
+                    {
+                        _characterOperationPending = false;
+                        _characterSelectionPending = false;
+                        _status = DescribeCharacterReject(characterRejected.Reason);
                     }
 
                     break;
@@ -1113,6 +1151,8 @@ namespace Avelora.Client
 
             _entityId = welcome.EntityId;
             _connecting = false;
+            _selectionActive = false;
+            _characterSelectionPending = false;
             _lastReject = null;
             _accumulator = 0;
             _lastDirectionX = 0;
@@ -1126,6 +1166,11 @@ namespace Avelora.Client
             _prediction.Reset(new Vec2(welcome.SpawnX, welcome.SpawnY));
             ClearInputHistory();
             _welcomeReceived = true;
+
+            if (_localRenderer != null)
+            {
+                _localRenderer.color = ClassColor(_selectedClassId);
+            }
 
             transform.position = new Vector3(welcome.SpawnX, welcome.SpawnY, transform.position.z);
             _status = "conectado (entidad " + _entityId + ")";
@@ -1252,6 +1297,11 @@ namespace Avelora.Client
                 }
 
                 view.SetRank(state.Rank);
+                if (sample.Kind == EntityKind.Player)
+                {
+                    view.SetPlayerClassColor(ClassColor((byte)sample.TypeId));
+                }
+
                 view.Apply(sample);
             }
 
@@ -1315,8 +1365,13 @@ namespace Avelora.Client
                 material,
                 sortingLayer,
                 sortingOrder,
-                remotePlayerColor,
+                Color.gray,
                 npcColor);
+
+            if (kind == EntityKind.Player)
+            {
+                view.SetPlayerClassColor(ClassColor((byte)typeId));
+            }
 
             if (kind == EntityKind.Item)
             {
@@ -1442,6 +1497,144 @@ namespace Avelora.Client
                     return "la cuenta ya tiene el máximo de personajes";
                 default:
                     return "motivo desconocido";
+            }
+        }
+
+        private Color ClassColor(byte classId) => _classLook != null ? _classLook.ColorFor(classId) : Color.gray;
+
+        private void HandleCharacterList(CharacterListMessage characterList)
+        {
+            int previousSelection = _selectedCharacterId;
+            _characterList = characterList;
+            _characterListReceived = true;
+            _selectionActive = true;
+            _connecting = false;
+            _characterOperationPending = false;
+            _characterSelectionPending = false;
+            _confirmDelete = false;
+            _status = "Selecciona un personaje o crea uno nuevo";
+
+            CharacterListEntry[] characters = _characterList.Characters;
+            _selectedCharacterId = 0;
+            for (int i = 0; i < characters.Length; i++)
+            {
+                if (characters[i].CharacterId == previousSelection)
+                {
+                    _selectedCharacterId = previousSelection;
+                    break;
+                }
+            }
+
+            if (_selectedCharacterId == 0 && characters.Length > 0)
+            {
+                _selectedCharacterId = characters[0].CharacterId;
+            }
+
+            CharacterClassEntry[] classes = _characterList.Classes;
+            bool createClassExists = false;
+            for (int i = 0; i < classes.Length; i++)
+            {
+                if (classes[i].ClassId == _createClassId)
+                {
+                    createClassExists = true;
+                    break;
+                }
+            }
+
+            if (!createClassExists)
+            {
+                _createClassId = classes.Length > 0 ? classes[0].ClassId : (byte)0;
+            }
+        }
+
+        private void SelectCharacter(int characterId)
+        {
+            if (_transport == null || _characterSelectionPending || _characterOperationPending)
+            {
+                return;
+            }
+
+            CharacterListEntry[] characters = _characterList.Characters;
+            for (int i = 0; i < characters.Length; i++)
+            {
+                if (characters[i].CharacterId != characterId)
+                {
+                    continue;
+                }
+
+                _selectedCharacterId = characterId;
+                _selectedClassId = characters[i].ClassId;
+                _characterSelectionPending = true;
+                _status = "Entrando con " + characters[i].Name + "…";
+                byte[] bytes = MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(characterId));
+                _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+                return;
+            }
+        }
+
+        private void CreateCharacter(byte classId)
+        {
+            if (_transport == null || _characterOperationPending)
+            {
+                return;
+            }
+
+            string trimmedName = _newCharacterName.Trim();
+            if (System.Text.Encoding.UTF8.GetByteCount(trimmedName) > ProtocolConstants.MaxCharacterNameBytes)
+            {
+                _status = "Nombre demasiado largo";
+                return;
+            }
+
+            if (trimmedName.Length < 3 || trimmedName.Length > 16)
+            {
+                _status = "El nombre debe tener entre 3 y 16 caracteres";
+                return;
+            }
+
+            _status = "Creando personaje…";
+            byte[] bytes = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(trimmedName, classId));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            _characterOperationPending = true;
+        }
+
+        private void DeleteCharacter(int characterId, string confirmationName)
+        {
+            if (_transport == null || _characterOperationPending)
+            {
+                return;
+            }
+
+            string trimmedName = confirmationName.Trim();
+            if (System.Text.Encoding.UTF8.GetByteCount(trimmedName) > ProtocolConstants.MaxCharacterNameBytes)
+            {
+                _status = "Nombre demasiado largo";
+                return;
+            }
+
+            _confirmDelete = false;
+            _status = "Borrando personaje…";
+            byte[] bytes = MessageCodec.EncodeDeleteCharacter(new DeleteCharacterMessage(characterId, trimmedName));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            _characterOperationPending = true;
+        }
+
+        private static string DescribeCharacterReject(RejectReason reason)
+        {
+            switch (reason)
+            {
+                case RejectReason.NameTaken:
+                    return "Ese nombre ya existe";
+                case RejectReason.NameInvalid:
+                    return "Nombre no válido: 3–16 letras, dígitos o espacios sueltos; empieza por letra";
+                case RejectReason.CharacterLimit:
+                    return "Ya tienes el máximo de personajes";
+                case RejectReason.CharacterNotFound:
+                case RejectReason.ClassUnknown:
+                case RejectReason.ConfirmMismatch:
+                    return "El nombre no coincide";
+                default:
+                    return "No se pudo completar la operación del personaje";
             }
         }
 

@@ -16,9 +16,10 @@ namespace Avelora.Shared.Protocol
     /// </remarks>
     public static class MessageCodec
     {
-        // Parte fija del saludo: tipo, versión, tick, token, huella y bloque cifrado. Después van
-        // la cuenta y el personaje, cada una con su longitud uint16. El tamaño total es variable,
-        // pero siempre menor que el tope del mensaje.
+        private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
+
+        // Parte fija del saludo: tipo, versión, tick, token, huella y bloque cifrado. Después va
+        // la cuenta con su longitud uint16; la selección de personaje ocurre tras autenticar.
         private const int HelloFixedSize =
             1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize + HelloSecrets.EncryptedSize;
 
@@ -62,8 +63,8 @@ namespace Avelora.Shared.Protocol
         // ---------------------------------------------------------------- cliente → servidor
 
         /// <summary>
-        /// Codifica un saludo. La parte fija ocupa 297 bytes (cabecera más el bloque cifrado) y cada
-        /// cadena añade su longitud uint16 más los bytes UTF-8.
+        /// Codifica un saludo. La parte fija ocupa 297 bytes (cabecera más el bloque cifrado) y la
+        /// cuenta añade su longitud uint16 más los bytes UTF-8.
         /// </summary>
         public static byte[] EncodeHello(in HelloMessage message)
         {
@@ -78,17 +79,11 @@ namespace Avelora.Shared.Protocol
             }
 
             string account = message.AccountName ?? string.Empty;
-            string character = message.CharacterName ?? string.Empty;
-
-            int accountBytes = Encoding.UTF8.GetByteCount(account);
-            int characterBytes = Encoding.UTF8.GetByteCount(character);
+            int accountBytes = GetStrictUtf8ByteCount(account);
 
             RequireStringLength(accountBytes, ProtocolConstants.MaxAccountNameBytes, nameof(message.AccountName));
-            RequireStringLength(characterBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message.CharacterName));
 
-            int size = HelloFixedSize +
-                (2 + accountBytes) +
-                (2 + characterBytes);
+            int size = HelloFixedSize + (2 + accountBytes);
 
             if (size > ProtocolConstants.MaxMessageSize)
             {
@@ -106,7 +101,6 @@ namespace Avelora.Shared.Protocol
             writer.WriteBytes(message.MapHash, 0, ProtocolConstants.MapHashSize);
             writer.WriteBytes(message.EncryptedSecrets, 0, HelloSecrets.EncryptedSize);
             writer.WriteString(account, ProtocolConstants.MaxAccountNameBytes);
-            writer.WriteString(character, ProtocolConstants.MaxCharacterNameBytes);
             return buffer;
         }
 
@@ -134,7 +128,6 @@ namespace Avelora.Shared.Protocol
                 var encryptedSecrets = new byte[HelloSecrets.EncryptedSize];
                 reader.ReadBytes(encryptedSecrets, encryptedSecrets.Length);
                 string account = reader.ReadString(ProtocolConstants.MaxAccountNameBytes);
-                string character = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
 
                 if (reader.Remaining != 0)
                 {
@@ -147,8 +140,7 @@ namespace Avelora.Shared.Protocol
                     mapHash,
                     token,
                     account,
-                    encryptedSecrets,
-                    character);
+                    encryptedSecrets);
                 return true;
             }
             catch (ProtocolException)
@@ -156,6 +148,138 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
             catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica CreateCharacter: nombre UTF-8 y classId.</summary>
+        public static byte[] EncodeCreateCharacter(in CreateCharacterMessage message)
+        {
+            string name = message.Name ?? string.Empty;
+            int nameBytes = GetStrictUtf8ByteCount(name);
+            RequireStringLength(nameBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message.Name));
+            if (message.ClassId == 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "classId debe ser distinto de cero.");
+            }
+
+            var buffer = new byte[1 + 2 + nameBytes + 1];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.CreateCharacter);
+            writer.WriteString(name, ProtocolConstants.MaxCharacterNameBytes);
+            writer.WriteByte(message.ClassId);
+            return buffer;
+        }
+
+        /// <summary>Lee CreateCharacter y valida UTF-8, longitud, clase y tamaño exacto.</summary>
+        public static bool TryReadCreateCharacter(
+            byte[] buffer, int offset, int length, out CreateCharacterMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.CreateCharacter) || length < 4)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
+                byte classId = reader.ReadByte();
+                if (classId == 0 || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new CreateCharacterMessage(name, classId);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica DeleteCharacter: characterId y nombre de confirmación.</summary>
+        public static byte[] EncodeDeleteCharacter(in DeleteCharacterMessage message)
+        {
+            RequireCharacterId(message.CharacterId, nameof(message));
+            string name = message.ConfirmationName ?? string.Empty;
+            int nameBytes = GetStrictUtf8ByteCount(name);
+            RequireStringLength(nameBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message.ConfirmationName));
+
+            var buffer = new byte[1 + 4 + 2 + nameBytes];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.DeleteCharacter);
+            writer.WriteInt32(message.CharacterId);
+            writer.WriteString(name, ProtocolConstants.MaxCharacterNameBytes);
+            return buffer;
+        }
+
+        /// <summary>Lee DeleteCharacter y valida id, UTF-8, longitud y tamaño exacto.</summary>
+        public static bool TryReadDeleteCharacter(
+            byte[] buffer, int offset, int length, out DeleteCharacterMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.DeleteCharacter) || length < 7)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                int characterId = reader.ReadInt32();
+                string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
+                if (characterId <= 0 || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new DeleteCharacterMessage(characterId, name);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica SelectCharacter: characterId positivo.</summary>
+        public static byte[] EncodeSelectCharacter(in SelectCharacterMessage message)
+        {
+            RequireCharacterId(message.CharacterId, nameof(message));
+            var buffer = new byte[5];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.SelectCharacter);
+            writer.WriteInt32(message.CharacterId);
+            return buffer;
+        }
+
+        /// <summary>Lee SelectCharacter y exige un id positivo y longitud exacta.</summary>
+        public static bool TryReadSelectCharacter(
+            byte[] buffer, int offset, int length, out SelectCharacterMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.SelectCharacter, 5))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                int characterId = reader.ReadInt32();
+                if (characterId <= 0)
+                {
+                    return false;
+                }
+
+                message = new SelectCharacterMessage(characterId);
+                return true;
+            }
+            catch (ProtocolException)
             {
                 return false;
             }
@@ -746,6 +870,168 @@ namespace Avelora.Shared.Protocol
             }
         }
 
+        /// <summary>Codifica personajes y clases disponibles, limitando el paquete a 1400 bytes.</summary>
+        public static byte[] EncodeCharacterList(in CharacterListMessage message)
+        {
+            CharacterListEntry[] characters = message.Characters ?? Array.Empty<CharacterListEntry>();
+            CharacterClassEntry[] classes = message.Classes ?? Array.Empty<CharacterClassEntry>();
+            RequireCharacterListHeader(message.MaxCharacters, characters.Length, classes.Length, nameof(message));
+
+            int size = 1 + 1 + 1 + 1;
+            for (int i = 0; i < characters.Length; i++)
+            {
+                CharacterListEntry character = characters[i];
+                RequireCharacterId(character.CharacterId, nameof(message));
+                if (character.ClassId == 0 || character.Level == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "El personaje lleva classId o nivel cero.");
+                }
+
+                int nameBytes = GetStrictUtf8ByteCount(character.Name ?? string.Empty);
+                RequireStringLength(nameBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message));
+                size += 8 + nameBytes;
+            }
+
+            for (int i = 0; i < classes.Length; i++)
+            {
+                if (classes[i].ClassId == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "classId debe ser distinto de cero.");
+                }
+
+                int nameBytes = GetStrictUtf8ByteCount(classes[i].Name ?? string.Empty);
+                RequireStringLength(nameBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message));
+                size += 3 + nameBytes;
+            }
+
+            if (size > ProtocolConstants.MaxMessageSize)
+            {
+                throw new ArgumentException("CharacterList ocupa " + size + " bytes y supera el tope del protocolo.", nameof(message));
+            }
+
+            var buffer = new byte[size];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.CharacterList);
+            writer.WriteByte(message.MaxCharacters);
+            writer.WriteByte((byte)characters.Length);
+            for (int i = 0; i < characters.Length; i++)
+            {
+                CharacterListEntry character = characters[i];
+                writer.WriteInt32(character.CharacterId);
+                writer.WriteString(character.Name, ProtocolConstants.MaxCharacterNameBytes);
+                writer.WriteByte(character.ClassId);
+                writer.WriteByte(character.Level);
+            }
+
+            writer.WriteByte((byte)classes.Length);
+            for (int i = 0; i < classes.Length; i++)
+            {
+                writer.WriteByte(classes[i].ClassId);
+                writer.WriteString(classes[i].Name, ProtocolConstants.MaxCharacterNameBytes);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee CharacterList con límites estrictos de cantidades, campos, UTF-8 y longitud.</summary>
+        public static bool TryReadCharacterList(
+            byte[] buffer, int offset, int length, out CharacterListMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.CharacterList) || length < 4)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte maxCharacters = reader.ReadByte();
+                int characterCount = reader.ReadByte();
+                if (maxCharacters == 0 || maxCharacters > ProtocolConstants.MaxCharactersPerAccount ||
+                    characterCount > ProtocolConstants.MaxCharactersPerAccount)
+                {
+                    return false;
+                }
+
+                var characters = characterCount == 0
+                    ? Array.Empty<CharacterListEntry>()
+                    : new CharacterListEntry[characterCount];
+                for (int i = 0; i < characterCount; i++)
+                {
+                    int characterId = reader.ReadInt32();
+                    string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
+                    byte classId = reader.ReadByte();
+                    byte level = reader.ReadByte();
+                    if (characterId <= 0 || classId == 0 || level == 0)
+                    {
+                        return false;
+                    }
+
+                    characters[i] = new CharacterListEntry(characterId, name, classId, level);
+                }
+
+                int classCount = reader.ReadByte();
+                var classes = classCount == 0
+                    ? Array.Empty<CharacterClassEntry>()
+                    : new CharacterClassEntry[classCount];
+                for (int i = 0; i < classCount; i++)
+                {
+                    byte classId = reader.ReadByte();
+                    string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
+                    if (classId == 0)
+                    {
+                        return false;
+                    }
+
+                    classes[i] = new CharacterClassEntry(classId, name);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new CharacterListMessage(maxCharacters, characters, classes);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica un rechazo de personaje y solo admite sus motivos definidos.</summary>
+        public static byte[] EncodeCharacterRejected(in CharacterRejectedMessage message)
+        {
+            if (!IsCharacterRejectReason(message.Reason))
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "Motivo de rechazo de personaje desconocido.");
+            }
+
+            return new[] { (byte)MessageType.CharacterRejected, (byte)message.Reason };
+        }
+
+        /// <summary>Lee CharacterRejected y rechaza motivos ajenos a las acciones de personaje.</summary>
+        public static bool TryReadCharacterRejected(
+            byte[] buffer, int offset, int length, out CharacterRejectedMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.CharacterRejected, 2))
+            {
+                return false;
+            }
+
+            RejectReason reason = (RejectReason)buffer[offset + 1];
+            if (!IsCharacterRejectReason(reason))
+            {
+                return false;
+            }
+
+            message = new CharacterRejectedMessage(reason);
+            return true;
+        }
+
         // ---------------------------------------------------------------- servidor → cliente
         /// <summary>Codifica la aceptación del saludo: 69 bytes.</summary>
         public static byte[] EncodeWelcome(in WelcomeMessage message)
@@ -843,7 +1129,7 @@ namespace Avelora.Shared.Protocol
                 // Un motivo inventado no se puede mostrar ni interpretar: se rechaza el mensaje.
                 // El límite es el último valor definido; la prueba
                 // Todos_Los_Valores_Definidos_De_Las_Enumeraciones_Viajan avisa si se olvida.
-                if (rawReason > (byte)RejectReason.CharacterLimit)
+                if (rawReason > (byte)RejectReason.InternalError)
                 {
                     return false;
                 }
@@ -1596,6 +1882,46 @@ namespace Avelora.Shared.Protocol
                     parameterName);
             }
         }
+
+        private static int GetStrictUtf8ByteCount(string value) => StrictUtf8.GetByteCount(value);
+
+        private static void RequireCharacterId(int characterId, string parameterName)
+        {
+            if (characterId <= 0)
+            {
+                throw new ArgumentOutOfRangeException(parameterName, "characterId debe ser positivo.");
+            }
+        }
+
+        private static void RequireCharacterListHeader(
+            byte maxCharacters, int characterCount, int classCount, string parameterName)
+        {
+            if (maxCharacters == 0 || maxCharacters > ProtocolConstants.MaxCharactersPerAccount)
+            {
+                throw new ArgumentOutOfRangeException(
+                    parameterName, "El máximo de personajes debe estar entre 1 y " +
+                    ProtocolConstants.MaxCharactersPerAccount + ".");
+            }
+
+            if (characterCount > ProtocolConstants.MaxCharactersPerAccount)
+            {
+                throw new ArgumentException("CharacterList supera el máximo de personajes permitido.", parameterName);
+            }
+
+            if (classCount > byte.MaxValue)
+            {
+                throw new ArgumentException("CharacterList no puede llevar más de 255 clases.", parameterName);
+            }
+        }
+
+        private static bool IsCharacterRejectReason(RejectReason reason) =>
+            reason == RejectReason.NameTaken ||
+            reason == RejectReason.NameInvalid ||
+            reason == RejectReason.CharacterLimit ||
+            reason == RejectReason.CharacterNotFound ||
+            reason == RejectReason.ClassUnknown ||
+            reason == RejectReason.ConfirmMismatch ||
+            reason == RejectReason.InternalError;
 
         private static void RequireInventorySlot(byte slot, string parameterName)
         {

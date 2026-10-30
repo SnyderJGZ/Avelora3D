@@ -51,6 +51,8 @@ namespace Avelora.Tests
             Assert.Equal(16, config.MaxPendingLogins);
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
+            Assert.Equal(3, config.MaxCharactersPerAccount);
+            Assert.Equal(300d, config.CharacterSelectTimeoutSeconds);
             Assert.Equal("items.json", config.ItemsPath);
             Assert.Equal("classes.json", config.ClassesPath);
             Assert.Equal(20, config.InventorySlots);
@@ -124,6 +126,8 @@ namespace Avelora.Tests
                 InterestHysteresis = 0.75f,
                 HandshakeTimeoutSeconds = 3.5d,
                 RejectDisconnectDelayMilliseconds = 750,
+                MaxCharactersPerAccount = 8,
+                CharacterSelectTimeoutSeconds = 47d,
                 MetricsWindowTicks = 30,
                 ReportIntervalSeconds = 2.5d,
                 RunSeconds = 3d,
@@ -160,6 +164,8 @@ namespace Avelora.Tests
             Assert.Equal(original.InterestHysteresis, loaded.InterestHysteresis);
             Assert.Equal(original.HandshakeTimeoutSeconds, loaded.HandshakeTimeoutSeconds);
             Assert.Equal(original.RejectDisconnectDelayMilliseconds, loaded.RejectDisconnectDelayMilliseconds);
+            Assert.Equal(original.MaxCharactersPerAccount, loaded.MaxCharactersPerAccount);
+            Assert.Equal(original.CharacterSelectTimeoutSeconds, loaded.CharacterSelectTimeoutSeconds);
             Assert.Equal(original.MetricsWindowTicks, loaded.MetricsWindowTicks);
             Assert.Equal(original.ReportIntervalSeconds, loaded.ReportIntervalSeconds);
             Assert.Equal(original.RunSeconds, loaded.RunSeconds);
@@ -221,6 +227,10 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { MaxQueuedOutboundMessages = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { SnapshotEveryTicks = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { HandshakeTimeoutSeconds = 0d }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { CharacterSelectTimeoutSeconds = 0d }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { CharacterSelectTimeoutSeconds = double.NaN }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { MaxCharactersPerAccount = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { MaxCharactersPerAccount = 11 }.Validate);
             Assert.Throws<InvalidOperationException>(
                 new ServerConfig { RejectDisconnectDelayMilliseconds = -1 }.Validate);
 

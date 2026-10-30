@@ -77,6 +77,16 @@ namespace Avelora.Client
             transform.localScale = new Vector3(ItemScale, ItemScale, 1f);
         }
 
+        /// <summary>Actualiza el tinte del jugador remoto según el classId del snapshot.</summary>
+        public void SetPlayerClassColor(Color color)
+        {
+            _playerColor = color;
+            if (_renderer != null && Kind == EntityKind.Player)
+            {
+                _renderer.color = color;
+            }
+        }
+
         /// <summary>
         /// Rango del PNJ (I-20b): 1 élite (dorado, un poco más grande), 2 campeón (rojizo, más grande).
         /// No cambia en la vida de una entidad: al reaparecer el servidor le da otro id.

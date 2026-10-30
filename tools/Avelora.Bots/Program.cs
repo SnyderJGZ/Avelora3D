@@ -235,6 +235,8 @@ namespace Avelora.Bots
             long armorsEquipped = 0;
             long pointsAllocated = 0;
             long statsReceived = 0;
+            long charactersCreated = 0;
+            long characterRejects = 0;
             long levelUps = 0;
             byte maxLevelReached = 1;
             var welcomeTimes = new List<long>(bots.Count);
@@ -280,6 +282,8 @@ namespace Avelora.Bots
                 armorsEquipped += bot.ArmorsEquipped;
                 pointsAllocated += bot.PointsAllocated;
                 statsReceived += bot.StatsReceived;
+                charactersCreated += bot.CharactersCreated;
+                characterRejects += bot.CharacterRejects;
                 levelUps += bot.LevelUps;
                 sentChat += bot.SentChat;
                 receivedChat += bot.ReceivedChat;
@@ -331,6 +335,8 @@ namespace Avelora.Bots
                      " nivel_max=" + bot.MaxLevelReached +
                      " puntos_repartidos=" + bot.PointsAllocated +
                      " stats_recibidos=" + bot.StatsReceived +
+                     " personajes_creados=" + bot.CharactersCreated +
+                     " rechazos_personaje=" + bot.CharacterRejects +
                      " snapshots=" + bot.Snapshots);
 
                 if (options.Behavior == BotBehavior.Fight)
@@ -377,6 +383,8 @@ namespace Avelora.Bots
             Console.WriteLine(
                 "  Reintentos : " + retries + " en " + retryingBots + " bot(s) (tope " + options.Retries + "/bot)");
             Console.WriteLine("  Rechazos   : " + DescribeRejects(rejects));
+            Console.WriteLine("  Personajes : personajes_creados=" + charactersCreated +
+                ", rechazos_personaje=" + characterRejects);
             Console.WriteLine(
                 "  Welcome    : p50 " + (p50 >= 0 ? p50 + " ms" : "-") +
                 ", máximo " + (maxWelcome >= 0 ? maxWelcome + " ms" : "-") +

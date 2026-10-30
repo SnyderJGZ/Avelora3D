@@ -47,16 +47,14 @@ namespace Avelora.Tests
                 NewHash(7),
                 123456u,
                 "cuenta",
-                NewEncrypted(3),
-                "personaje");
+                NewEncrypted(3));
 
             byte[] bytes = MessageCodec.EncodeHello(original);
 
             Assert.True(MessageCodec.TryReadHello(bytes, 0, bytes.Length, out HelloMessage decoded));
 
-            // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más las dos
-            // cadenas con su longitud uint16.
-            Assert.Equal(297 + 2 + 6 + 2 + 9, bytes.Length);
+            // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más la cuenta.
+            Assert.Equal(297 + 2 + 6, bytes.Length);
             Assert.Equal(ProtocolConstants.Version, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
@@ -64,7 +62,6 @@ namespace Avelora.Tests
             Assert.Equal(original.MapHash, decoded.MapHash);
             Assert.Equal(original.AccountName, decoded.AccountName);
             Assert.Equal(original.EncryptedSecrets, decoded.EncryptedSecrets);
-            Assert.Equal(original.CharacterName, decoded.CharacterName);
         }
 
         [Fact]
@@ -76,8 +73,7 @@ namespace Avelora.Tests
                 NewHash(0),
                 1u,
                 "dev",
-                new byte[HelloSecrets.EncryptedSize - 1],
-                "dev")));
+                new byte[HelloSecrets.EncryptedSize - 1])));
 
             // Al leer, un saludo truncado en el bloque cifrado tampoco pasa.
             byte[] bytes = MessageCodec.EncodeHello(new HelloMessage(ProtocolConstants.Version, 20, NewHash(0), 1u));
@@ -93,8 +89,7 @@ namespace Avelora.Tests
                 NewHash(0),
                 1u,
                 new string('a', ProtocolConstants.MaxAccountNameBytes + 1),
-                NewEncrypted(0),
-                "dev");
+                NewEncrypted(0));
 
             Assert.Throws<ArgumentException>(() => MessageCodec.EncodeHello(hello));
         }
@@ -108,13 +103,206 @@ namespace Avelora.Tests
                 NewHash(0),
                 1u,
                 "dev",
-                NewEncrypted(0),
-                "dev"));
+                NewEncrypted(0)));
 
             byte[] withExtra = new byte[bytes.Length + 1];
             Array.Copy(bytes, withExtra, bytes.Length);
 
             Assert.False(MessageCodec.TryReadHello(withExtra, 0, withExtra.Length, out _));
+        }
+
+        [Fact]
+        public void Los_Mensajes_De_Personajes_Van_Y_Vuelven_Y_El_Grande_Cabe_En_1400_Bytes()
+        {
+            var create = new CreateCharacterMessage("Ána", 4);
+            byte[] createBytes = MessageCodec.EncodeCreateCharacter(create);
+            Assert.Equal((byte)23, createBytes[0]);
+            Assert.True(MessageCodec.TryReadCreateCharacter(
+                createBytes, 0, createBytes.Length, out CreateCharacterMessage createRead));
+            Assert.Equal(create.Name, createRead.Name);
+            Assert.Equal(create.ClassId, createRead.ClassId);
+
+            var delete = new DeleteCharacterMessage(123, "Ána");
+            byte[] deleteBytes = MessageCodec.EncodeDeleteCharacter(delete);
+            Assert.Equal((byte)24, deleteBytes[0]);
+            Assert.True(MessageCodec.TryReadDeleteCharacter(
+                deleteBytes, 0, deleteBytes.Length, out DeleteCharacterMessage deleteRead));
+            Assert.Equal(delete.CharacterId, deleteRead.CharacterId);
+            Assert.Equal(delete.ConfirmationName, deleteRead.ConfirmationName);
+
+            var select = new SelectCharacterMessage(456);
+            byte[] selectBytes = MessageCodec.EncodeSelectCharacter(select);
+            Assert.Equal(new byte[] { 25, 200, 1, 0, 0 }, selectBytes);
+            Assert.True(MessageCodec.TryReadSelectCharacter(
+                selectBytes, 0, selectBytes.Length, out SelectCharacterMessage selectRead));
+            Assert.Equal(select.CharacterId, selectRead.CharacterId);
+
+            var characters = new CharacterListEntry[ProtocolConstants.MaxCharactersPerAccount];
+            for (int i = 0; i < characters.Length; i++)
+            {
+                characters[i] = new CharacterListEntry(i + 1, new string('c', 32), (byte)(i + 1), 25);
+            }
+
+            var classes = new CharacterClassEntry[4];
+            for (int i = 0; i < classes.Length; i++)
+            {
+                classes[i] = new CharacterClassEntry((byte)(i + 1), new string('k', 32));
+            }
+
+            var list = new CharacterListMessage(10, characters, classes);
+            byte[] listBytes = MessageCodec.EncodeCharacterList(list);
+            Assert.Equal((byte)26, listBytes[0]);
+            Assert.True(listBytes.Length <= ProtocolConstants.MaxMessageSize);
+            Assert.True(MessageCodec.TryReadCharacterList(
+                listBytes, 0, listBytes.Length, out CharacterListMessage listRead));
+            Assert.Equal(10, listRead.MaxCharacters);
+            Assert.Equal(characters.Length, listRead.Characters.Length);
+            Assert.Equal(classes.Length, listRead.Classes.Length);
+            Assert.Equal(characters[9].Name, listRead.Characters[9].Name);
+            Assert.Equal(classes[3].Name, listRead.Classes[3].Name);
+
+            var rejected = new CharacterRejectedMessage(RejectReason.ConfirmMismatch);
+            byte[] rejectedBytes = MessageCodec.EncodeCharacterRejected(rejected);
+            Assert.Equal(new byte[] { 27, (byte)RejectReason.ConfirmMismatch }, rejectedBytes);
+            Assert.True(MessageCodec.TryReadCharacterRejected(
+                rejectedBytes, 0, rejectedBytes.Length, out CharacterRejectedMessage rejectedRead));
+            Assert.Equal(rejected.Reason, rejectedRead.Reason);
+
+            foreach (RejectReason reason in new[]
+            {
+                RejectReason.NameTaken,
+                RejectReason.NameInvalid,
+                RejectReason.CharacterLimit,
+                RejectReason.CharacterNotFound,
+                RejectReason.ClassUnknown,
+                RejectReason.ConfirmMismatch,
+                RejectReason.InternalError,
+            })
+            {
+                byte[] reasonBytes = MessageCodec.EncodeCharacterRejected(new CharacterRejectedMessage(reason));
+                Assert.True(MessageCodec.TryReadCharacterRejected(
+                    reasonBytes, 0, reasonBytes.Length, out CharacterRejectedMessage reasonRead));
+                Assert.Equal(reason, reasonRead.Reason);
+            }
+
+            Assert.Equal((ushort)15, ProtocolConstants.Version);
+            Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
+        }
+
+        [Fact]
+        public void CharacterList_Admite_Mas_Personajes_Que_El_Limite_De_Creacion()
+        {
+            var characters = new[]
+            {
+                new CharacterListEntry(1, "Ana", 1, 1),
+                new CharacterListEntry(2, "Juan", 1, 1),
+                new CharacterListEntry(3, "Luis", 1, 1),
+            };
+            byte[] bytes = MessageCodec.EncodeCharacterList(new CharacterListMessage(
+                2, characters, Array.Empty<CharacterClassEntry>()));
+
+            Assert.True(MessageCodec.TryReadCharacterList(bytes, 0, bytes.Length, out CharacterListMessage decoded));
+            Assert.Equal(2, decoded.MaxCharacters);
+            Assert.Equal(characters, decoded.Characters);
+        }
+
+        [Fact]
+        public void Los_Mensajes_De_Personajes_Rechazan_Longitudes_UTF8_Y_Rangos_Invalidos()
+        {
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage(new string('n', ProtocolConstants.MaxCharacterNameBytes + 1), 1)));
+            Assert.Throws<System.Text.EncoderFallbackException>(() => MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("\uD800", 1)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Ana", 0)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeDeleteCharacter(
+                new DeleteCharacterMessage(0, "Ana")));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(-1)));
+
+            byte[] tooLongName = new byte[] { 23, 33, 0 };
+            Array.Resize(ref tooLongName, 3 + 33 + 1);
+            tooLongName[tooLongName.Length - 1] = 1;
+            Assert.False(MessageCodec.TryReadCreateCharacter(
+                tooLongName, 0, tooLongName.Length, out _));
+
+            byte[] brokenUtf8 = { 23, 1, 0, 0xFF, 1 };
+            Assert.False(MessageCodec.TryReadCreateCharacter(brokenUtf8, 0, brokenUtf8.Length, out _));
+            byte[] zeroClass = { 23, 0, 0, 0 };
+            Assert.False(MessageCodec.TryReadCreateCharacter(zeroClass, 0, zeroClass.Length, out _));
+            Assert.False(MessageCodec.TryReadCreateCharacter(new byte[] { 23, 2, 0, (byte)'A' }, 0, 4, out _));
+
+            byte[] delete = MessageCodec.EncodeDeleteCharacter(new DeleteCharacterMessage(5, "Ana"));
+            Assert.False(MessageCodec.TryReadDeleteCharacter(delete, 0, delete.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadDeleteCharacter(delete, 0, delete.Length + 1, out _));
+            byte[] zeroDeleteId = (byte[])delete.Clone();
+            Array.Clear(zeroDeleteId, 1, 4);
+            Assert.False(MessageCodec.TryReadDeleteCharacter(zeroDeleteId, 0, zeroDeleteId.Length, out _));
+            Assert.False(MessageCodec.TryReadSelectCharacter(new byte[] { 25, 1, 0, 0 }, 0, 4, out _));
+            Assert.False(MessageCodec.TryReadSelectCharacter(new byte[] { 25, 0, 0, 0, 0 }, 0, 5, out _));
+            Assert.False(MessageCodec.TryReadSelectCharacter(new byte[] { 25, 255, 255, 255, 255 }, 0, 5, out _));
+
+            byte[] tooManyCharacters = { 26, 10, 11 };
+            Assert.False(MessageCodec.TryReadCharacterList(
+                tooManyCharacters, 0, tooManyCharacters.Length, out _));
+            byte[] invalidMaximum = { 26, 0, 0 };
+            Assert.False(MessageCodec.TryReadCharacterList(invalidMaximum, 0, invalidMaximum.Length, out _));
+            byte[] maximumAboveLimit = { 26, 11, 0, 0 };
+            Assert.False(MessageCodec.TryReadCharacterList(
+                maximumAboveLimit, 0, maximumAboveLimit.Length, out _));
+            byte[] truncatedCharacters = { 26, 1, 2 };
+            Assert.False(MessageCodec.TryReadCharacterList(
+                truncatedCharacters, 0, truncatedCharacters.Length, out _));
+
+            var overLimit = new CharacterListEntry[ProtocolConstants.MaxCharactersPerAccount + 1];
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(10, overLimit, Array.Empty<CharacterClassEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(0, Array.Empty<CharacterListEntry>(), Array.Empty<CharacterClassEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(1,
+                    new[] { new CharacterListEntry(0, "Ana", 1, 1) },
+                    Array.Empty<CharacterClassEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(1,
+                    new[] { new CharacterListEntry(1, "Ana", 0, 1) },
+                    Array.Empty<CharacterClassEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(1,
+                    new[] { new CharacterListEntry(1, "Ana", 1, 0) },
+                    Array.Empty<CharacterClassEntry>())));
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(1, Array.Empty<CharacterListEntry>(),
+                    new[] { new CharacterClassEntry(1, new string('k', ProtocolConstants.MaxCharacterNameBytes + 1)) })));
+            var tooManyClasses = new CharacterClassEntry[40];
+            for (int i = 0; i < tooManyClasses.Length; i++)
+            {
+                tooManyClasses[i] = new CharacterClassEntry((byte)(i + 1), new string('k', 32));
+            }
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeCharacterList(
+                new CharacterListMessage(1, Array.Empty<CharacterListEntry>(), tooManyClasses)));
+
+            byte[] validList = MessageCodec.EncodeCharacterList(new CharacterListMessage(
+                1,
+                new[] { new CharacterListEntry(1, "Ana", 1, 1) },
+                Array.Empty<CharacterClassEntry>()));
+            byte[] badCharacterId = (byte[])validList.Clone();
+            Array.Clear(badCharacterId, 3, 4);
+            Assert.False(MessageCodec.TryReadCharacterList(badCharacterId, 0, badCharacterId.Length, out _));
+            byte[] badCharacterClass = (byte[])validList.Clone();
+            badCharacterClass[12] = 0;
+            Assert.False(MessageCodec.TryReadCharacterList(badCharacterClass, 0, badCharacterClass.Length, out _));
+            byte[] badCharacterLevel = (byte[])validList.Clone();
+            badCharacterLevel[13] = 0;
+            Assert.False(MessageCodec.TryReadCharacterList(badCharacterLevel, 0, badCharacterLevel.Length, out _));
+            byte[] badListUtf8 = (byte[])validList.Clone();
+            badListUtf8[9] = 0xFF;
+            Assert.False(MessageCodec.TryReadCharacterList(badListUtf8, 0, badListUtf8.Length, out _));
+
+            byte[] invalidRejection = { 27, (byte)RejectReason.ProtocolVersion };
+            Assert.False(MessageCodec.TryReadCharacterRejected(
+                invalidRejection, 0, invalidRejection.Length, out _));
+            Assert.False(MessageCodec.TryReadCharacterRejected(new byte[] { 27, 255 }, 0, 2, out _));
         }
 
         [Fact]

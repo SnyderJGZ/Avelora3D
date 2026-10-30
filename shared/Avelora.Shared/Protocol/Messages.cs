@@ -37,13 +37,13 @@ namespace Avelora.Shared.Protocol
     /// <remarks>
     /// <para>
     /// El cliente no manda ni su posición ni su tiempo. Manda lo que el servidor necesita para
-    /// decidir si puede jugar: versión del protocolo, tick al que está compilado, qué mapa tiene,
-    /// quién dice ser y qué personaje quiere usar.
+    /// decidir si puede autenticarse: versión del protocolo, tick al que está compilado, qué mapa
+    /// tiene y quién dice ser. El personaje se selecciona después de autenticar.
     /// </para>
     /// <para>
     /// Desde el protocolo v4 la contraseña y la invitación ya no viajan en el saludo: van cifradas
     /// con RSA-OAEP-SHA1 en <see cref="EncryptedSecrets"/>, usando el nonce y la clave pública del
-    /// <see cref="ChallengeMessage"/>. El nombre de cuenta y el de personaje siguen en claro.
+    /// <see cref="ChallengeMessage"/>. El nombre de cuenta sigue en claro.
     /// </para>
     /// </remarks>
     public readonly struct HelloMessage
@@ -59,8 +59,7 @@ namespace Avelora.Shared.Protocol
                 mapHash,
                 clientToken,
                 "dev",
-                new byte[HelloSecrets.EncryptedSize],
-                "dev")
+                new byte[HelloSecrets.EncryptedSize])
         {
         }
 
@@ -70,8 +69,7 @@ namespace Avelora.Shared.Protocol
             byte[] mapHash,
             uint clientToken,
             string accountName,
-            byte[] encryptedSecrets,
-            string characterName)
+            byte[] encryptedSecrets)
         {
             ProtocolVersion = protocolVersion;
             TickRate = tickRate;
@@ -79,7 +77,6 @@ namespace Avelora.Shared.Protocol
             ClientToken = clientToken;
             AccountName = accountName ?? string.Empty;
             EncryptedSecrets = encryptedSecrets ?? Array.Empty<byte>();
-            CharacterName = characterName ?? string.Empty;
         }
 
         /// <summary>Versión del protocolo que habla el cliente.</summary>
@@ -103,8 +100,96 @@ namespace Avelora.Shared.Protocol
         /// </summary>
         public byte[] EncryptedSecrets { get; }
 
-        /// <summary>Personaje que se quiere usar. Vacío significa «el mismo nombre que la cuenta».</summary>
-        public string CharacterName { get; }
+    }
+
+    /// <summary>Petición de crear un personaje con una clase elegida por el cliente (I-10).</summary>
+    public readonly struct CreateCharacterMessage
+    {
+        public CreateCharacterMessage(string name, byte classId)
+        {
+            Name = name ?? string.Empty;
+            ClassId = classId;
+        }
+
+        public string Name { get; }
+        public byte ClassId { get; }
+    }
+
+    /// <summary>Petición de borrar un personaje; el nombre confirma la acción (I-10).</summary>
+    public readonly struct DeleteCharacterMessage
+    {
+        public DeleteCharacterMessage(int characterId, string confirmationName)
+        {
+            CharacterId = characterId;
+            ConfirmationName = confirmationName ?? string.Empty;
+        }
+
+        public int CharacterId { get; }
+        public string ConfirmationName { get; }
+    }
+
+    /// <summary>Petición de seleccionar un personaje de la cuenta (I-10).</summary>
+    public readonly struct SelectCharacterMessage
+    {
+        public SelectCharacterMessage(int characterId) => CharacterId = characterId;
+
+        public int CharacterId { get; }
+    }
+
+    /// <summary>Personaje que aparece en CharacterList (I-10).</summary>
+    public readonly struct CharacterListEntry
+    {
+        public CharacterListEntry(int characterId, string name, byte classId, byte level)
+        {
+            CharacterId = characterId;
+            Name = name ?? string.Empty;
+            ClassId = classId;
+            Level = level;
+        }
+
+        public int CharacterId { get; }
+        public string Name { get; }
+        public byte ClassId { get; }
+        public byte Level { get; }
+    }
+
+    /// <summary>Clase disponible para crear personajes, anunciada en CharacterList (I-10).</summary>
+    public readonly struct CharacterClassEntry
+    {
+        public CharacterClassEntry(byte classId, string name)
+        {
+            ClassId = classId;
+            Name = name ?? string.Empty;
+        }
+
+        public byte ClassId { get; }
+        public string Name { get; }
+    }
+
+    /// <summary>Personajes existentes y clases disponibles para la cuenta autenticada (I-10).</summary>
+    public readonly struct CharacterListMessage
+    {
+        public CharacterListMessage(
+            byte maxCharacters,
+            CharacterListEntry[] characters,
+            CharacterClassEntry[] classes)
+        {
+            MaxCharacters = maxCharacters;
+            Characters = characters ?? Array.Empty<CharacterListEntry>();
+            Classes = classes ?? Array.Empty<CharacterClassEntry>();
+        }
+
+        public byte MaxCharacters { get; }
+        public CharacterListEntry[] Characters { get; }
+        public CharacterClassEntry[] Classes { get; }
+    }
+
+    /// <summary>Rechazo de crear o borrar un personaje (I-10).</summary>
+    public readonly struct CharacterRejectedMessage
+    {
+        public CharacterRejectedMessage(RejectReason reason) => Reason = reason;
+
+        public RejectReason Reason { get; }
     }
 
     /// <summary>
@@ -548,6 +633,24 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>La cuenta ya tiene el máximo de personajes permitido.</summary>
         CharacterLimit = 12,
+
+        /// <summary>El nombre de personaje ya está en uso (I-10).</summary>
+        NameTaken = 13,
+
+        /// <summary>El nombre de personaje no cumple las reglas (I-10).</summary>
+        NameInvalid = 14,
+
+        /// <summary>El personaje solicitado no existe o no pertenece a la cuenta (I-10).</summary>
+        CharacterNotFound = 15,
+
+        /// <summary>La clase solicitada no existe (I-10).</summary>
+        ClassUnknown = 16,
+
+        /// <summary>El nombre de confirmación del borrado no coincide (I-10).</summary>
+        ConfirmMismatch = 17,
+
+        /// <summary>El repositorio no pudo completar la operación de personaje (I-10).</summary>
+        InternalError = 18,
     }
 
     /// <summary>Respuesta negativa al saludo.</summary>
