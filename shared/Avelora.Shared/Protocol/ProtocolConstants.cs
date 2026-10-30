@@ -27,9 +27,9 @@ namespace Avelora.Shared.Protocol
         /// por los mensajes y datos de equipo e inventario interactivo; I-20 a 13 porque el byte
         /// de acción de <c>EntityState</c> también transporta el rango de los PNJ; I-21 a 14 por
         /// trocear <c>ItemCatalog</c> y retirar <c>DropItem</c>; I-10 a 15 por el saludo sin
-        /// personaje y la selección posterior.
+        /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel.
         /// </summary>
-        public const ushort Version = 15;
+        public const ushort Version = 16;
 
         /// <summary>Máximo de personajes que puede transportar una lista por cuenta (I-10).</summary>
         public const int MaxCharactersPerAccount = 10;

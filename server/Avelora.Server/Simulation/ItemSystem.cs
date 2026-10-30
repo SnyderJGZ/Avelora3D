@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -56,6 +57,11 @@ namespace Avelora.Server.Simulation
         public long RejectedEquipItem { get; private set; }
         public long RejectedEquipFull { get; private set; }
         public long RejectedEquipEmpty { get; private set; }
+        public long RejectedEquipClass { get; private set; }
+        public long RejectedEquipLevel { get; private set; }
+        public long RejectedEquipTwoHand { get; private set; }
+        public long EquipmentCorrectedOnLoad { get; private set; }
+        public long EquipmentLoadWarnings { get; private set; }
         public long EquipmentSwaps { get; private set; }
         public long Moved { get; private set; }
         public long Split { get; private set; }
@@ -285,11 +291,43 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (!CheckEquip(zone.Classes.Find(player.ClassId), item, player.Level))
+            {
+                return;
+            }
+
+            if (equipSlot == (byte)EquipSlot.Offhand &&
+                _catalog.Find(player.Equipment[(int)EquipSlot.Weapon]) is ItemType equippedWeapon &&
+                equippedWeapon.IsTwoHanded)
+            {
+                RejectedEquipTwoHand++;
+                return;
+            }
+
+            ushort offhandItemId = player.Equipment[(int)EquipSlot.Offhand];
+            int offhandDestination = -1;
+            if (item.IsTwoHanded && offhandItemId != 0)
+            {
+                offhandDestination = player.Equipment[equipSlot] == 0
+                    ? slotIndex
+                    : FindFirstEmptySlot(player.Inventory);
+                if (offhandDestination < 0)
+                {
+                    RejectedEquipFull++;
+                    return;
+                }
+            }
+
             ushort previousItemId = player.Equipment[equipSlot];
             player.Equipment[equipSlot] = slot.ItemId;
             player.Inventory[slotIndex] = previousItemId == 0
                 ? new InventorySlot(0, 0)
                 : new InventorySlot(previousItemId, 1);
+            if (offhandDestination >= 0)
+            {
+                player.Inventory[offhandDestination] = new InventorySlot(offhandItemId, 1);
+                player.Equipment[(int)EquipSlot.Offhand] = 0;
+            }
             Equipped++;
             if (previousItemId != 0)
             {
@@ -354,8 +392,38 @@ namespace Avelora.Server.Simulation
                     return;
                 }
 
+                if (!CheckEquip(zone.Classes.Find(player.ClassId), targetType, player.Level))
+                {
+                    return;
+                }
+
+                int offhandDestination = -1;
+                if (equipSlot == (byte)EquipSlot.Offhand &&
+                    _catalog.Find(player.Equipment[(int)EquipSlot.Weapon]) is ItemType twoHandWeapon &&
+                    twoHandWeapon.IsTwoHanded)
+                {
+                    RejectedEquipTwoHand++;
+                    return;
+                }
+
+                if (targetType.IsTwoHanded && player.Equipment[(int)EquipSlot.Offhand] != 0)
+                {
+                    offhandDestination = FindFirstEmptySlot(player.Inventory);
+                    if (offhandDestination < 0)
+                    {
+                        RejectedEquipFull++;
+                        return;
+                    }
+                }
+
                 player.Equipment[equipSlot] = target.ItemId;
                 player.Inventory[destination] = new InventorySlot(equippedItemId, 1);
+                if (offhandDestination >= 0)
+                {
+                    ushort offhandItemId = player.Equipment[(int)EquipSlot.Offhand];
+                    player.Inventory[offhandDestination] = new InventorySlot(offhandItemId, 1);
+                    player.Equipment[(int)EquipSlot.Offhand] = 0;
+                }
                 EquipmentSwaps++;
             }
 
@@ -518,6 +586,90 @@ namespace Avelora.Server.Simulation
             }
 
             return -1;
+        }
+
+        /// <summary>Retira del equipo los objetos que ya no cumplen las reglas actuales.</summary>
+        public int EnforceEquipment(PlayerEntity player, ClassCatalog classes)
+        {
+            if (player == null) throw new ArgumentNullException(nameof(player));
+            if (classes == null) throw new ArgumentNullException(nameof(classes));
+
+            int moved = 0;
+            for (int equipSlot = 0; equipSlot < player.Equipment.Length; equipSlot++)
+            {
+                ushort itemId = player.Equipment[equipSlot];
+                if (itemId == 0 || _catalog.Find(itemId) is not ItemType item)
+                {
+                    continue;
+                }
+
+                string? reason = null;
+                if (equipSlot == (int)EquipSlot.Offhand &&
+                    _catalog.Find(player.Equipment[(int)EquipSlot.Weapon]) is ItemType weapon && weapon.IsTwoHanded)
+                {
+                    reason = "el arma equipada ocupa ambas manos";
+                }
+                else
+                {
+                    CharacterClass? characterClass = classes.Find(player.ClassId);
+                    if (characterClass == null)
+                    {
+                        reason = "clase desconocida";
+                    }
+                    else
+                    {
+                        EquipCheck check = EquipRules.Check(item, characterClass, player.Level);
+                        if (check == EquipCheck.WrongClass) reason = "tipo de arma no permitido por la clase";
+                        else if (check == EquipCheck.LowLevel) reason = "nivel insuficiente";
+                    }
+                }
+
+                if (reason == null)
+                {
+                    continue;
+                }
+
+                int inventorySlot = FindFirstEmptySlot(player.Inventory);
+                if (inventorySlot < 0)
+                {
+                    EquipmentLoadWarnings++;
+                    Console.Error.WriteLine(
+                        "AVISO: el personaje " + player.CharacterName + " conserva equipado el objeto " +
+                        itemId + " porque " + reason + " y el inventario está lleno.");
+                    continue;
+                }
+
+                player.Inventory[inventorySlot] = new InventorySlot(itemId, 1);
+                player.Equipment[equipSlot] = 0;
+                moved++;
+                EquipmentCorrectedOnLoad++;
+            }
+
+            return moved;
+        }
+
+        private bool CheckEquip(CharacterClass? characterClass, ItemType item, int level)
+        {
+            if (characterClass == null)
+            {
+                RejectedEquipClass++;
+                return false;
+            }
+
+            EquipCheck check = EquipRules.Check(item, characterClass, level);
+            if (check == EquipCheck.WrongClass)
+            {
+                RejectedEquipClass++;
+                return false;
+            }
+
+            if (check == EquipCheck.LowLevel)
+            {
+                RejectedEquipLevel++;
+                return false;
+            }
+
+            return true;
         }
 
         private static bool TryGetLivingPlayer(Zone zone, int playerId, out PlayerEntity player)

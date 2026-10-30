@@ -11,7 +11,8 @@
       "defense": 0,
       "magicResist": 0,
       "resource": { "name": "Furia", "base": 100, "perInt": 0 },
-      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 }
+      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
+      "weaponTypes": ["Espada", "Hacha"]
     },
     {
       "id": 2,
@@ -22,7 +23,8 @@
       "defense": 0,
       "magicResist": 0,
       "resource": { "name": "Maná", "base": 60, "perInt": 4 },
-      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 }
+      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
+      "weaponTypes": ["Bastón"]
     },
     {
       "id": 3,
@@ -33,7 +35,8 @@
       "defense": 0,
       "magicResist": 0,
       "resource": { "name": "Energía", "base": 100, "perInt": 0 },
-      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 }
+      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
+      "weaponTypes": ["Arco"]
     },
     {
       "id": 4,
@@ -44,7 +47,8 @@
       "defense": 0,
       "magicResist": 0,
       "resource": { "name": "Maná", "base": 60, "perInt": 4 },
-      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 }
+      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
+      "weaponTypes": ["Maza"]
     }
   ]
 }

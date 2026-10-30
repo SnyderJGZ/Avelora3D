@@ -56,8 +56,8 @@ namespace Avelora.Tests
         {
             Items = new List<ItemType>
             {
-                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
-                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", WeaponType = "Hacha", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
             },
         };
 

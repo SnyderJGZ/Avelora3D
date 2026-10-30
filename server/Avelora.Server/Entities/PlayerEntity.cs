@@ -31,6 +31,9 @@ namespace Avelora.Server.Entities
         /// <summary>Identificador del personaje (en la Etapa F vendrá de la base de datos).</summary>
         public int CharacterId { get; }
 
+        /// <summary>Nombre usado para identificar al personaje en avisos de reparación de equipo.</summary>
+        public string CharacterName { get; set; } = string.Empty;
+
         /// <summary>Conexión asociada. <c>-1</c> significa «sin red»: un jugador simulado por código.</summary>
         public int ConnectionId { get; set; } = -1;
 

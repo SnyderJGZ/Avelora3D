@@ -19,7 +19,7 @@ namespace Avelora.Tests
             Assert.Equal((byte)7, (byte)EquipSlot.Ring);
             Assert.Equal((byte)8, (byte)EquipSlot.Neck);
             Assert.Equal((byte)9, (byte)EquipSlot.Accessory);
-            Assert.Equal((ushort)15, ProtocolConstants.Version);
+            Assert.Equal((ushort)16, ProtocolConstants.Version);
             Assert.Equal(10, ProtocolConstants.EquipSlotCount);
         }
 
@@ -93,7 +93,7 @@ namespace Avelora.Tests
                 new[]
                 {
                     new ItemCatalogEntry(3305, ItemKind.Armor, 1, 0, 0, 0, 0, "Guantes", 5, 1, 0, 0, 1, 0, 0),
-                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada", 0, 0, 0, 2, 0, 0, 0),
+                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada", 0, 0, 0, 2, 0, 0, 0, "Lamina"),
                     new ItemCatalogEntry(3001, ItemKind.Material, 99, 0, 0, 0, 0, "Colmillo"),
                 });
 
@@ -103,8 +103,12 @@ namespace Avelora.Tests
             Assert.Equal((byte)5, decoded.Items[0].EquipSlot);
             Assert.Equal((ushort)1, decoded.Items[0].Defense);
             Assert.Equal((byte)1, decoded.Items[0].Dex);
+            Assert.Equal("Lamina", decoded.Items[1].WeaponType);
+            Assert.False(decoded.Items[1].TwoHanded);
+            Assert.Equal((byte)1, decoded.Items[1].RequiredLevel);
+            Assert.True(decoded.Items[1].UsableByClass);
             Assert.Equal((byte)2, decoded.Items[1].Str);
-            Assert.Equal(19 + 3 * 32 + 7 + 6 + 8, bytes.Length);
+            Assert.Equal(19 + 3 * (32 + 3 + 2) + 7 + 6 + 8 + 6, bytes.Length);
 
             bytes[21] = 99;
             Assert.False(MessageCodec.TryReadItemCatalog(bytes, 0, bytes.Length, out _));

@@ -44,6 +44,8 @@ namespace Avelora.Shared.Protocol
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
+        // Tamaño anterior (32) + tres flags/niveles y la longitud de weaponType.
+        private const int ItemCatalogEntryFixedSize = 32 + 3 + 2;
         private const int EntityStateSize = 4 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
 
         private const int WelcomeSize =
@@ -1408,8 +1410,8 @@ namespace Avelora.Shared.Protocol
         }
 
         /// <summary>
-        /// Codifica una parte del catálogo: cabecera fija de 19 bytes y, por objeto, 32 bytes más el
-        /// nombre UTF-8 (con su prefijo de longitud de dos bytes).
+        /// Codifica una parte del catálogo: cabecera fija de 19 bytes y, por objeto, 32 bytes previos
+        /// más handedness, nivel, permiso de clase y weaponType UTF-8, además del nombre.
         /// </summary>
         public static byte[][] EncodeItemCatalogChunks(in ItemCatalogMessage message)
         {
@@ -1427,14 +1429,15 @@ namespace Avelora.Shared.Protocol
                         nameof(message), "El catálogo contiene un tipo o hueco de equipo inválido.");
                 }
 
-                int nameBytes = Encoding.UTF8.GetByteCount(item.Name ?? string.Empty);
+                int nameBytes = GetStrictUtf8ByteCount(item.Name ?? string.Empty);
+                int weaponTypeBytes = GetStrictUtf8ByteCount(item.WeaponType ?? string.Empty);
                 if (nameBytes > 48)
                 {
                     throw new ArgumentException(
                         "El nombre del objeto supera los 48 bytes UTF-8.", nameof(message));
                 }
 
-                int itemSize = 32 + nameBytes;
+                int itemSize = ItemCatalogEntryFixedSize + weaponTypeBytes + nameBytes;
                 if (ItemCatalogHeaderSize + itemSize > ProtocolConstants.MaxMessageSize)
                 {
                     throw new ArgumentException(
@@ -1484,13 +1487,14 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentOutOfRangeException(nameof(message), "El catálogo contiene un tipo o hueco de equipo inválido.");
                 }
 
-                int nameBytes = Encoding.UTF8.GetByteCount(items[i].Name ?? string.Empty);
+                int nameBytes = GetStrictUtf8ByteCount(items[i].Name ?? string.Empty);
+                int weaponTypeBytes = GetStrictUtf8ByteCount(items[i].WeaponType ?? string.Empty);
                 if (nameBytes > 48)
                 {
                     throw new ArgumentException("El nombre del objeto supera los 48 bytes UTF-8.", nameof(message));
                 }
 
-                size += 32 + nameBytes;
+                size += ItemCatalogEntryFixedSize + weaponTypeBytes + nameBytes;
             }
 
             if (size > ProtocolConstants.MaxMessageSize)
@@ -1526,6 +1530,10 @@ namespace Avelora.Shared.Protocol
                 writer.WriteByte(item.Dex);
                 writer.WriteByte(item.Int);
                 writer.WriteByte(item.Vit);
+                writer.WriteByte(item.TwoHanded ? (byte)1 : (byte)0);
+                writer.WriteByte(item.RequiredLevel);
+                writer.WriteByte(item.UsableByClass ? (byte)1 : (byte)0);
+                writer.WriteString(item.WeaponType, 16);
                 writer.WriteString(item.Name, 48);
             }
 
@@ -1575,10 +1583,20 @@ namespace Avelora.Shared.Protocol
                     byte dex = reader.ReadByte();
                     byte intelligence = reader.ReadByte();
                     byte vit = reader.ReadByte();
+                    byte handedness = reader.ReadByte();
+                    byte requiredLevel = reader.ReadByte();
+                    byte usableByClass = reader.ReadByte();
+                    if (handedness > 1 || usableByClass > 1)
+                    {
+                        return false;
+                    }
+
+                    string weaponType = reader.ReadString(16);
                     string name = reader.ReadString(48);
                     var entry = new ItemCatalogEntry(
                         id, (ItemKind)rawKind, maxStack, heal, damage, range, cooldownSeconds, name,
-                        equipSlot, defense, magicResist, str, dex, intelligence, vit);
+                        equipSlot, defense, magicResist, str, dex, intelligence, vit,
+                        weaponType, handedness == 1, requiredLevel, usableByClass == 1);
                     if (!IsValidItemCatalogEntry(entry))
                     {
                         return false;
@@ -1959,12 +1977,32 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
 
+            string weaponType = item.WeaponType ?? string.Empty;
+            int weaponTypeBytes;
+            try
+            {
+                weaponTypeBytes = GetStrictUtf8ByteCount(weaponType);
+            }
+            catch (EncoderFallbackException)
+            {
+                return false;
+            }
+
+            if (weaponTypeBytes > 16 || item.RequiredLevel == 0 ||
+                (weaponType.Length > 0 && !string.Equals(weaponType, weaponType.Trim(), StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
             return item.Kind switch
             {
-                ItemKind.Weapon => item.EquipSlot == (byte)Avelora.Shared.EquipSlot.Weapon,
+                ItemKind.Weapon => item.EquipSlot == (byte)Avelora.Shared.EquipSlot.Weapon &&
+                    weaponTypeBytes > 0,
                 ItemKind.Armor => item.EquipSlot > (byte)Avelora.Shared.EquipSlot.Weapon &&
-                    item.EquipSlot < ProtocolConstants.EquipSlotCount,
-                _ => item.EquipSlot == byte.MaxValue,
+                    item.EquipSlot < ProtocolConstants.EquipSlotCount && weaponTypeBytes == 0 &&
+                    !item.TwoHanded && item.UsableByClass,
+                _ => item.EquipSlot == byte.MaxValue && weaponTypeBytes == 0 &&
+                    !item.TwoHanded && item.UsableByClass,
             };
         }
     }

@@ -455,7 +455,11 @@ namespace Avelora.Shared.Protocol
             byte str = 0,
             byte dex = 0,
             byte intelligence = 0,
-            byte vit = 0)
+            byte vit = 0,
+            string weaponType = "",
+            bool twoHanded = false,
+            byte requiredLevel = 1,
+            bool usableByClass = true)
         {
             Id = id;
             Kind = kind;
@@ -472,6 +476,10 @@ namespace Avelora.Shared.Protocol
             Dex = dex;
             Int = intelligence;
             Vit = vit;
+            WeaponType = weaponType ?? string.Empty;
+            TwoHanded = twoHanded;
+            RequiredLevel = requiredLevel;
+            UsableByClass = usableByClass;
         }
 
         public ushort Id { get; }
@@ -489,6 +497,10 @@ namespace Avelora.Shared.Protocol
         public byte Dex { get; }
         public byte Int { get; }
         public byte Vit { get; }
+        public string WeaponType { get; }
+        public bool TwoHanded { get; }
+        public byte RequiredLevel { get; }
+        public bool UsableByClass { get; }
     }
 
     /// <summary>

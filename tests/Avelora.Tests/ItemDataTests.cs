@@ -58,7 +58,8 @@ namespace Avelora.Tests
             {
                 Id = id,
                 Name = name,
-                Kind = "weapon",
+                 Kind = "weapon",
+                 WeaponType = "TestBlade",
                 MaxStack = stack,
                 Damage = damage,
                 Range = range,
@@ -124,7 +125,7 @@ namespace Avelora.Tests
                 { "items": [
                   { "id": 3001, "name": "Colmillo", "kind": "material", "maxStack": 99 },
                   { "id": 3002, "name": "Poción", "kind": "potion", "maxStack": 10, "heal": 30 },
-                  { "id": 3101, "name": "Espada corta", "kind": "weapon", "maxStack": 1, "damage": 14, "range": 1.2, "cooldownSeconds": 0.8 }
+                  { "id": 3101, "name": "Espada corta", "kind": "weapon", "weaponType": "Lamina", "maxStack": 1, "damage": 14, "range": 1.2, "cooldownSeconds": 0.8 }
                 ] }
                 """);
 
@@ -318,19 +319,19 @@ namespace Avelora.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Catalog(new ItemType
             {
-                Id = 3101, Name = "Espada", Kind = "weapon", MaxStack = 1,
+                Id = 3101, Name = "Espada", Kind = "weapon", WeaponType = "TestBlade", MaxStack = 1,
                 Damage = 14, Range = 1.2f,
             }).Validate());
 
             Assert.Throws<InvalidOperationException>(() => Catalog(new ItemType
             {
-                Id = 3101, Name = "Espada", Kind = "weapon", MaxStack = 1,
+                Id = 3101, Name = "Espada", Kind = "weapon", WeaponType = "TestBlade", MaxStack = 1,
                 Damage = 14, CooldownSeconds = 0.8d,
             }).Validate());
 
             Assert.Throws<InvalidOperationException>(() => Catalog(new ItemType
             {
-                Id = 3101, Name = "Espada", Kind = "weapon", MaxStack = 1,
+                Id = 3101, Name = "Espada", Kind = "weapon", WeaponType = "TestBlade", MaxStack = 1,
                 Range = 1.2f, CooldownSeconds = 0.8d,
             }).Validate());
         }
@@ -426,6 +427,8 @@ namespace Avelora.Tests
         {
             ItemCatalog catalog = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
             ClassCatalog classes = ClassCatalog.Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
+            classes.ValidateWeaponTypes(catalog);
+            Assert.Equal(18, catalog.Items.Count);
             var entries = new ItemCatalogEntry[catalog.Items.Count];
             for (int i = 0; i < entries.Length; i++)
             {
@@ -435,6 +438,20 @@ namespace Avelora.Tests
                     : item.IsWeapon ? ItemKind.Weapon
                     : item.IsArmor ? ItemKind.Armor : ItemKind.Material;
                 item.TryGetEquipSlot(out byte equipSlot);
+                bool usableByClass = !item.IsWeapon;
+                if (item.IsWeapon)
+                {
+                    for (int typeIndex = 0; typeIndex < classes.Find(1)!.WeaponTypes!.Count; typeIndex++)
+                    {
+                        if (string.Equals(classes.Find(1)!.WeaponTypes![typeIndex], item.WeaponType,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            usableByClass = true;
+                            break;
+                        }
+                    }
+                }
+
                 entries[i] = new ItemCatalogEntry(
                     (ushort)item.Id,
                     kind,
@@ -450,7 +467,11 @@ namespace Avelora.Tests
                     checked((byte)item.Str),
                     checked((byte)item.Dex),
                     checked((byte)item.Int),
-                    checked((byte)item.Vit));
+                    checked((byte)item.Vit),
+                    item.IsWeapon ? item.WeaponType : string.Empty,
+                    item.IsTwoHanded,
+                    (byte)item.RequiredLevel,
+                    usableByClass);
             }
 
             UnarmedAttack unarmed = classes.Find(1)!.Unarmed!;
@@ -460,6 +481,8 @@ namespace Avelora.Tests
                 1.5f, (uint)fistDamage, unarmed.Range, (float)unarmed.CooldownSeconds, entries));
 
             Assert.NotEmpty(chunks);
+            Assert.Single(chunks);
+            Assert.Equal(983, chunks[0].Length);
             Assert.All(chunks, chunk => Assert.True(chunk.Length <= ProtocolConstants.MaxMessageSize));
             int decodedCount = 0;
             for (int i = 0; i < chunks.Length; i++)

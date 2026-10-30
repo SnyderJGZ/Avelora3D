@@ -203,13 +203,13 @@ PRAGMA foreign_keys=ON;";
             Assert.Throws<ArgumentException>(() => record with { MapHash = new byte[1] });
         }
 
-        private static ItemCatalog ItemCatalogForTests() => new ItemCatalog
+        private static ItemCatalog ItemCatalogForTests(string weaponType = "Espada") => new ItemCatalog
         {
             Items = new List<ItemType>
             {
                 new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
-                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3101, Name = "Arma de prueba", Kind = "weapon", WeaponType = weaponType, MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
                 new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
                 new ItemType { Id = 3308, Name = "Anillo de vigor", Kind = "armor", Slot = "ring", MaxStack = 1, Vit = 2 },
             },
@@ -1656,7 +1656,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
         [Fact]
         public void Al_Reconectar_TryGetLatest_Conserva_El_Arma_Equipada()
         {
-            using var harness = new ServerHarness(DatabasePath, items: ItemCatalogForTests());
+            using var harness = new ServerHarness(DatabasePath, items: ItemCatalogForTests("Bastón"));
             harness.Connect(1);
             harness.Handshake(1, "dev", "avelora-dev", "dev");
             harness.Pump(1);

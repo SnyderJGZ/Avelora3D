@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Avelora.Server.Items;
 using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Progression
@@ -112,6 +113,7 @@ namespace Avelora.Server.Progression
                 ValidateDefense(characterClass.MagicResist, where + ".magicResist");
                 ValidateResource(characterClass.Resource, where + ".resource");
                 ValidateUnarmed(characterClass.Unarmed, where + ".unarmed");
+                ValidateWeaponTypes(characterClass.WeaponTypes, where + ".weaponTypes");
             }
 
             if (!hasWarrior)
@@ -131,6 +133,46 @@ namespace Avelora.Server.Progression
                 throw new InvalidOperationException(
                     "classes.json: CharacterList podría ocupar " + maxCharacterListSize +
                     " bytes y superar el tope de " + ProtocolConstants.MaxMessageSize + ".");
+            }
+        }
+
+        /// <summary>Comprueba que cada tipo admitido por una clase lo use algún arma del catálogo.</summary>
+        public void ValidateWeaponTypes(ItemCatalog items)
+        {
+            if (items == null)
+            {
+                throw new ArgumentNullException(nameof(items));
+            }
+
+            if (Classes == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < Classes.Count; i++)
+            {
+                CharacterClass characterClass = Classes[i]!;
+                for (int typeIndex = 0; typeIndex < characterClass.WeaponTypes!.Count; typeIndex++)
+                {
+                    string weaponType = characterClass.WeaponTypes[typeIndex];
+                    bool found = false;
+                    for (int itemIndex = 0; itemIndex < items.Items.Count; itemIndex++)
+                    {
+                        ItemType item = items.Items[itemIndex];
+                        if (item != null && item.IsWeapon &&
+                            string.Equals(item.WeaponType, weaponType, StringComparison.OrdinalIgnoreCase))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found)
+                    {
+                        throw new InvalidOperationException(
+                            "classes.json: classes[" + i + "].weaponTypes contiene '" + weaponType + "', que ningún arma de items.json usa.");
+                    }
+                }
             }
         }
 
@@ -209,6 +251,39 @@ namespace Avelora.Server.Progression
             }
         }
 
+        private static void ValidateWeaponTypes(List<string>? weaponTypes, string where)
+        {
+            if (weaponTypes == null)
+            {
+                throw new InvalidOperationException("classes.json: " + where + " es obligatorio.");
+            }
+
+            if (weaponTypes.Count > 8)
+            {
+                throw new InvalidOperationException("classes.json: " + where + " no puede contener más de 8 tipos.");
+            }
+
+            for (int i = 0; i < weaponTypes.Count; i++)
+            {
+                string? weaponType = weaponTypes[i];
+                int bytes = string.IsNullOrEmpty(weaponType) ? 0 : Encoding.UTF8.GetByteCount(weaponType);
+                if (bytes < 1 || bytes > 16 ||
+                    !string.Equals(weaponType, weaponType!.Trim(), StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + "[" + i + "] debe ocupar de 1 a 16 bytes UTF-8 y no tener espacios en los bordes.");
+                }
+
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if (string.Equals(weaponTypes[previous], weaponType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("classes.json: " + where + " contiene tipos repetidos.");
+                    }
+                }
+            }
+        }
+
         private static bool InRange(int value, int min, int max) => value >= min && value <= max;
     }
 
@@ -223,6 +298,7 @@ namespace Avelora.Server.Progression
         public int MagicResist { get; set; }
         public CharacterResource? Resource { get; set; }
         public UnarmedAttack? Unarmed { get; set; }
+        public List<string>? WeaponTypes { get; set; }
     }
 
     public sealed class CharacterAttributes

@@ -19,8 +19,8 @@ namespace Avelora.Tests
             {
                 new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 5 },
                 new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
-                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
-                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", WeaponType = "Hacha", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
                 new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
                 new ItemType { Id = 3302, Name = "Casco de hierro", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 4, MagicResist = 1 },
                 new ItemType { Id = 3308, Name = "Anillo de vigor", Kind = "armor", Slot = "ring", MaxStack = 1, Vit = 2 },

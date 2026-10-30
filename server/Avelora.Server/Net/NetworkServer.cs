@@ -1566,6 +1566,8 @@ namespace Avelora.Server.Net
                 }
 
                 Array.Copy(character.Equipment, player.Equipment, ProtocolConstants.EquipSlotCount);
+                player.CharacterName = character.Name;
+                zone.EnforceEquipment(player);
                 zone.RecalculateEquipmentStats(player);
                 // SpawnPlayer recortó la vida a la máxima sin equipo; con el equipo puesto vale la guardada.
                 if (character.Health > 0)
@@ -1964,6 +1966,7 @@ namespace Avelora.Server.Net
             // El ataque sin arma depende de la clase (I-08): el cliente lo usa para acercarse y
             // marcar el ritmo del ataque automático, así que tiene que ser el mismo que valida el combate.
             UnarmedAttack unarmed = zone.Classes.Find(player.ClassId)!.Unarmed!;
+            CharacterClass characterClass = zone.Classes.Find(player.ClassId)!;
             int unarmedDamage = CharacterStats.GetAttackDamage(
                 zone.Classes,
                 player.ClassId,
@@ -2002,7 +2005,11 @@ namespace Avelora.Server.Net
                     checked((byte)item.Str),
                     checked((byte)item.Dex),
                     checked((byte)item.Int),
-                    checked((byte)item.Vit));
+                    checked((byte)item.Vit),
+                    item.IsWeapon ? item.WeaponType : string.Empty,
+                    item.IsTwoHanded,
+                    checked((byte)item.RequiredLevel),
+                    !item.IsWeapon || CanUseWeaponType(characterClass, item.WeaponType));
             }
 
             return MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
@@ -2011,6 +2018,25 @@ namespace Avelora.Server.Net
                 unarmed.Range,
                 (float)unarmed.CooldownSeconds,
                 entries));
+        }
+
+        private static bool CanUseWeaponType(CharacterClass characterClass, string weaponType)
+        {
+            List<string>? weaponTypes = characterClass.WeaponTypes;
+            if (weaponTypes == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < weaponTypes.Count; i++)
+            {
+                if (string.Equals(weaponTypes[i], weaponType, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static byte[] EncodeInventory(PlayerEntity player)

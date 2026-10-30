@@ -688,6 +688,15 @@ namespace Avelora.Client
 
         private void SendUnequip(int equipSlot, int targetSlot)
         {
+            if (targetSlot != byte.MaxValue && targetSlot >= 0 && targetSlot < _inventoryIds.Length &&
+                _catalog.TryGetValue(_inventoryIds[targetSlot], out ItemCatalogEntry item) &&
+                (item.Kind == ItemKind.Weapon || item.Kind == ItemKind.Armor) &&
+                !CanEquipHere(targetSlot, out string reason))
+            {
+                ShowHint(reason);
+                return;
+            }
+
             byte[] bytes = MessageCodec.EncodeUnequip(new UnequipMessage((byte)equipSlot, (byte)targetSlot));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
@@ -710,6 +719,12 @@ namespace Avelora.Client
             byte[] bytes;
             if (item.Kind == ItemKind.Weapon || item.Kind == ItemKind.Armor)
             {
+                if (!CanEquipHere(slot, out string reason))
+                {
+                    ShowHint(reason);
+                    return;
+                }
+
                 bytes = MessageCodec.EncodeEquip(new EquipMessage((byte)slot));
             }
             else if (item.Kind == ItemKind.Potion)

@@ -203,6 +203,11 @@ namespace Avelora.Server.Diagnostics
                 " equip_rech_objeto=" + zone.RejectedEquipItem +
                 " equipo_rech_vacio=" + zone.RejectedUnequipEmpty +
                 " equipo_rech_lleno=" + zone.RejectedEquipFull +
+                " equip_rech_clase=" + zone.RejectedEquipClass +
+                " equip_rech_nivel=" + zone.RejectedEquipLevel +
+                " equip_rech_dosmanos=" + zone.RejectedEquipTwoHand +
+                " equipo_corregido_carga=" + zone.EquipmentCorrectedOnLoad +
+                " equipo_aviso_carga=" + zone.EquipmentLoadWarnings +
                 " equipo_rech_hueco=" + zone.RejectedEquipmentSlot +
                 " equipo_rech_destino=" + zone.RejectedEquipmentDestination +
                 " mover_rech_muerto=" + zone.RejectedMoveDead +
@@ -379,6 +384,11 @@ namespace Avelora.Server.Diagnostics
                 ", equip_rech_objeto=" + zone.RejectedEquipItem +
                 ", equipo_rech_vacio=" + zone.RejectedUnequipEmpty +
                 ", equipo_rech_lleno=" + zone.RejectedEquipFull +
+                ", equip_rech_clase=" + zone.RejectedEquipClass +
+                ", equip_rech_nivel=" + zone.RejectedEquipLevel +
+                ", equip_rech_dosmanos=" + zone.RejectedEquipTwoHand +
+                ", equipo_corregido_carga=" + zone.EquipmentCorrectedOnLoad +
+                ", equipo_aviso_carga=" + zone.EquipmentLoadWarnings +
                 ", equipo_rech_hueco=" + zone.RejectedEquipmentSlot +
                 ", equipo_rech_destino=" + zone.RejectedEquipmentDestination +
                 ", mover_rech_muerto=" + zone.RejectedMoveDead +

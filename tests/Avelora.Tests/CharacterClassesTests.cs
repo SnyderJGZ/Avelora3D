@@ -13,10 +13,10 @@ namespace Avelora.Tests
               "baseHealth": 50,
               "damagePerPoint": 0.5,
               "classes": [
-                { "id": 1, "name": "Guerrero", "primary": "str", "base": { "str": 4, "dex": 3, "int": 1, "vit": 10 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Furia", "base": 100, "perInt": 0 }, "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 } },
-                { "id": 2, "name": "Mago", "primary": "int", "base": { "str": 1, "dex": 3, "int": 8, "vit": 6 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Maná", "base": 60, "perInt": 4 }, "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 } },
-                { "id": 3, "name": "Ranger", "primary": "dex", "base": { "str": 2, "dex": 6, "int": 2, "vit": 8 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Energía", "base": 100, "perInt": 0 }, "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 } },
-                { "id": 4, "name": "Sanador", "primary": "int", "base": { "str": 1, "dex": 2, "int": 7, "vit": 8 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Maná", "base": 60, "perInt": 4 }, "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 } }
+                { "id": 1, "name": "Guerrero", "primary": "str", "base": { "str": 4, "dex": 3, "int": 1, "vit": 10 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Furia", "base": 100, "perInt": 0 }, "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 }, "weaponTypes": ["TestBlade"] },
+                { "id": 2, "name": "Mago", "primary": "int", "base": { "str": 1, "dex": 3, "int": 8, "vit": 6 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Maná", "base": 60, "perInt": 4 }, "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 }, "weaponTypes": [] },
+                { "id": 3, "name": "Ranger", "primary": "dex", "base": { "str": 2, "dex": 6, "int": 2, "vit": 8 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Energía", "base": 100, "perInt": 0 }, "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 }, "weaponTypes": [] },
+                { "id": 4, "name": "Sanador", "primary": "int", "base": { "str": 1, "dex": 2, "int": 7, "vit": 8 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Maná", "base": 60, "perInt": 4 }, "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 }, "weaponTypes": [] }
               ]
             }
             """;
@@ -159,6 +159,7 @@ namespace Avelora.Tests
                 Range = 1.2f,
                 CooldownSeconds = 1d,
             },
+            WeaponTypes = new System.Collections.Generic.List<string> { "TestBlade" },
         };
 
         [Theory]

@@ -231,6 +231,7 @@ namespace Avelora.Bots
         private ushort _pendingEquipItemId;
         private byte _pendingEquipSlot;
         private long _armorsEquipped;
+        private long _equipOmittedRequirements;
         private float _fistDamage = 10f;
         private float _fistRange = AttackRange;
         private float _fistCooldownSeconds = 0.8f;
@@ -454,6 +455,9 @@ namespace Avelora.Bots
 
         /// <summary>Armaduras confirmadas por el servidor como equipadas durante la sesión.</summary>
         public long ArmorsEquipped => Interlocked.Read(ref _armorsEquipped);
+
+        /// <summary>Candidatos de equipo omitidos por clase, nivel o compatibilidad de manos.</summary>
+        public long EquipOmittedRequirements => Interlocked.Read(ref _equipOmittedRequirements);
 
         /// <summary>Nivel que el servidor confirmó en el último mensaje Progress.</summary>
         public byte Level => _level;
@@ -2166,7 +2170,19 @@ namespace Avelora.Bots
                 ushort itemId = _inventoryItemIds[i];
                 if (_inventoryCounts[i] == 0 ||
                     !_itemCatalog.TryGetValue(itemId, out ItemCatalogEntry item) ||
-                    item.Kind != ItemKind.Weapon || item.Damage <= bestDamage)
+                    item.Kind != ItemKind.Weapon)
+                {
+                    continue;
+                }
+
+                if (!item.UsableByClass || _level < item.RequiredLevel ||
+                    (item.TwoHanded && _equipmentItemIds[(int)EquipSlot.Offhand] != 0 && !HasFreeInventorySlot()))
+                {
+                    Interlocked.Increment(ref _equipOmittedRequirements);
+                    continue;
+                }
+
+                if (item.Damage <= bestDamage)
                 {
                     continue;
                 }
@@ -2200,11 +2216,24 @@ namespace Avelora.Bots
             {
                 ushort itemId = _inventoryItemIds[i];
                 if (_inventoryCounts[i] == 0 ||
-                    !_itemCatalog.TryGetValue(itemId, out ItemCatalogEntry item) ||
-                    item.Kind != ItemKind.Armor ||
+                    !_itemCatalog.TryGetValue(itemId, out ItemCatalogEntry item))
+                {
+                    continue;
+                }
+
+                if (item.Kind != ItemKind.Armor ||
                     item.EquipSlot >= _equipmentItemIds.Length ||
                     _equipmentItemIds[item.EquipSlot] != 0)
                 {
+                    continue;
+                }
+
+                if (_level < item.RequiredLevel ||
+                    (item.EquipSlot == (byte)EquipSlot.Offhand &&
+                     _itemCatalog.TryGetValue(_equipmentItemIds[(int)EquipSlot.Weapon], out ItemCatalogEntry weapon) &&
+                     weapon.TwoHanded))
+                {
+                    Interlocked.Increment(ref _equipOmittedRequirements);
                     continue;
                 }
 
@@ -2214,6 +2243,20 @@ namespace Avelora.Bots
                 _pendingEquipSlot = item.EquipSlot;
                 return;
             }
+        }
+
+        private bool HasFreeInventorySlot()
+        {
+            int slots = Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length);
+            for (int i = 0; i < slots; i++)
+            {
+                if (_inventoryItemIds[i] == 0 && _inventoryCounts[i] == 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Envía una mutación de inventario al azar cada medio segundo (I-14).</summary>

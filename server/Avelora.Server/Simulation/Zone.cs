@@ -354,6 +354,11 @@ namespace Avelora.Server.Simulation
         public long RejectedEquipItem => _items?.RejectedEquipItem ?? 0;
         public long RejectedEquipFull => _items?.RejectedEquipFull ?? 0;
         public long RejectedEquipEmpty => _items?.RejectedEquipEmpty ?? 0;
+        public long RejectedEquipClass => _items?.RejectedEquipClass ?? 0;
+        public long RejectedEquipLevel => _items?.RejectedEquipLevel ?? 0;
+        public long RejectedEquipTwoHand => _items?.RejectedEquipTwoHand ?? 0;
+        public long EquipmentCorrectedOnLoad => _items?.EquipmentCorrectedOnLoad ?? 0;
+        public long EquipmentLoadWarnings => _items?.EquipmentLoadWarnings ?? 0;
         public long EquipmentSwaps => _items?.EquipmentSwaps ?? 0;
         public long ItemsMoved => _items?.Moved ?? 0;
         public long ItemsSplit => _items?.Split ?? 0;
@@ -494,6 +499,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Recalcula vida, recurso y defensas tras cargar o cambiar el equipo.</summary>
         public void RecalculateEquipmentStats(PlayerEntity player) =>
             _stats.RecalculateAfterEquipmentChange(player);
+
+        /// <summary>Aplica las reglas de equipo actuales a los datos persistidos del personaje.</summary>
+        public int EnforceEquipment(PlayerEntity player) => _items?.EnforceEquipment(player, _classes) ?? 0;
 
         /// <summary>Un tick: leer intenciones, simular el mundo y publicar el estado.</summary>
         public void Tick()

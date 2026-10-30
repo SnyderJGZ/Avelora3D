@@ -28,6 +28,8 @@ namespace Avelora.Client
         private readonly Texture2D[] _statIcons = new Texture2D[9];
         private GUIStyle _darkTextStyle;
         private GUIStyle _darkRightStyle;
+        private GUIStyle _darkRedStyle;
+        private GUIStyle _darkRedRightStyle;
         private GUIStyle _darkSmallStyle;
         private GUIStyle _darkTitleStyle;
         private GUIStyle _darkButtonStyle;
@@ -822,13 +824,32 @@ namespace Avelora.Client
                 GUI.DrawTexture(Part(panel, scale, 45f, 67f, 80f, 86f), icon, ScaleMode.ScaleToFit);
             }
 
-            string kind = item.Kind == ItemKind.Weapon ? "Arma"
+            string kind = item.Kind == ItemKind.Weapon ? "Arma – " + item.WeaponType
                 : item.Kind == ItemKind.Armor ? EquipSlotNames[item.EquipSlot]
                 : item.Kind == ItemKind.Potion ? "Poción" : "Material";
             GUI.Label(Part(panel, scale, 155f, 62f, 300f, 50f), item.Name, _darkTitleStyle);
             GUI.Label(Part(panel, scale, 155f, 112f, 300f, 40f), kind, _darkSmallStyle);
 
             var lines = new List<KeyValuePair<string, string>>();
+            int unusableClassRow = -1;
+            int levelRow = -1;
+            if (item.Kind == ItemKind.Weapon && !item.UsableByClass)
+            {
+                unusableClassRow = lines.Count;
+                lines.Add(new KeyValuePair<string, string>("Tu clase no la usa", string.Empty));
+            }
+
+            if (item.Kind == ItemKind.Weapon && item.TwoHanded)
+            {
+                lines.Add(new KeyValuePair<string, string>("A dos manos", string.Empty));
+            }
+
+            if ((item.Kind == ItemKind.Weapon || item.Kind == ItemKind.Armor) && item.RequiredLevel > 1)
+            {
+                levelRow = lines.Count;
+                lines.Add(new KeyValuePair<string, string>("Nivel", item.RequiredLevel.ToString()));
+            }
+
             if (item.Kind == ItemKind.Weapon)
             {
                 lines.Add(new KeyValuePair<string, string>("Daño", item.Damage.ToString()));
@@ -851,12 +872,68 @@ namespace Avelora.Client
                 lines.Add(new KeyValuePair<string, string>("Pila máxima", item.MaxStack.ToString()));
             }
 
-            for (int i = 0; i < lines.Count && i < 9; i++)
+            for (int i = 0; i < lines.Count && i < 11; i++)
             {
                 Rect row = Part(panel, scale, 33f, 192f + (i * 32f), 410f, 30f);
-                GUI.Label(row, lines[i].Key, _darkTextStyle);
-                GUI.Label(row, lines[i].Value, _darkRightStyle);
+                bool red = i == unusableClassRow || (i == levelRow && _level > 0 && _level < item.RequiredLevel);
+                GUI.Label(row, lines[i].Key, red ? _darkRedStyle : _darkTextStyle);
+                GUI.Label(row, lines[i].Value, red ? _darkRedRightStyle : _darkRightStyle);
             }
+        }
+
+        /// <summary>Evita enviar equipamientos que el catálogo y el estado local saben que serán rechazados.</summary>
+        private bool CanEquipHere(int inventorySlot, out string reason)
+        {
+            reason = string.Empty;
+            if (inventorySlot < 0 || inventorySlot >= _inventoryIds.Length ||
+                !_catalog.TryGetValue(_inventoryIds[inventorySlot], out ItemCatalogEntry item) ||
+                (item.Kind != ItemKind.Weapon && item.Kind != ItemKind.Armor))
+            {
+                return true;
+            }
+
+            if (item.Kind == ItemKind.Weapon && !item.UsableByClass)
+            {
+                reason = "Tu clase no usa: " + item.WeaponType;
+                return false;
+            }
+
+            if (_level > 0 && _level < item.RequiredLevel)
+            {
+                reason = "Requiere nivel " + item.RequiredLevel;
+                return false;
+            }
+
+            if (item.EquipSlot == (byte)EquipSlot.Offhand &&
+                _catalog.TryGetValue(_equipment[(int)EquipSlot.Weapon], out ItemCatalogEntry equippedWeapon) &&
+                equippedWeapon.TwoHanded)
+            {
+                reason = "Quita primero el arma a dos manos";
+                return false;
+            }
+
+            if (item.Kind == ItemKind.Weapon && item.TwoHanded &&
+                _equipment[(int)EquipSlot.Offhand] != 0 &&
+                _equipment[(int)EquipSlot.Weapon] != 0)
+            {
+                bool hasEmptyInventorySlot = false;
+                for (int i = 0; i < _inventoryIds.Length; i++)
+                {
+                    if (_inventoryIds[i] == 0)
+                    {
+                        hasEmptyInventorySlot = true;
+                        break;
+                    }
+                }
+
+                if (!hasEmptyInventorySlot)
+                {
+                    reason = "Libera un hueco para guardar la mano secundaria";
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void AddStatLine(List<KeyValuePair<string, string>> lines, string label, int value)
@@ -1068,6 +1145,10 @@ namespace Avelora.Client
             _darkTextStyle = new GUIStyle(_overlayStyle) { fontSize = 14, wordWrap = false, alignment = TextAnchor.MiddleLeft };
             _darkTextStyle.normal.textColor = light;
             _darkRightStyle = new GUIStyle(_darkTextStyle) { alignment = TextAnchor.MiddleRight };
+            _darkRedStyle = new GUIStyle(_darkTextStyle);
+            _darkRedStyle.normal.textColor = Color.red;
+            _darkRedRightStyle = new GUIStyle(_darkRightStyle);
+            _darkRedRightStyle.normal.textColor = Color.red;
             _darkSmallStyle = new GUIStyle(_darkTextStyle) { fontSize = 11, wordWrap = true };
             _darkSmallStyle.normal.textColor = new Color(0.68f, 0.71f, 0.75f);
             _darkTitleStyle = new GUIStyle(_darkTextStyle) { fontSize = 16, fontStyle = FontStyle.Bold };

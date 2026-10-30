@@ -133,6 +133,10 @@ namespace Avelora.Server
             try
             {
                 classes = ClassCatalog.Load(config.ResolveClassesPath(configPath));
+                if (!string.IsNullOrWhiteSpace(config.ItemsPath))
+                {
+                    classes.ValidateWeaponTypes(items);
+                }
             }
             catch (Exception ex) when (
                 ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)

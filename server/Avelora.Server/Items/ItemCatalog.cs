@@ -23,6 +23,58 @@ namespace Avelora.Server.Items
         /// <summary>Tipo de objeto: <c>material</c>, <c>potion</c>, <c>weapon</c> o <c>armor</c>.</summary>
         public string Kind { get; set; } = string.Empty;
 
+        private string _weaponType = string.Empty;
+
+        /// <summary>Tipo de arma que puede usar una clase; obligatorio solo para armas.</summary>
+        public string WeaponType
+        {
+            get => _weaponType;
+            set
+            {
+                _weaponType = value ?? string.Empty;
+                HasWeaponType = true;
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasWeaponType { get; private set; }
+
+        private string _handedness = "one";
+
+        /// <summary>Manos que ocupa el arma: one o two.</summary>
+        public string Handedness
+        {
+            get => _handedness;
+            set
+            {
+                _handedness = value ?? string.Empty;
+                HasHandedness = true;
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasHandedness { get; private set; }
+
+        private int _requiredLevel = 1;
+
+        /// <summary>Nivel mínimo para equipar un arma o armadura.</summary>
+        public int RequiredLevel
+        {
+            get => _requiredLevel;
+            set
+            {
+                _requiredLevel = value;
+                HasRequiredLevel = true;
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasRequiredLevel { get; private set; }
+
+        /// <summary>Indica si el arma ocupa ambos huecos de mano.</summary>
+        [JsonIgnore]
+        public bool IsTwoHanded => string.Equals(Handedness, "two", StringComparison.Ordinal);
+
         private string _slot = string.Empty;
 
         /// <summary>Hueco de una armadura. Está prohibido en otros tipos de objeto.</summary>
@@ -290,6 +342,7 @@ namespace Avelora.Server.Items
                 bool isMaterial = item.IsMaterial;
                 bool isWeapon = item.IsWeapon;
                 bool isArmor = item.IsArmor;
+                bool isEquipable = isWeapon || isArmor;
 
                 if (!isPotion && !isMaterial && !isWeapon && !isArmor)
                 {
@@ -315,6 +368,53 @@ namespace Avelora.Server.Items
                 }
 
                 ValidateEquipmentStats(item, where, isWeapon || isArmor);
+
+                if (isWeapon)
+                {
+                    int weaponTypeBytes = string.IsNullOrEmpty(item.WeaponType)
+                        ? 0
+                        : Encoding.UTF8.GetByteCount(item.WeaponType);
+                    if (!item.HasWeaponType || weaponTypeBytes < 1 || weaponTypeBytes > 16 ||
+                        !string.Equals(item.WeaponType, item.WeaponType.Trim(), StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") requiere weaponType de 1 a 16 bytes UTF-8, sin espacios en los bordes.");
+                    }
+
+                    if (item.Handedness != "one" && item.Handedness != "two")
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") tiene handedness '" + item.Handedness + "'; debe ser 'one' o 'two'.");
+                    }
+                }
+                else
+                {
+                    if (item.HasWeaponType)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") no es arma y no puede declarar weaponType.");
+                    }
+
+                    if (item.HasHandedness)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") no es arma y no puede declarar handedness.");
+                    }
+                }
+
+                if (isEquipable)
+                {
+                    if (item.RequiredLevel < 1 || item.RequiredLevel > byte.MaxValue)
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id + ") tiene requiredLevel " + item.RequiredLevel + "; debe estar entre 1 y 255.");
+                    }
+                }
+                else if (item.HasRequiredLevel)
+                {
+                    throw new InvalidOperationException(
+                        "items.json: " + where + " (id " + item.Id + ") no es equipable y no puede declarar requiredLevel.");
+                }
 
                 if (isArmor)
                 {

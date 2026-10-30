@@ -233,6 +233,7 @@ namespace Avelora.Bots
             long sentPotions = 0;
             long equipped = 0;
             long armorsEquipped = 0;
+            long equipOmittedRequirements = 0;
             long pointsAllocated = 0;
             long statsReceived = 0;
             long charactersCreated = 0;
@@ -280,6 +281,7 @@ namespace Avelora.Bots
                 sentPotions += bot.SentPotions;
                 equipped += bot.Equipped;
                 armorsEquipped += bot.ArmorsEquipped;
+                equipOmittedRequirements += bot.EquipOmittedRequirements;
                 pointsAllocated += bot.PointsAllocated;
                 statsReceived += bot.StatsReceived;
                 charactersCreated += bot.CharactersCreated;
@@ -349,6 +351,7 @@ namespace Avelora.Bots
                         " pociones=" + bot.SentPotions +
                         " equipados=" + bot.Equipped +
                         " armaduras_equipadas=" + bot.ArmorsEquipped +
+                        " equip_omitidos_req=" + bot.EquipOmittedRequirements +
                         " puntos_repartidos=" + bot.PointsAllocated +
                         " stats_recibidos=" + bot.StatsReceived);
                 }
@@ -412,6 +415,7 @@ namespace Avelora.Bots
                     sentPickups + " recogidas, " +
                     sentPotions + " pociones usadas, " + equipped + " armas equipadas, " +
                     armorsEquipped + " armaduras_equipadas, " +
+                    "equip_omitidos_req=" + equipOmittedRequirements + ", " +
                     "puntos_repartidos=" + pointsAllocated + ", stats_recibidos=" + statsReceived + ", " +
                     "subidas_nivel=" + levelUps + ", nivel_max=" + maxLevelReached);
             }

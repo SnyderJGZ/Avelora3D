@@ -38,7 +38,7 @@ namespace Avelora.Tests
             return Convert.ToInt32(command.ExecuteScalar());
         }
 
-        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null)
+        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null, ItemCatalog? customItems = null, ClassCatalog? classes = null)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
             var items = withItems
@@ -48,7 +48,7 @@ namespace Avelora.Tests
                     {
                         new ItemType { Id = 3001, Name = "Colmillo", Kind = "material", MaxStack = 99 },
                         new ItemType { Id = 3002, Name = "Poción", Kind = "potion", MaxStack = 10, Heal = 30 },
-                        new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
+                        new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
                         new ItemType { Id = 3201, Name = "Piedra de reajuste", Kind = "material", MaxStack = 10 },
                         new ItemType { Id = 3301, Name = "Casco de cuero", Kind = "armor", Slot = "head", MaxStack = 1, Defense = 2 },
                     },
@@ -70,7 +70,8 @@ namespace Avelora.Tests
                 attacks: new AttackQueue(config.MaxQueuedAttacks),
                 combat: new CombatSettings(config.AttackRangeTolerance),
                 playerVitals: config.PlayerVitals,
-                items: items,
+                items: customItems ?? items,
+                classes: classes,
                 itemActions: new ItemActionQueue(config.MaxQueuedItemActions),
                 inventorySlots: config.InventorySlots,
                 maxGroundItems: config.MaxGroundItems,
@@ -78,6 +79,183 @@ namespace Avelora.Tests
                 pickupRange: config.PickupRange,
                 pickupRangeTolerance: config.AttackRangeTolerance,
                 potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate));
+        }
+
+        [Fact]
+        public void Catalogo_De_Items_Marca_Las_Armas_Permitidas_Segun_La_Clase_De_Cada_Jugador()
+        {
+            using var harness = new Harness(withItems: true);
+            harness.Connect(1);
+            harness.Handshake(1, classId: 1);
+            harness.Connect(2);
+            harness.Handshake(2, classId: 2);
+            harness.Pump();
+
+            bool FindPermission(int connectionId)
+            {
+                for (int i = 0; i < harness.Transport.Sent.Count; i++)
+                {
+                    SentMessage sent = harness.Transport.Sent[i];
+                    if (sent.ConnectionId == connectionId &&
+                        MessageCodec.TryReadItemCatalog(sent.Data, 0, sent.Data.Length, out ItemCatalogMessage catalog))
+                    {
+                        for (int j = 0; j < catalog.Items.Length; j++)
+                        {
+                            if (catalog.Items[j].Id == 3101) return catalog.Items[j].UsableByClass;
+                        }
+                    }
+                }
+
+                throw new InvalidOperationException("El catálogo no contenía el objeto esperado.");
+            }
+
+            Assert.True(FindPermission(1));
+            Assert.False(FindPermission(2));
+        }
+
+        [Fact]
+        public void Al_Seleccionar_Personaje_Se_Corrige_El_Equipo_Antiguo_Antes_De_Enviar_Inventario()
+        {
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Weapon] = 3101;
+            var character = new CharacterRecord(
+                1, 1, "PersonajeGuardado", 1, 0, 100, 100, 1,
+                new Vec2(-1.5f, -2.5f), new byte[ProtocolConstants.MapHashSize],
+                DateTime.UtcNow, DateTime.UtcNow, classId: 2, equipment: equipment);
+            var repository = new FixedCharacterRepository(character);
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(
+                withItems: true, repository: repository, saves: saves);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            Assert.Equal(1, harness.Zone.EquipmentCorrectedOnLoad);
+            Assert.Equal(0, harness.Zone.ItemsEquipped);
+            InventoryMessage inventory = Assert.Single(harness.Transport.Sent
+                .Where(sent => sent.ConnectionId == 1 &&
+                    MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out _))
+                .Select(sent =>
+                {
+                    Assert.True(MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage decoded));
+                    return decoded;
+                }));
+            Assert.Equal((ushort)3101, inventory.ItemIds[0]);
+            Assert.Equal((ushort)0, inventory.Equipment[(int)EquipSlot.Weapon]);
+        }
+
+        [Theory]
+        [InlineData("nivel")]
+        [InlineData("dosmanos")]
+        [InlineData("lleno")]
+        public void Seleccionar_Personaje_Entrega_Equipo_Corregido_Y_Conserva_Objetos(string caso)
+        {
+            var classes = new ClassCatalog
+            {
+                BaseHealth = 50, DamagePerPoint = 0.5m,
+                Classes = new List<CharacterClass>
+                {
+                    new CharacterClass
+                    {
+                        Id = 1, Name = "Clase inventada", Primary = "str",
+                        Base = new CharacterAttributes { Str = 1, Dex = 1, Int = 1, Vit = 1 },
+                        HealthPerVit = 1,
+                        Resource = new CharacterResource { Name = "Recurso", Base = 0, PerInt = 0 },
+                        Unarmed = new UnarmedAttack { Damage = 1, DamageType = "physical", Range = 1, CooldownSeconds = 1 },
+                        WeaponTypes = new List<string> { "TipoA" },
+                    },
+                },
+            };
+            var items = new ItemCatalog
+            {
+                Items = new List<ItemType>
+                {
+                    new ItemType { Id = 4101, Name = "Arma inventada", Kind = "weapon", MaxStack = 1,
+                        WeaponType = caso == "lleno" ? "TipoB" : "TipoA",
+                        RequiredLevel = caso == "nivel" ? 2 : 1,
+                        Handedness = caso == "dosmanos" ? "two" : "one",
+                        Damage = 10, Range = 1, CooldownSeconds = 1 },
+                    new ItemType { Id = 4201, Name = "Escudo inventado", Kind = "armor", Slot = "offhand", MaxStack = 1 },
+                    new ItemType { Id = 4301, Name = "Material inventado", Kind = "material", MaxStack = 99 },
+                },
+            };
+            int slots = new ServerConfig().InventorySlots;
+            var storedInventory = caso == "lleno"
+                ? Enumerable.Range(0, slots).Select(i => new InventoryItemRecord(i, 4301, 1)).ToArray()
+                : Array.Empty<InventoryItemRecord>();
+            var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Weapon] = 4101;
+            if (caso == "dosmanos") equipment[(int)EquipSlot.Offhand] = 4201;
+            var character = new CharacterRecord(
+                1, 1, "PersonajeInventado", 1, 0, 50, 0, 1,
+                new Vec2(-1.5f, -2.5f), new byte[ProtocolConstants.MapHashSize],
+                DateTime.UtcNow, DateTime.UtcNow, inventoryItems: storedInventory, classId: 1, equipment: equipment);
+            var repository = new FixedCharacterRepository(character);
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves, customItems: items, classes: classes);
+            var stderr = new StringWriter();
+            TextWriter previousError = Console.Error;
+            try
+            {
+                Console.SetError(stderr);
+                harness.Connect(1);
+                harness.Handshake(1);
+                harness.Pump();
+            }
+            finally
+            {
+                Console.SetError(previousError);
+            }
+
+            InventoryMessage inventory = Assert.Single(harness.Transport.Sent
+                .Where(sent => sent.ConnectionId == 1 &&
+                    MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out _))
+                .Select(sent =>
+                {
+                    Assert.True(MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage decoded));
+                    return decoded;
+                }));
+            Assert.Equal(0, harness.Zone.ItemsEquipped);
+            Assert.Equal(0, harness.Zone.ItemsUnequipped);
+            Assert.Equal(caso == "lleno" ? 0 : 1, harness.Zone.EquipmentCorrectedOnLoad);
+            Assert.Equal(caso == "lleno" ? 1 : 0, harness.Zone.EquipmentLoadWarnings);
+            Assert.Equal(caso == "nivel" ? (ushort)0 : (ushort)4101, inventory.Equipment[(int)EquipSlot.Weapon]);
+            Assert.Equal((ushort)0, inventory.Equipment[(int)EquipSlot.Offhand]);
+            if (caso == "lleno")
+            {
+                Assert.Equal(slots, inventory.ItemIds.Length);
+                Assert.All(inventory.ItemIds, id => Assert.Equal((ushort)4301, id));
+                Assert.All(inventory.Counts, count => Assert.Equal((ushort)1, count));
+                Assert.Contains("AVISO", stderr.ToString());
+                Assert.Contains(character.Name, stderr.ToString());
+                Assert.Contains("4101", stderr.ToString());
+                Assert.DoesNotContain("contrase?a", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("clave", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("avelora-dev", stderr.ToString());
+            }
+            else
+            {
+                Assert.Equal(caso == "nivel" ? (ushort)4101 : (ushort)4201, inventory.ItemIds[0]);
+                Assert.Equal((ushort)1, inventory.Counts[0]);
+            }
+        }
+
+        [Fact]
+        public void Catalogo_Real_V16_Mide_Trozos_Al_Entrar()
+        {
+            var items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            var classes = ClassCatalog.Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
+            using var harness = new Harness(customItems: items, classes: classes);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            var chunks = harness.Transport.Sent.Where(sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadItemCatalog(sent.Data, 0, sent.Data.Length, out _)).ToArray();
+
+            Assert.Equal(18, items.Items.Count);
+            SentMessage chunk = Assert.Single(chunks);
+            Assert.Equal(983, chunk.Data.Length);
+            Assert.Equal(417, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
         }
 
         private sealed class Harness : IDisposable
@@ -96,12 +274,12 @@ namespace Avelora.Tests
                 bool withItems = false,
                 NpcCatalog? npcs = null,
                 IPlayerRepository? repository = null,
-                CharacterSaveService? saves = null)
+                CharacterSaveService? saves = null, ItemCatalog? customItems = null, ClassCatalog? classes = null)
             {
                 _persistent = repository != null;
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
-                Zone = NewZone(Config, withItems, npcs);
+                Zone = NewZone(Config, withItems, npcs, customItems, classes);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
                 Server = new NetworkServer(
@@ -2189,6 +2367,31 @@ namespace Avelora.Tests
                 int maxCharacters, int zoneId, Vec2 spawn, byte[] mapHash) =>
                 throw new InvalidOperationException("Fallo de creación simulado.");
             public void SaveCharacter(CharacterRecord character) { }
+            public void Dispose() { }
+        }
+
+        private sealed class FixedCharacterRepository : IPlayerRepository
+        {
+            private readonly CharacterRecord _character;
+
+            public FixedCharacterRepository(CharacterRecord character) => _character = character;
+
+            public void Initialize() { }
+
+            public AccountLoginResult Login(string accountName, string password, string invitationCode, string registrationCode) =>
+                AccountLoginResult.Ok(_character.AccountId);
+
+            public CharacterRecord[] ListCharacters(int accountId) =>
+                accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();
+
+            public bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+            {
+                character = accountId == _character.AccountId && characterId == _character.Id ? _character : null;
+                return character != null;
+            }
+
+            public void SaveCharacter(CharacterRecord character) { }
+
             public void Dispose() { }
         }
 

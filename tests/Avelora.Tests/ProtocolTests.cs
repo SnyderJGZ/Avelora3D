@@ -185,7 +185,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)15, ProtocolConstants.Version);
+            Assert.Equal((ushort)16, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -837,7 +837,7 @@ namespace Avelora.Tests
                 {
                     new ItemCatalogEntry(3001, ItemKind.Material, 99, 0, 0, 0, 0, "Colmillo"),
                     new ItemCatalogEntry(3002, ItemKind.Potion, 10, 30, 0, 0, 0, "Poción"),
-                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0),
+                    new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0, weaponType: "Lamina"),
                 });
 
             byte[] bytes = MessageCodec.EncodeItemCatalog(catalog);
@@ -862,7 +862,7 @@ namespace Avelora.Tests
 
             byte[] catalog = MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                 1f, 10, 1.2f, 0.8f,
-                new[] { new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada", 0) }));
+                new[] { new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada", 0, weaponType: "Lamina") }));
             Assert.False(MessageCodec.TryReadItemCatalog(catalog, 0, catalog.Length - 1, out _));
             Assert.False(MessageCodec.TryReadItemCatalog(catalog, 0, catalog.Length + 1, out _));
 

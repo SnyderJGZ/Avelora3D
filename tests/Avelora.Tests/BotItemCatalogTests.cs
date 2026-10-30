@@ -39,6 +39,7 @@ namespace Avelora.Tests
             Assert.True(transport.AllocateSent, "El bot debe repartir los puntos según el atributo base más alto.");
             Assert.True(transport.ArmorEquipSent, "El bot debe equipar la armadura recogida si el hueco está vacío.");
             Assert.Equal(1, bot.Equipped);
+            Assert.True(bot.EquipOmittedRequirements >= 2);
             Assert.Equal(1, bot.ArmorsEquipped);
             Assert.Equal((byte)3, bot.Level);
             Assert.Equal(2, bot.LevelUps);
@@ -73,6 +74,43 @@ namespace Avelora.Tests
             Assert.True(transport.InventoryActionCount >= 1);
         }
 
+        [Fact]
+        public void Fight_No_Equipa_Arma_Dos_Manos_Con_Offhand_Y_Sin_Hueco_Libre()
+        {
+            var transport = new CatalogTransport(blockTwoHanded: true);
+            using var bot = new BotClient(
+                3, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 19, runMs: 400, accountPrefix: "bot", password: "clave", invitationCode: "invitacion",
+                behavior: BotBehavior.Fight, transportFactory: () => transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.False(transport.EquipSent);
+            Assert.True(bot.EquipOmittedRequirements > 0);
+        }
+
+        [Theory]
+        [InlineData(true, false, -1, 1)]
+        [InlineData(false, false, 0, 0)]
+        [InlineData(true, true, 1, 1)]
+        public void Fight_Respeta_Offhand_Y_Continua_Con_Otra_Armadura(
+            bool dosManos, bool conCasco, int slotEsperado, long omitidos)
+        {
+            var transport = new CatalogTransport(armorScenario: true, twoHanded: dosManos, withHead: conCasco);
+            using var bot = new BotClient(
+                4, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 19, runMs: 250, accountPrefix: "bot", password: "clave", invitationCode: "invitacion",
+                behavior: BotBehavior.Fight, transportFactory: () => transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(slotEsperado, transport.RequestedArmorSlot);
+            Assert.Equal(omitidos, bot.EquipOmittedRequirements);
+            if (slotEsperado < 0)
+                Assert.Equal((ushort)0, (ushort)typeof(BotClient).GetField("_pendingEquipItemId",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(bot)!);
+        }
+
         private sealed class CatalogTransport : IClientTransport
         {
             private readonly Queue<byte[]> _incoming = new Queue<byte[]>();
@@ -81,8 +119,20 @@ namespace Avelora.Tests
             private bool _connectPending;
             private bool _connected;
 
-            public CatalogTransport()
+            private readonly bool _blockTwoHanded;
+
+            private readonly bool _armorScenario;
+            private readonly bool _twoHanded;
+            private readonly bool _withHead;
+            public int RequestedArmorSlot { get; private set; } = -1;
+
+            public CatalogTransport(bool blockTwoHanded = false, bool armorScenario = false,
+                bool twoHanded = false, bool withHead = false)
             {
+                _blockTwoHanded = blockTwoHanded;
+                _armorScenario = armorScenario;
+                _twoHanded = twoHanded;
+                _withHead = withHead;
                 using RSA rsa = RSA.Create(2048);
                 _publicKey = rsa.ExportParameters(includePrivateParameters: false);
             }
@@ -137,6 +187,41 @@ namespace Avelora.Tests
                         0.4f,
                         0.4f,
                         new byte[ProtocolConstants.MapHashSize])));
+                    if (_armorScenario)
+                    {
+                        var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                        equipment[(int)EquipSlot.Weapon] = 4101;
+                        _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                            1.5f, 10, 1.2f, 0.8f, new[]
+                            {
+                                new ItemCatalogEntry(4101, ItemKind.Weapon, 1, 0, 50, 2, 1, "Arma ficticia", 0,
+                                    weaponType: "TipoA", twoHanded: _twoHanded),
+                                new ItemCatalogEntry(4201, ItemKind.Armor, 1, 0, 0, 0, 0, "Escudo ficticio", (byte)EquipSlot.Offhand),
+                                new ItemCatalogEntry(4202, ItemKind.Armor, 1, 0, 0, 0, 0, "Casco ficticio", (byte)EquipSlot.Head),
+                            })));
+                        _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
+                            2, new ushort[] { 4201, _withHead ? (ushort)4202 : (ushort)0 },
+                            new ushort[] { 1, _withHead ? (ushort)1 : (ushort)0 }, equipment)));
+                        return;
+                    }
+                    if (_blockTwoHanded)
+                    {
+                        var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                        equipment[(int)EquipSlot.Offhand] = 4201;
+                        _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                            1.5f, 10, 1.2f, 0.8f,
+                            new[]
+                            {
+                                new ItemCatalogEntry(4101, ItemKind.Weapon, 1, 0, 50, 2, 1, "Dos manos", 0,
+                                    weaponType: "ClaseA", twoHanded: true),
+                                new ItemCatalogEntry(4201, ItemKind.Armor, 1, 0, 0, 0, 0, "Offhand", 1),
+                            })));
+                        _incoming.Enqueue(MessageCodec.EncodeInventory(
+                            new InventoryMessage(1, new ushort[] { 4101 }, new ushort[] { 1 }, equipment)));
+                        _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(1, 0, 100, 100)));
+                        return;
+                    }
+
                     _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                         1.5f,
                         10,
@@ -144,7 +229,8 @@ namespace Avelora.Tests
                         0.8f,
                         new[]
                         {
-                            new ItemCatalogEntry(3102, ItemKind.Weapon, 1, 0, 22, 1.3f, 1.2f, "Hacha de orco", 0),
+                            new ItemCatalogEntry(3102, ItemKind.Weapon, 1, 0, 22, 1.2f, 1.2f, "Arma ajena", 0, weaponType: "ClaseB", usableByClass: false),
+                            new ItemCatalogEntry(3103, ItemKind.Weapon, 1, 0, 50, 2.5f, 1.2f, "Arma de nivel alto", 0, weaponType: "ClaseA", requiredLevel: 3),
                         })));
                     _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                         1.5f,
@@ -153,11 +239,11 @@ namespace Avelora.Tests
                         0.8f,
                         new[]
                         {
-                            new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 1.2f, 0.8f, "Espada corta", 0),
+                            new ItemCatalogEntry(3101, ItemKind.Weapon, 1, 0, 14, 3.0f, 0.8f, "Arma permitida", 0, weaponType: "ClaseA", usableByClass: true),
                             new ItemCatalogEntry(3301, ItemKind.Armor, 1, 0, 0, 0, 0, "Casco", 2, 2),
                         })));
-                    _incoming.Enqueue(MessageCodec.EncodeInventory(
-                        new InventoryMessage(2, new ushort[] { 3102, 3301 }, new ushort[] { 1, 1 })));
+                    _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
+                        4, new ushort[] { 3102, 3103, 3101, 3301 }, new ushort[] { 1, 1, 1, 1 })));
                     _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(1, 0, 100, 100)));
                     _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
                         1, 1, 4, 3, 1, 10, 0, 0, 0, 0, 3, 100, 12, 0, 0, 0, 100, 100, 1)));
@@ -171,21 +257,27 @@ namespace Avelora.Tests
                 }
                 else if (data[0] == (byte)MessageType.Equip)
                 {
+                    if (_armorScenario)
+                    {
+                        Assert.True(MessageCodec.TryReadEquip(data, 0, length, out EquipMessage armor));
+                        RequestedArmorSlot = armor.Slot;
+                        return;
+                    }
                     bool valid = MessageCodec.TryReadEquip(data, 0, length, out EquipMessage equip);
-                    EquipSent |= valid && equip.Slot == 0;
-                    ArmorEquipSent |= valid && equip.Slot == 1;
+                    EquipSent |= valid && equip.Slot == 2;
+                    ArmorEquipSent |= valid && equip.Slot == 3;
                     var equipment = new ushort[ProtocolConstants.EquipSlotCount];
-                    equipment[0] = 3102;
-                    if (valid && equip.Slot == 0)
+                    equipment[0] = 3101;
+                    if (valid && equip.Slot == 2)
                     {
                         _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
-                            2, new ushort[] { 0, 3301 }, new ushort[] { 0, 1 }, equipment)));
+                            4, new ushort[] { 3102, 3103, 0, 3301 }, new ushort[] { 1, 1, 0, 1 }, equipment)));
                     }
-                    else if (valid && equip.Slot == 1)
+                    else if (valid && equip.Slot == 3)
                     {
                         equipment[(int)EquipSlot.Head] = 3301;
                         _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
-                            2, new ushort[] { 0, 0 }, new ushort[] { 0, 0 }, equipment)));
+                            4, new ushort[] { 3102, 3103, 0, 0 }, new ushort[] { 1, 1, 0, 0 }, equipment)));
                         _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(3, 0, 0, 130)));
                         _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
                             1, 3, 4, 3, 1, 10, 0, 0, 0, 0, 0, 100, 24, 0, 0, 0, 100, 100, 1)));
