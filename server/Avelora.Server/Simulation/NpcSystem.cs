@@ -531,6 +531,11 @@ namespace Avelora.Server.Simulation
             if (target.Health == 0)
             {
                 // PlayerVitalsSystem lo contará y programará la reaparición en este mismo tick.
+                if (target.Action != EntityAction.Dead)
+                {
+                    target.KilledByNpc = true;
+                }
+
                 target.Action = EntityAction.Dead;
 
                 if (target.DeathTick < 0)

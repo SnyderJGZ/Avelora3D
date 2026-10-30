@@ -118,6 +118,9 @@ namespace Avelora.Server.Entities
         /// <summary>Si la muerte de este jugador ya se contó (una sola vez).</summary>
         internal bool DeathCounted { get; set; }
 
+        /// <summary>Si la muerte actual la causó un PNJ y debe penalizar experiencia (I-11).</summary>
+        internal bool KilledByNpc { get; set; }
+
         /// <summary>
         /// Vida restante en porcentaje, con la misma regla que los PNJ: redondeo hacia arriba y 0
         /// solo si está muerto (I-03).

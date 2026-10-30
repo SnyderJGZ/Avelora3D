@@ -772,7 +772,19 @@ CREATE TABLE characters_v6 (
                     create.ExecuteNonQuery();
                 }
 
-                var usedKeys = new HashSet<string>(StringComparer.Ordinal);
+                var originalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    string originalName = Convert.ToString(rows[i][2], CultureInfo.InvariantCulture) ?? string.Empty;
+                    string originalKey = originalName.ToLowerInvariant();
+                    originalCounts.TryGetValue(originalKey, out int count);
+                    originalCounts[originalKey] = count + 1;
+                }
+
+                // Se reservan también los nombres únicos que todavía no se han procesado: al
+                // renombrar un duplicado no se debe desplazar un nombre original posterior.
+                var usedKeys = new HashSet<string>(originalCounts.Keys, StringComparer.Ordinal);
+                var seenOriginalKeys = new HashSet<string>(StringComparer.Ordinal);
                 for (int i = 0; i < rows.Count; i++)
                 {
                     object[] row = rows[i];
@@ -786,7 +798,7 @@ CREATE TABLE characters_v6 (
                     }
 
                     string nameKey = name.ToLowerInvariant();
-                    if (!usedKeys.Add(nameKey))
+                    if (!seenOriginalKeys.Add(nameKey))
                     {
                         int suffix = 2;
                         do

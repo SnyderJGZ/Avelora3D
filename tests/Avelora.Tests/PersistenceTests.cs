@@ -572,15 +572,28 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             int firstAccount;
             int secondAccount;
             int thirdAccount;
-            using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
+            int fourthAccount;
+            using (var repository = new SqlitePlayerRepository(
+                       DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests()))
             {
                 repository.Initialize();
                 firstAccount = repository.Login("migrar-a", "secreto1", "inv", "inv").AccountId;
                 secondAccount = repository.Login("migrar-b", "secreto1", "inv", "inv").AccountId;
                 thirdAccount = repository.Login("migrar-c", "secreto1", "inv", "inv").AccountId;
+                fourthAccount = repository.Login("migrar-d", "secreto1", "inv", "inv").AccountId;
                 repository.CreateCharacter(firstAccount, "Ana", 1, 10, 1, new Vec2(0, 0), NewHash(51));
                 repository.CreateCharacter(secondAccount, "Otra", 1, 10, 1, new Vec2(0, 0), NewHash(52));
                 repository.CreateCharacter(thirdAccount, "Bad_Name", 1, 10, 1, new Vec2(0, 0), NewHash(53));
+                repository.CreateCharacter(fourthAccount, "Ana2", 1, 10, 1, new Vec2(0, 0), NewHash(55));
+                CharacterRecord ana = Assert.Single(repository.ListCharacters(firstAccount));
+                var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                equipment[(int)EquipSlot.Weapon] = 3101;
+                equipment[(int)EquipSlot.Head] = 3301;
+                repository.SaveCharacter(ana with
+                {
+                    InventoryItems = new[] { new InventoryItemRecord(2, 3001, 4) },
+                    Equipment = equipment,
+                });
             }
 
             using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
@@ -598,11 +611,18 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             try
             {
                 Console.SetError(warningLog);
-                using var migrated = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+                using var migrated = new SqlitePlayerRepository(
+                    DatabasePath, passwordIterations: 1_000, items: ItemCatalogForTests());
                 migrated.Initialize();
-                Assert.Equal("Ana", Assert.Single(migrated.ListCharacters(firstAccount)).Name);
-                Assert.Equal("ANA2", Assert.Single(migrated.ListCharacters(secondAccount)).Name);
+                CharacterRecord migratedAna = Assert.Single(migrated.ListCharacters(firstAccount));
+                Assert.Equal("Ana", migratedAna.Name);
+                Assert.Contains(migratedAna.InventoryItems,
+                    item => item.Slot == 2 && item.ItemId == 3001 && item.Count == 4);
+                Assert.Equal((ushort)3101, migratedAna.Equipment[(int)EquipSlot.Weapon]);
+                Assert.Equal((ushort)3301, migratedAna.Equipment[(int)EquipSlot.Head]);
+                Assert.Equal("ANA3", Assert.Single(migrated.ListCharacters(secondAccount)).Name);
                 Assert.Equal("Bad_Name", Assert.Single(migrated.ListCharacters(thirdAccount)).Name);
+                Assert.Equal("Ana2", Assert.Single(migrated.ListCharacters(fourthAccount)).Name);
                 Assert.Equal(6, QuerySchemaVersion());
             }
             finally
@@ -1456,6 +1476,67 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             // Solo el personaje conectado se escribe: los PNJ no pasan por la cola de guardado.
             Assert.Equal(1L, harness.Saves.Saved);
             Assert.Equal(0, harness.Saves.Pending);
+        }
+
+        [Fact]
+        public void La_Experiencia_Penalizada_Por_Pnj_Se_Conserva_Al_Desconectar_Y_Reconectar()
+        {
+            var npcs = new NpcCatalog
+            {
+                Types = new List<NpcType>
+                {
+                    new NpcType
+                    {
+                        Id = 2001,
+                        Name = "Orco",
+                        Speed = 2f,
+                        HalfWidth = 0.35f,
+                        HalfHeight = 0.35f,
+                        MaxHealth = 30,
+                        Experience = 20,
+                        Level = 1,
+                        RespawnSeconds = 10f,
+                        AggroRadius = 4f,
+                        LeashRadius = 8f,
+                        AttackDamage = 1000,
+                        AttackRange = 1.5f,
+                        AttackCooldownSeconds = 1.5f,
+                    },
+                },
+                Spawners = new List<NpcSpawner>
+                {
+                    new NpcSpawner { TypeId = 2001, X = -1.5f, Y = -2.5f, Count = 1, WanderRadius = 1f },
+                },
+            };
+            using var harness = new ServerHarness(DatabasePath, npcs);
+            harness.Connect(1);
+            harness.Handshake(1, "dev", "avelora-dev", "dev");
+            harness.Pump(1);
+
+            WelcomeMessage welcome = harness.LastWelcome(1);
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(welcome.EntityId));
+            player.Experience = 50;
+            player.Health = 1;
+            harness.Zone.Tick();
+            harness.Zone.Tick();
+            harness.Zone.Tick();
+            Assert.Equal(EntityAction.Dead, player.Action);
+            Assert.Equal(40, player.Experience);
+
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            Assert.True(harness.Saves.Flush(TimeSpan.FromSeconds(5)));
+
+            harness.Connect(2);
+            harness.Handshake(2, "dev", "avelora-dev", "dev");
+            harness.Pump(2);
+
+            WelcomeMessage reconnectedWelcome = harness.LastWelcome(2);
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(
+                harness.Zone.Entities.Get(reconnectedWelcome.EntityId));
+            Assert.Equal(1, reconnected.Level);
+            Assert.Equal(40, reconnected.Experience);
         }
 
         [Fact]

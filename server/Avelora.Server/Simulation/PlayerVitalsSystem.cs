@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Avelora.Server.Entities;
+using Avelora.Server.Progression;
 using Avelora.Shared;
 
 namespace Avelora.Server.Simulation
@@ -22,10 +23,12 @@ namespace Avelora.Server.Simulation
     public sealed class PlayerVitalsSystem
     {
         private readonly PlayerVitalsSettings _settings;
+        private readonly LevelTable _levels;
 
-        public PlayerVitalsSystem(PlayerVitalsSettings settings)
+        public PlayerVitalsSystem(PlayerVitalsSettings settings, LevelTable levels)
         {
             _settings = settings;
+            _levels = levels ?? throw new ArgumentNullException(nameof(levels));
         }
 
         /// <summary>Reglas efectivas.</summary>
@@ -36,6 +39,12 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Jugadores que han reaparecido desde el arranque.</summary>
         public long Respawns { get; private set; }
+
+        /// <summary>Muertes que han aplicado una pérdida de experiencia.</summary>
+        public long PenalizedDeaths { get; private set; }
+
+        /// <summary>Experiencia perdida en muertes penalizadas.</summary>
+        public long ExperienceLost { get; private set; }
 
         /// <summary>Marca las muertes, repone a quien toca y regenera a los vivos.</summary>
         public void Tick(EntityStore entities, long tick)
@@ -82,6 +91,7 @@ namespace Avelora.Server.Simulation
 
             if (player.DeathCounted)
             {
+                player.KilledByNpc = false;
                 return;
             }
 
@@ -90,6 +100,20 @@ namespace Avelora.Server.Simulation
             player.DirectionY = 0;
             player.RegenAccumulator = 0d;
             Deaths++;
+
+            if (player.KilledByNpc)
+            {
+                int loss = _levels.GetDeathPenalty(player);
+                if (loss > 0)
+                {
+                    player.Experience -= loss;
+                    player.ProgressChanged = true;
+                    PenalizedDeaths++;
+                    ExperienceLost += loss;
+                }
+            }
+            // Muerte por jugador o sin causa: no penaliza.
+            player.KilledByNpc = false;
         }
 
         private void Respawn(PlayerEntity player)
@@ -104,6 +128,7 @@ namespace Avelora.Server.Simulation
             player.RegenAccumulator = 0d;
             player.DeathTick = -1;
             player.DeathCounted = false;
+            player.KilledByNpc = false;
             Respawns++;
         }
 

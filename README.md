@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-10 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b pendientes).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-11 de servidor implementadas (clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b pendientes).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -32,7 +32,7 @@ calcular igual (movimiento y colisión).
 > [I-07](#chat-i-07-protocolo-v10) [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11) e
 > [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5),
 > [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13), [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14)
-> e [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6).
+> e [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6) e [I-11](#penalizacion-por-muerte-i-11).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -40,8 +40,8 @@ calcular igual (movimiento y colisión).
 
 | Comprobación | Resultado |
 | --- | --- |
-| `dotnet build Avelora.slnx` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **582/582 en verde** |
+| `dotnet build Avelora.slnx -v q --nologo` | **0 errores, 0 advertencias** |
+| `dotnet test Avelora.slnx` | **666/666 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -1082,7 +1082,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-10 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-11 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1094,6 +1094,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-20** | Rangos de PNJ configurables y multiplicadores (protocolo v13; esquema SQLite v5) | ✅ servidor y bots; cliente I-20b pendiente |
 | **I-21** | Catálogo troceado y tirar objetos = destruir (protocolo v14; esquema SQLite v5) | ✅ servidor y bots; cliente I-21b pendiente |
 | **I-10** | Personajes por cuenta y elección de clase (protocolo v15; esquema SQLite v6) | ✅ servidor y bots; cliente I-10b pendiente |
+| **I-11** | Penalización de experiencia al morir por un PNJ (sin protocolo ni migración) | ✅ servidor |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1641,9 +1642,36 @@ en `TypeId`. Los bots seleccionan el primer personaje existente, o crean `bot<N>
 nombre está ocupado) con una clase anunciada por el servidor; informan `personajes_creados` y
 `rechazos_personaje`.
 
-**Verificación I-10:** protocolo v15; esquema SQLite v6; pruebas de selección, validación de nombres,
-clases, migraciones, borrado, concurrencia y recuperación persistente. Las ejecuciones de carga de 50
-bots se detallan debajo tras completar ambas pasadas.
+**Verificación y carga I-10:** protocolo v15; esquema SQLite v6; pruebas de selección, validación de
+nombres, clases, migraciones, borrado, concurrencia y recuperación persistente. Dos pasadas prescritas,
+ambas con `-LogCorrections`:
+
+| Pasada | Conectados | `Welcome` p50 / máximo | Tick p99 con 50 jugadores | Correcciones | Personajes creados / rechazados |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `-NuevaBase` | 50/50 | 375 / 485 ms | 0,246 ms | 0 (sin líneas `[corrección]`) | 50 / 0 |
+| Misma base | 50/50 | 297 / 437 ms | 0,245 ms | 0 (sin líneas `[corrección]`) | 0 / 0 |
+
+En ambas ejecuciones el tick tuvo **0** sobrepasos de 50 ms; el peor tick fue 8,748 ms en la primera y
+10,312 ms en la segunda. El primer `Welcome` p50 sube respecto de los ~250 ms previos por el paso nuevo
+de lista/creación/selección; la pasada repetida selecciona el personaje persistido y queda en 297 ms.
+Logs: `tools/carga/resultados/20261029-212059-fight-50-redund4-corr/` y
+`tools/carga/resultados/20261029-212404-fight-50-redund4-corr/`.
+
+### Penalización por muerte (I-11)
+
+`deathPenaltyPercent` en `levels.json` admite de 0 a 100 (defecto 10; 0 desactiva la penalización).
+Solo una muerte causada por un PNJ resta experiencia: el servidor calcula el piso de
+`umbral del nivel actual × porcentaje / 100`, limitado a la experiencia que tenga el jugador. No se
+reduce el nivel y el nivel máximo no pierde experiencia. `Progress` notifica el cambio en el tick
+siguiente, y los informes muestran `muertes_penalizadas` y `xp_perdida_muerte`. No cambia el protocolo
+v15 ni el esquema SQLite v6.
+
+**Verificación y carga I-11:** build sin advertencias; `dotnet test Avelora.slnx` **666/666**. La carga
+prescrita de 50 bots `fight` durante 120 s (`-LogCorrections -NuevaBase`) conectó 50/50 y completó
+3201 ticks; p99 **0,068 ms**, peor **8,442 ms**, 0 ticks sobre 50 ms. Hubo 14 muertes de jugador, 13
+penalizadas (145 XP perdidas), 266 muertes de PNJ, **0 correcciones y 0 saltos**; la pérdida no puede
+dejar XP negativa ni reducir el nivel. La salida de bots no expone XP actual, así que se confirma con
+las pruebas del servidor. Logs: `tools/carga/resultados/20261029-215231-fight-50-redund4-corr/`.
 
 ### Chat (I-07, protocolo v10)
 

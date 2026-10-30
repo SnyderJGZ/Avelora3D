@@ -23,6 +23,7 @@ namespace Avelora.Server.Progression
             PointsPerLevel = 3,
             FreeResetMaxLevel = 10,
             ResetItemId = 3201,
+            DeathPenaltyPercent = 10,
             ExperienceToNext = new[]
             {
                 100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200,
@@ -38,6 +39,9 @@ namespace Avelora.Server.Progression
 
         /// <summary>Objeto que consume el reajuste por encima del nivel gratuito (I-09).</summary>
         public int ResetItemId { get; set; } = 3201;
+
+        /// <summary>Porcentaje del umbral del nivel actual que se pierde al morir por un PNJ (I-11).</summary>
+        public int DeathPenaltyPercent { get; set; } = 10;
 
         /// <summary>Umbrales para pasar del nivel índice+1 al siguiente.</summary>
         public int[]? ExperienceToNext { get; set; }
@@ -104,6 +108,11 @@ namespace Avelora.Server.Progression
                 throw new InvalidOperationException("levels.json: resetItemId debe estar entre 1 y 65535.");
             }
 
+            if (DeathPenaltyPercent < 0 || DeathPenaltyPercent > 100)
+            {
+                throw new InvalidOperationException("levels.json: deathPenaltyPercent debe estar entre 0 y 100.");
+            }
+
             if (items != null && items.Find(ResetItemId) == null)
             {
                 throw new InvalidOperationException(
@@ -125,6 +134,24 @@ namespace Avelora.Server.Progression
         {
             RequireLevel(level);
             return level == MaxLevel ? 0 : ExperienceToNext![level - 1];
+        }
+
+        /// <summary>Calcula la experiencia que pierde el jugador al morir por un PNJ (I-11).</summary>
+        public int GetDeathPenalty(PlayerEntity player)
+        {
+            if (player == null)
+            {
+                throw new ArgumentNullException(nameof(player));
+            }
+
+            RequireLevel(player.Level);
+            if (DeathPenaltyPercent == 0 || player.Level == MaxLevel)
+            {
+                return 0;
+            }
+
+            long amount = (long)GetExperienceToNext(player.Level) * DeathPenaltyPercent / 100;
+            return (int)Math.Max(0L, Math.Min(player.Experience, amount));
         }
 
         /// <summary>

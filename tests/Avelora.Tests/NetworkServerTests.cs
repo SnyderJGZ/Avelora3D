@@ -714,6 +714,71 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Tras_Una_Muerte_Penalizada_Se_Envia_Progress_Con_La_Experiencia_Nueva()
+        {
+            var npcs = new NpcCatalog
+            {
+                Types = new List<NpcType>
+                {
+                    new NpcType
+                    {
+                        Id = 2001,
+                        Name = "Orco",
+                        Speed = 2f,
+                        HalfWidth = 0.35f,
+                        HalfHeight = 0.35f,
+                        MaxHealth = 10,
+                        Experience = 20,
+                        Level = 1,
+                        RespawnSeconds = 10f,
+                        AggroRadius = 4f,
+                        LeashRadius = 8f,
+                        AttackDamage = 1000,
+                        AttackRange = 1.5f,
+                        AttackCooldownSeconds = 1.5f,
+                    },
+                },
+                Spawners = new List<NpcSpawner>
+                {
+                    new NpcSpawner { TypeId = 2001, X = -1.5f, Y = -2.5f, Count = 1, WanderRadius = 1f },
+                },
+            };
+
+            using var harness = new Harness(npcs: npcs);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Experience = 50;
+            player.Health = 1;
+            harness.Transport.Sent.Clear();
+
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.Equal(40, player.Experience);
+            Assert.DoesNotContain(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadProgress(sent.Data, 0, sent.Data.Length, out _));
+
+            // Zone publica ProgressChanged antes de correr PlayerVitalsSystem; el cambio se envía
+            // en la siguiente vuelta, cuando ya contiene la XP penalizada.
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage progressSent = Assert.Single(harness.Transport.Sent,
+                sent => MessageCodec.TryReadProgress(sent.Data, 0, sent.Data.Length, out _));
+            Assert.True(MessageCodec.TryReadProgress(
+                progressSent.Data, 0, progressSent.Data.Length, out ProgressMessage progress));
+            Assert.Equal(40u, progress.Experience);
+            Assert.Equal(1L, harness.Zone.PenalizedDeaths);
+            Assert.Equal(10L, harness.Zone.ExperienceLost);
+        }
+
+        [Fact]
         public void Equipar_Actualiza_Stats_Con_El_Daño_Del_Arma()
         {
             using var harness = new Harness(withItems: true);

@@ -171,6 +171,8 @@ namespace Avelora.Server.Diagnostics
                 " experiencia_otorgada=" + zone.ExperienceGranted +
                 " subidas_nivel=" + zone.LevelUps +
                 " jugador_muertes=" + zone.PlayerDeaths +
+                " muertes_penalizadas=" + zone.PenalizedDeaths +
+                " xp_perdida_muerte=" + zone.ExperienceLost +
                 " jugador_reapariciones=" + zone.PlayerRespawns);
 
             Console.WriteLine(
@@ -347,7 +349,8 @@ namespace Avelora.Server.Diagnostics
                 ", subidas_nivel=" + zone.LevelUps);
             Console.WriteLine(
                 "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
-                zone.PlayerRespawns + " reapariciones");
+                zone.PlayerRespawns + " reapariciones, muertes_penalizadas=" + zone.PenalizedDeaths +
+                ", xp_perdida_muerte=" + zone.ExperienceLost);
             Console.WriteLine(
                 "  Objetos         : objetos_soltados=" + zone.ItemsDropped +
                 ", objetos_recogidos=" + zone.ItemsPickedUp +

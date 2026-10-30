@@ -151,7 +151,7 @@ namespace Avelora.Server.Simulation
 
             if (playerVitals.HasValue)
             {
-                _vitals = new PlayerVitalsSystem(playerVitals.Value);
+                _vitals = new PlayerVitalsSystem(playerVitals.Value, _levels);
             }
 
             if (inventorySlots < 1 || inventorySlots > 60)
@@ -326,6 +326,12 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Jugadores que han reaparecido desde el arranque (I-03).</summary>
         public long PlayerRespawns => _vitals?.Respawns ?? 0;
+
+        /// <summary>Muertes que han aplicado una pérdida de experiencia.</summary>
+        public long PenalizedDeaths => _vitals?.PenalizedDeaths ?? 0;
+
+        /// <summary>Experiencia perdida por muertes a manos de PNJ.</summary>
+        public long ExperienceLost => _vitals?.ExperienceLost ?? 0;
 
         public long ItemsDropped => _items?.ItemsDropped ?? 0;
         public long ItemsPickedUp => _items?.ItemsPickedUp ?? 0;

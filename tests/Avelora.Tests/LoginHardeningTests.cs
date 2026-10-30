@@ -614,26 +614,6 @@ namespace Avelora.Tests
                 return AccountLoginResult.Ok(accountId);
             }
 
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
-                new CharacterRecord(
-                    accountId,
-                    accountId,
-                    characterName,
-                    1,
-                    0,
-                    100,
-                    100,
-                    zoneId,
-                    spawn,
-                    mapHash,
-                    DateTime.UtcNow,
-                    DateTime.UtcNow);
-
             public CharacterRecord[] ListCharacters(int accountId)
             {
                 lock (_gate)
@@ -722,14 +702,6 @@ namespace Avelora.Tests
                     countsAsFailedAttempt: true);
             }
 
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
-                throw new NotSupportedException();
-
             public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
 
             public void Dispose()
@@ -760,14 +732,6 @@ namespace Avelora.Tests
                 Interlocked.Increment(ref _calls);
                 return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
             }
-
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
-                throw new NotSupportedException();
 
             public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
 
@@ -813,14 +777,6 @@ namespace Avelora.Tests
                 string registrationCode) =>
                 throw new NotSupportedException();
 
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
-                throw new NotSupportedException();
-
             public void SaveCharacter(CharacterRecord character)
             {
                 Interlocked.Increment(ref _attempts);
@@ -853,14 +809,6 @@ namespace Avelora.Tests
                 string password,
                 string invitationCode,
                 string registrationCode) =>
-                throw new NotSupportedException();
-
-            public CharacterRecord GetOrCreateCharacter(
-                int accountId,
-                string characterName,
-                int zoneId,
-                Vec2 spawn,
-                byte[] mapHash) =>
                 throw new NotSupportedException();
 
             public void SaveCharacter(CharacterRecord character) =>
