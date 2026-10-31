@@ -6,6 +6,7 @@ using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Simulation
 {
@@ -31,9 +32,8 @@ namespace Avelora.Server.Simulation
     /// tick: la lista de candidatos y el estado de los spawners se reutilizan.
     /// </para>
     /// <para>
-    /// <c>shortcut:</c> la línea recta con deslizamiento se atasca detrás de una pared en U. El leash
-    /// lo devuelve a casa, así que nunca se queda atascado para siempre. A* cuando haya mapas con
-    /// interiores.
+        /// <c>shortcut:</c> el atasco se detecta y la persecución se abandona o el regreso se fuerza;
+        /// A* sigue pendiente para mapas con interiores.
     /// </para>
     /// </remarks>
     public sealed class NpcSystem
@@ -44,6 +44,12 @@ namespace Avelora.Server.Simulation
         /// <summary>Ticks máximos antes de volver a elegir dirección.</summary>
         public const int MaxChangeTicks = 50;
 
+        /// <summary>Ticks sin avanzar antes de abandonar la persecución.</summary>
+        public const int ChaseStuckTicks = 20;
+
+        /// <summary>Ticks sin avanzar antes de forzar la vuelta a casa.</summary>
+        public const int ReturnStuckTicks = 40;
+
         // Las 8 direcciones discretas, en el mismo formato que el input de un jugador.
         private static readonly sbyte[] DirectionX = { 0, 1, 1, 1, 0, -1, -1, -1 };
         private static readonly sbyte[] DirectionY = { 1, 1, 0, -1, -1, -1, 0, 1 };
@@ -53,6 +59,7 @@ namespace Avelora.Server.Simulation
         private readonly System.Random _random;
         private readonly ClassCatalog _classes;
         private readonly ItemCatalog? _items;
+        private readonly CombatEventBuffer? _events;
         private readonly List<Entity> _candidates = new List<Entity>(32);
         private readonly long[] _rankAppearances = new long[NpcCatalog.MaxRankId + 1];
         private readonly long[] _rankDeaths = new long[NpcCatalog.MaxRankId + 1];
@@ -68,14 +75,17 @@ namespace Avelora.Server.Simulation
         private long _hits;
         private long _eliteAppearances;
         private long _eliteDeaths;
+        private long _chaseGiveUps;
+        private long _returnTeleports;
 
         public NpcSystem(
             MapCollisionGrid map,
             int seed,
             EntitySpatialGrid grid,
             ClassCatalog? classes = null,
-            ItemCatalog? items = null)
-            : this(map, new System.Random(seed), grid, classes, items)
+            ItemCatalog? items = null,
+            CombatEventBuffer? events = null)
+            : this(map, new System.Random(seed), grid, classes, items, events)
         {
         }
 
@@ -84,13 +94,15 @@ namespace Avelora.Server.Simulation
             System.Random random,
             EntitySpatialGrid grid,
             ClassCatalog? classes = null,
-            ItemCatalog? items = null)
+            ItemCatalog? items = null,
+            CombatEventBuffer? events = null)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _random = random ?? throw new ArgumentNullException(nameof(random));
             _classes = classes ?? ClassCatalog.Default;
             _items = items;
+            _events = events;
         }
 
         /// <summary>Se invoca en el hilo del tick al registrar una muerte, antes de simular PNJ.</summary>
@@ -113,6 +125,12 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Enemigos de rango distinto de 0 que han muerto.</summary>
         public long EliteDeaths => _eliteDeaths;
+
+        /// <summary>Persecuciones abandonadas por atasco.</summary>
+        public long ChaseGiveUps => _chaseGiveUps;
+
+        /// <summary>Regresos forzados a casa por atasco.</summary>
+        public long ReturnTeleports => _returnTeleports;
 
         public long RankAppearances(int rank) =>
             rank > 0 && rank < _rankAppearances.Length ? _rankAppearances[rank] : 0;
@@ -479,6 +497,11 @@ namespace Avelora.Server.Simulation
             npc.DirectionX = Steer(dx);
             npc.DirectionY = Steer(dy);
             Move(npc);
+            if (npc.StuckTicks >= ChaseStuckTicks)
+            {
+                EnterReturn(npc);
+                _chaseGiveUps++;
+            }
         }
 
         /// <summary>Quieto, mirando al objetivo y golpeando cuando toca la recarga.</summary>
@@ -548,6 +571,15 @@ namespace Avelora.Server.Simulation
             npc.ActionUntilTick = _tick + CombatSystem.AttackingTicks;
             npc.NextAttackTick = _tick + npc.AttackCooldownTicks;
             _hits++;
+            if (_events != null)
+            {
+                CombatEventFlags flags = target.Health == 0 ? CombatEventFlags.Killed : CombatEventFlags.None;
+                _events.Add(new CombatEventEntry(
+                    npc.Id,
+                    target.Id,
+                    (ushort)Math.Min(damage, ushort.MaxValue),
+                    flags));
+            }
         }
 
         /// <summary>Vuelve a casa ignorando a los jugadores; al llegar recupera la vida llena.</summary>
@@ -564,6 +596,7 @@ namespace Avelora.Server.Simulation
                 npc.Action = EntityAction.None;
                 npc.DirectionX = 0;
                 npc.DirectionY = 0;
+                npc.StuckTicks = 0;
                 npc.NextDirectionChangeTick =
                     _tick + _random.Next(MinChangeTicks, MaxChangeTicks + 1);
                 return;
@@ -572,6 +605,11 @@ namespace Avelora.Server.Simulation
             npc.DirectionX = Steer(dx);
             npc.DirectionY = Steer(dy);
             Move(npc);
+            if (npc.StuckTicks >= ReturnStuckTicks)
+            {
+                npc.Position = npc.Home;
+                _returnTeleports++;
+            }
         }
 
         private void EnterReturn(NpcEntity npc)
@@ -581,6 +619,7 @@ namespace Avelora.Server.Simulation
             npc.NextAttackTick = 0;
             npc.DirectionX = 0;
             npc.DirectionY = 0;
+            npc.StuckTicks = 0;
         }
 
         /// <summary>Busca el jugador vivo más cercano; en empate, el de Id menor.</summary>
@@ -648,6 +687,16 @@ namespace Avelora.Server.Simulation
                 SimulationConstants.FixedDt,
                 npc.HalfSize,
                 _map);
+
+            if ((npc.DirectionX != 0 || npc.DirectionY != 0) &&
+                npc.Position.X == before.X && npc.Position.Y == before.Y)
+            {
+                npc.StuckTicks++;
+            }
+            else
+            {
+                npc.StuckTicks = 0;
+            }
 
             // Quería moverse y la pared lo dejó clavado: se prueba otra dirección al tick siguiente
             // en vez de quedarse empujando la pared hasta el próximo cambio.

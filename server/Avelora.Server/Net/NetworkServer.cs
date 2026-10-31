@@ -114,6 +114,7 @@ namespace Avelora.Server.Net
         private readonly Dictionary<int, Session> _sessions = new Dictionary<int, Session>();
         private readonly List<Entity> _visibleBuffer = new List<Entity>(64);
         private readonly List<Entity> _deferredItems = new List<Entity>(64);
+        private readonly List<CombatEventEntry> _combatEventEntries = new List<CombatEventEntry>(64);
         private int _nextCharacterId;
 
         private Thread? _netThread;
@@ -139,6 +140,10 @@ namespace Avelora.Server.Net
         private long _chatRejectedInvalid;
         private long _chatRejectedLong;
         private long _chatRejectedFast;
+        private long _combatEventMessages;
+        private long _combatEventEntriesSent;
+        private long _combatEventBytes;
+        private long _combatEventsTrimmed;
 
         public NetworkServer(
             Zone zone,
@@ -338,6 +343,7 @@ namespace Avelora.Server.Net
         {
             if (_sessions.Count == 0)
             {
+                zone.CombatEvents.Clear();
                 return;
             }
 
@@ -358,7 +364,10 @@ namespace Avelora.Server.Net
                 byte[] snapshot = BuildSnapshot(zone, recipient);
                 Enqueue(session.ConnectionId, snapshot, DeliveryMode.Sequenced, disconnectAfter: false);
                 Interlocked.Increment(ref _snapshotsSent);
+                SendCombatEvents(zone, recipient, session.ConnectionId);
             }
+
+            zone.CombatEvents.Clear();
         }
 
         /// <summary>Cifras para los informes. Se pueden leer desde otro hilo.</summary>
@@ -387,7 +396,11 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _chatRejectedInvalid),
             Interlocked.Read(ref _chatRejectedLong),
             Interlocked.Read(ref _chatRejectedFast),
-            _saves?.LastError);
+            _saves?.LastError,
+            Interlocked.Read(ref _combatEventMessages),
+            Interlocked.Read(ref _combatEventEntriesSent),
+            Interlocked.Read(ref _combatEventBytes),
+            Interlocked.Read(ref _combatEventsTrimmed));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -2142,6 +2155,63 @@ namespace Avelora.Server.Net
             return bytes;
         }
 
+        private void SendCombatEvents(Zone zone, PlayerEntity recipient, int connectionId)
+        {
+            CombatEventBuffer events = zone.CombatEvents;
+            if (events.Count == 0)
+            {
+                return;
+            }
+
+            _combatEventEntries.Clear();
+            for (int i = 0; i < events.Count; i++)
+            {
+                CombatEventEntry entry = events[i];
+                if (entry.AttackerId == recipient.Id || entry.TargetId == recipient.Id ||
+                    IsVisible(entry.AttackerId) || IsVisible(entry.TargetId))
+                {
+                    _combatEventEntries.Add(entry);
+                }
+            }
+
+            int count = _combatEventEntries.Count;
+            if (count == 0)
+            {
+                return;
+            }
+
+            if (count > ProtocolConstants.MaxCombatEventsPerMessage)
+            {
+                Interlocked.Add(ref _combatEventsTrimmed, count - ProtocolConstants.MaxCombatEventsPerMessage);
+                count = ProtocolConstants.MaxCombatEventsPerMessage;
+            }
+
+            var entries = new CombatEventEntry[count];
+            for (int i = 0; i < count; i++)
+            {
+                entries[i] = _combatEventEntries[i];
+            }
+
+            byte[] bytes = MessageCodec.EncodeCombatEvent(new CombatEventMessage(entries));
+            Enqueue(connectionId, bytes, DeliveryMode.Unreliable, disconnectAfter: false);
+            Interlocked.Increment(ref _combatEventMessages);
+            Interlocked.Add(ref _combatEventEntriesSent, count);
+            Interlocked.Add(ref _combatEventBytes, bytes.Length);
+        }
+
+        private bool IsVisible(int entityId)
+        {
+            for (int i = 0; i < _visibleBuffer.Count; i++)
+            {
+                if (_visibleBuffer[i].Id == entityId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void Enqueue(int connectionId, byte[] data, DeliveryMode mode, bool disconnectAfter)
         {
             // Un mensaje fiable no se tira nunca: son pocos (saludo y rechazo). Los snapshots sí,
@@ -2414,7 +2484,11 @@ namespace Avelora.Server.Net
             long chatRejectedInvalid,
             long chatRejectedLong,
             long chatRejectedFast,
-            string? saveLastError = null)
+            string? saveLastError = null,
+            long combatEventMessages = 0,
+            long combatEventEntries = 0,
+            long combatEventBytes = 0,
+            long combatEventsTrimmed = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2440,6 +2514,10 @@ namespace Avelora.Server.Net
             ChatRejectedInvalid = chatRejectedInvalid;
             ChatRejectedLong = chatRejectedLong;
             ChatRejectedFast = chatRejectedFast;
+            CombatEventMessages = combatEventMessages;
+            CombatEventEntries = combatEventEntries;
+            CombatEventBytes = combatEventBytes;
+            CombatEventsTrimmed = combatEventsTrimmed;
             SaveLastError = saveLastError;
         }
 
@@ -2495,6 +2573,11 @@ namespace Avelora.Server.Net
         public long ChatRejectedInvalid { get; }
         public long ChatRejectedLong { get; }
         public long ChatRejectedFast { get; }
+
+        public long CombatEventMessages { get; }
+        public long CombatEventEntries { get; }
+        public long CombatEventBytes { get; }
+        public long CombatEventsTrimmed { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

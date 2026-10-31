@@ -143,7 +143,7 @@ namespace Avelora.Server.Simulation
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value, items, _classes);
+                _combat = new CombatSystem(combat.Value, items, _classes, map, CombatEvents);
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -180,7 +180,7 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes, _itemCatalog);
+                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes, _itemCatalog, CombatEvents);
                 _npcs.NpcDied += OnNpcDied;
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
@@ -217,6 +217,11 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Número configurado de huecos del inventario.</summary>
         public int InventorySlots { get; }
+
+        /// <summary>Eventos de combate pendientes de enviar con el siguiente snapshot.</summary>
+        public CombatEventBuffer CombatEvents { get; } = new CombatEventBuffer();
+
+        public long CombatEventsDropped => CombatEvents.Dropped;
 
         /// <summary>Catálogo de PNJ de la zona, para consultar el botín al morir.</summary>
         public NpcCatalog? Npcs => _npcCatalog;
@@ -288,11 +293,21 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques válidos con arma equipada.</summary>
         public long AttacksWithWeapon => _combat?.AttacksWithWeapon ?? 0;
 
+        public long RejectedAttackLineOfSight => _combat?.RejectedLineOfSight ?? 0;
+
+        public long RejectedAttackEvading => _combat?.RejectedEvading ?? 0;
+
+        public long AttacksRanged => _combat?.AttacksRanged ?? 0;
+
         /// <summary>Enemigos muertos desde el arranque (I-02).</summary>
         public long NpcDeaths => _npcs?.Deaths ?? 0;
 
         /// <summary>Enemigos que han reaparecido desde el arranque (I-02).</summary>
         public long NpcRespawns => _npcs?.Respawns ?? 0;
+
+        public long NpcChaseGiveUps => _npcs?.ChaseGiveUps ?? 0;
+
+        public long NpcReturnTeleports => _npcs?.ReturnTeleports ?? 0;
 
         public long EliteAppearances => _npcs?.EliteAppearances ?? 0;
 

@@ -143,9 +143,14 @@ namespace Avelora.Server.Diagnostics
                 " cortes=" + network.RateLimitedDisconnects +
                 " cola=" + network.DroppedOutbound +
                 " snaps=" + network.SnapshotsSent +
-                " ents=" + network.EntitiesSent +
-                " enviados=" + network.SnapshotBytes +
-                " recibidos=" + network.BytesReceived +
+                 " ents=" + network.EntitiesSent +
+                 " enviados=" + network.SnapshotBytes +
+                 " combate_msgs=" + network.CombatEventMessages +
+                 " combate_entradas=" + network.CombatEventEntries +
+                 " combate_bytes=" + network.CombatEventBytes +
+                 " combate_recortados=" + network.CombatEventsTrimmed +
+                 " combate_descartados=" + zone.CombatEventsDropped +
+                 " recibidos=" + network.BytesReceived +
                 "  inputs ok=" + zone.Inputs.Received +
                 " redundantes=" + zone.RedundantDuplicates +
                 " fuera_de_orden=" + zone.RejectedOutOfOrder +
@@ -158,12 +163,17 @@ namespace Avelora.Server.Diagnostics
                 "            combate: ataques_ok=" + zone.AttacksOk +
                 " ataques_con_arma=" + zone.AttacksWithWeapon +
                 " ataque_rech_objetivo=" + zone.RejectedAttackTarget +
-                " ataque_rech_distancia=" + zone.RejectedAttackDistance +
-                " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
+                 " ataque_rech_distancia=" + zone.RejectedAttackDistance +
+                 " ataque_rech_vision=" + zone.RejectedAttackLineOfSight +
+                 " ataque_rech_regreso=" + zone.RejectedAttackEvading +
+                 " ataques_distancia=" + zone.AttacksRanged +
+                 " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
                 " ataque_rech_muerto=" + zone.RejectedAttackDead +
                 " ataques_cola_llena=" + (zone.Attacks?.RejectedQueueFull ?? 0) +
-                " npc_golpes=" + zone.NpcHits +
-                " npc_muertes=" + zone.NpcDeaths +
+                 " npc_golpes=" + zone.NpcHits +
+                 " pnj_persecucion_abandonada=" + zone.NpcChaseGiveUps +
+                 " pnj_regreso_forzado=" + zone.NpcReturnTeleports +
+                 " npc_muertes=" + zone.NpcDeaths +
                 " npc_reapariciones=" + zone.NpcRespawns +
                 " elites_aparecidos=" + zone.EliteAppearances +
                 " elites_muertos=" + zone.EliteDeaths +
@@ -330,8 +340,12 @@ namespace Avelora.Server.Diagnostics
                 network.MessagesReceived + " mensajes, " + network.MessagesRejected + " rechazados, " +
                 network.HandshakesRejected + " saludos rechazados, " + network.RateLimited + " limitados (" +
                 network.RateLimitedDisconnects + " cortes por abuso), " +
-                network.SnapshotsSent + " snapshots, " + network.EntitiesSent + " entidades, " +
-                network.SnapshotBytes + " bytes enviados, " + network.BytesReceived +
+                 network.SnapshotsSent + " snapshots, " + network.EntitiesSent + " entidades, " +
+                 network.SnapshotBytes + " bytes enviados, combate_msgs=" + network.CombatEventMessages +
+                 ", combate_entradas=" + network.CombatEventEntries +
+                 ", combate_bytes=" + network.CombatEventBytes +
+                 ", combate_recortados=" + network.CombatEventsTrimmed +
+                 ", combate_descartados=" + zone.CombatEventsDropped + ", " + network.BytesReceived +
                 " bytes recibidos, " + network.DroppedOutbound + " descartados en cola");
             Console.WriteLine(
                 "  Inputs          : " + zone.Inputs.Received + " ok, " +
@@ -342,11 +356,16 @@ namespace Avelora.Server.Diagnostics
                 "  Combate         : " + zone.AttacksOk + " ataques válidos, " +
                 zone.AttacksWithWeapon + " ataques con arma, " +
                 zone.RejectedAttackTarget + " rechazados por objetivo, " +
-                zone.RejectedAttackDistance + " por distancia, " +
-                zone.RejectedAttackCooldown + " por recarga, " +
+                 zone.RejectedAttackDistance + " por distancia, " +
+                 "ataque_rech_vision=" + zone.RejectedAttackLineOfSight + ", " +
+                 "ataque_rech_regreso=" + zone.RejectedAttackEvading + ", " +
+                 "ataques_distancia=" + zone.AttacksRanged + ", " +
+                 zone.RejectedAttackCooldown + " por recarga, " +
                 zone.RejectedAttackDead + " por jugador muerto, " +
-                (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
-                zone.NpcHits + " golpes de PNJ, " +
+                 (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
+                 zone.NpcHits + " golpes de PNJ, " +
+                 "pnj_persecucion_abandonada=" + zone.NpcChaseGiveUps + ", " +
+                 "pnj_regreso_forzado=" + zone.NpcReturnTeleports + ", " +
                 zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ, " +
                 "elites_aparecidos=" + zone.EliteAppearances +
                 ", elites_muertos=" + zone.EliteDeaths + DescribeRankMetrics(zone) + ", " +

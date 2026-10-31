@@ -5,6 +5,7 @@ using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Progression;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Simulation
 {
@@ -25,21 +26,30 @@ namespace Avelora.Server.Simulation
     /// </remarks>
     public sealed class CombatSystem
     {
+        /// <summary>Alcance base mínimo para marcar un evento como ataque a distancia.</summary>
+        public const float RangedMinRange = 2f;
+
         /// <summary>Ticks que dura la acción <see cref="EntityAction.Attacking"/> (6 = 0,3 s a 20 Hz).</summary>
         public const int AttackingTicks = 6;
 
         private readonly CombatSettings _settings;
         private readonly ItemCatalog? _catalog;
         private readonly ClassCatalog _classes;
+        private readonly MapCollisionGrid? _map;
+        private readonly CombatEventBuffer? _events;
 
         public CombatSystem(
             CombatSettings settings,
             ItemCatalog? catalog = null,
-            ClassCatalog? classes = null)
+            ClassCatalog? classes = null,
+            MapCollisionGrid? map = null,
+            CombatEventBuffer? events = null)
         {
             _settings = settings;
             _catalog = catalog;
             _classes = classes ?? ClassCatalog.Default;
+            _map = map;
+            _events = events;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -57,8 +67,17 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques rechazados porque el jugador estaba muerto (I-03).</summary>
         public long RejectedDead { get; private set; }
 
+        /// <summary>Ataques rechazados porque una pared bloqueaba la vista.</summary>
+        public long RejectedLineOfSight { get; private set; }
+
+        /// <summary>Ataques rechazados porque el PNJ estaba regresando a casa.</summary>
+        public long RejectedEvading { get; private set; }
+
         /// <summary>Ataques válidos realizados con un arma equipada.</summary>
         public long AttacksWithWeapon { get; private set; }
+
+        /// <summary>Ataques acertados cuyo alcance base supera dos tiles.</summary>
+        public long AttacksRanged { get; private set; }
 
         /// <summary>Aplica las intenciones del tick y limpia las acciones que ya han caducado.</summary>
         /// <param name="entities">Entidades vivas de la zona.</param>
@@ -111,6 +130,12 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (target.AiState == NpcAiState.Return)
+            {
+                RejectedEvading++;
+                return;
+            }
+
             // Regla 4: la distancia entre centros cabe en alcance + tolerancia.
             float dx = target.Position.X - attacker.Position.X;
             float dy = target.Position.Y - attacker.Position.Y;
@@ -121,10 +146,17 @@ namespace Avelora.Server.Simulation
             CharacterClass characterClass = _classes.Find(attacker.ClassId)
                 ?? throw new InvalidOperationException("No existe la clase " + attacker.ClassId + " en classes.json.");
             float range = (hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range) + _settings.RangeTolerance;
+            float baseRange = hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range;
 
             if ((dx * dx) + (dy * dy) > range * range)
             {
                 RejectedDistance++;
+                return;
+            }
+
+            if (_map != null && !_map.HasLineOfSight(attacker.Position, target.Position))
+            {
+                RejectedLineOfSight++;
                 return;
             }
 
@@ -178,6 +210,32 @@ namespace Avelora.Server.Simulation
             if (hasWeapon)
             {
                 AttacksWithWeapon++;
+            }
+
+            bool ranged = baseRange > RangedMinRange;
+            if (ranged)
+            {
+                AttacksRanged++;
+            }
+
+            if (_events != null)
+            {
+                CombatEventFlags flags = ranged ? CombatEventFlags.Ranged : CombatEventFlags.None;
+                if (damageType == "magical")
+                {
+                    flags |= CombatEventFlags.Magical;
+                }
+
+                if (target.Health == 0)
+                {
+                    flags |= CombatEventFlags.Killed;
+                }
+
+                _events.Add(new CombatEventEntry(
+                    attacker.Id,
+                    target.Id,
+                    (ushort)Math.Min(damage, ushort.MaxValue),
+                    flags));
             }
         }
 

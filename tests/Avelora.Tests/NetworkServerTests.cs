@@ -241,7 +241,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Catalogo_Real_V16_Mide_Trozos_Al_Entrar()
+        public void Catalogo_Real_Mide_Trozos_Al_Entrar()
         {
             var items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
             var classes = ClassCatalog.Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
@@ -1979,6 +1979,107 @@ namespace Avelora.Tests
             Assert.Equal(2, stats.EntitiesSent);
             Assert.True(stats.SnapshotBytes > 0);
             Assert.Equal(0, stats.SnapshotsTruncated);
+        }
+
+        [Fact]
+        public void CombatEvent_Se_Agrupa_Con_El_Snapshot_Y_Solo_Llega_A_Los_Interesados()
+        {
+            using var harness = new Harness(config =>
+            {
+                config.SnapshotEveryTicks = 2;
+                config.InterestRadius = 12f;
+                config.InterestHysteresis = 0f;
+            });
+            for (int connection = 1; connection <= 3; connection++)
+            {
+                harness.Connect(connection);
+                harness.Handshake(connection);
+                harness.Pump();
+            }
+
+            PlayerEntity attacker = (PlayerEntity)harness.Zone.Entities.Get(1)!;
+            PlayerEntity nearby = (PlayerEntity)harness.Zone.Entities.Get(2)!;
+            PlayerEntity far = (PlayerEntity)harness.Zone.Entities.Get(3)!;
+            attacker.Position = new Vec2(-7f, 5f);
+            nearby.Position = new Vec2(-6f, 5f);
+            far.Position = new Vec2(18f, 18f);
+            var npc = new NpcEntity(100, 2001, 0f, attacker.Position, 0f, long.MaxValue, 100, 200, -1)
+            {
+                Position = attacker.Position,
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+            harness.Zone.AddEntity(npc);
+            harness.Transport.Sent.Clear();
+            harness.Zone.Attacks!.TryEnqueue(new AttackIntent(attacker.Id, npc.Id));
+
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            Assert.Equal(1, harness.Zone.CombatEvents.Count);
+            Assert.DoesNotContain(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadCombatEvent(sent.Data, 0, sent.Data.Length, out _));
+
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            for (int connection = 1; connection <= 3; connection++)
+            {
+                SentMessage[] messages = harness.Transport.Sent.FindAll(sent =>
+                    sent.ConnectionId == connection &&
+                    MessageCodec.TryReadCombatEvent(sent.Data, 0, sent.Data.Length, out _)).ToArray();
+                if (connection == 3)
+                {
+                    Assert.Empty(messages);
+                    continue;
+                }
+
+                SentMessage sentEvent = Assert.Single(messages);
+                Assert.Equal(DeliveryMode.Unreliable, sentEvent.Mode);
+                Assert.True(MessageCodec.TryReadCombatEvent(
+                    sentEvent.Data, 0, sentEvent.Data.Length, out CombatEventMessage decoded));
+                CombatEventEntry entry = Assert.Single(decoded.Entries);
+                Assert.Equal(attacker.Id, entry.AttackerId);
+                Assert.Equal(npc.Id, entry.TargetId);
+            }
+
+            Assert.Equal(0, harness.Zone.CombatEvents.Count);
+            NetworkStats stats = harness.Server.Snapshot();
+            Assert.Equal(2, stats.CombatEventMessages);
+            Assert.Equal(2, stats.CombatEventEntries);
+            Assert.Equal(26, stats.CombatEventBytes);
+            Assert.Equal(0, stats.CombatEventsTrimmed);
+
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            Assert.DoesNotContain(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadCombatEvent(sent.Data, 0, sent.Data.Length, out _));
+        }
+
+        [Fact]
+        public void Sin_Sesiones_AfterTick_Vacia_Los_CombatEvents()
+        {
+            using var harness = new Harness();
+            PlayerEntity attacker = harness.Zone.SpawnPlayer(
+                1, harness.Config.Spawn, harness.Config.PlayerHalfSize, harness.Config.InputBufferCapacity);
+            var npc = new NpcEntity(100, 2001, 0f, attacker.Position, 0f, long.MaxValue, 100, 200, -1)
+            {
+                Position = attacker.Position,
+                HalfSize = new Vec2(0.35f, 0.35f),
+            };
+            harness.Zone.AddEntity(npc);
+            harness.Zone.Attacks!.TryEnqueue(new AttackIntent(attacker.Id, npc.Id));
+            harness.Zone.Tick();
+            Assert.Equal(1, harness.Zone.CombatEvents.Count);
+
+            harness.Server.AfterTick(harness.Zone);
+
+            Assert.Equal(0, harness.Zone.CombatEvents.Count);
         }
 
         [Fact]

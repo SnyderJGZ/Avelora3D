@@ -349,9 +349,9 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void ItemCatalog_V16_Transporta_Reglas_Y_Rechaza_Campos_Invalidos()
+        public void ItemCatalog_Transporta_Reglas_Y_Rechaza_Campos_Invalidos()
         {
-            Assert.Equal((ushort)16, ProtocolConstants.Version);
+            Assert.Equal((ushort)17, ProtocolConstants.Version);
             var items = new[]
             {
                 new ItemCatalogEntry(4101, ItemKind.Weapon, 1, 0, 20, 2, 1, "Arma doble", 0,

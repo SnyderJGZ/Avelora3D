@@ -92,6 +92,96 @@ namespace Avelora.Shared
             return _blocked[(int)((y * Width) + x)];
         }
 
+        /// <summary>¿Hay vista libre del centro <paramref name="from"/> al centro <paramref name="to"/>?</summary>
+        public bool HasLineOfSight(Vec2 from, Vec2 to)
+        {
+            if (float.IsNaN(from.X) || float.IsInfinity(from.X) ||
+                float.IsNaN(from.Y) || float.IsInfinity(from.Y) ||
+                float.IsNaN(to.X) || float.IsInfinity(to.X) ||
+                float.IsNaN(to.Y) || float.IsInfinity(to.Y))
+            {
+                return false;
+            }
+
+            double startX = Math.Floor(from.X);
+            double startY = Math.Floor(from.Y);
+            double endX = Math.Floor(to.X);
+            double endY = Math.Floor(to.Y);
+            if (startX < int.MinValue || startX > int.MaxValue ||
+                startY < int.MinValue || startY > int.MaxValue ||
+                endX < int.MinValue || endX > int.MaxValue ||
+                endY < int.MinValue || endY > int.MaxValue)
+            {
+                return false;
+            }
+
+            int x = (int)startX;
+            int y = (int)startY;
+            int endTileX = (int)endX;
+            int endTileY = (int)endY;
+            if (IsTileBlocked(x, y))
+            {
+                return false;
+            }
+
+            double dx = (double)to.X - from.X;
+            double dy = (double)to.Y - from.Y;
+            int stepX = dx > 0d ? 1 : dx < 0d ? -1 : 0;
+            int stepY = dy > 0d ? 1 : dy < 0d ? -1 : 0;
+            double tDeltaX = stepX != 0 ? 1d / Math.Abs(dx) : double.PositiveInfinity;
+            double tDeltaY = stepY != 0 ? 1d / Math.Abs(dy) : double.PositiveInfinity;
+            double tMaxX = stepX > 0 ? (x + 1d - from.X) / dx
+                : stepX < 0 ? (from.X - x) / -dx
+                : double.PositiveInfinity;
+            double tMaxY = stepY > 0 ? (y + 1d - from.Y) / dy
+                : stepY < 0 ? (from.Y - y) / -dy
+                : double.PositiveInfinity;
+
+            while (x != endTileX || y != endTileY)
+            {
+                if (x == endTileX)
+                {
+                    y += stepY;
+                    tMaxY += tDeltaY;
+                }
+                else if (y == endTileY)
+                {
+                    x += stepX;
+                    tMaxX += tDeltaX;
+                }
+                else if (tMaxX < tMaxY)
+                {
+                    x += stepX;
+                    tMaxX += tDeltaX;
+                }
+                else if (tMaxY < tMaxX)
+                {
+                    y += stepY;
+                    tMaxY += tDeltaY;
+                }
+                else
+                {
+                    // La regla conservadora evita disparar por la rendija diagonal entre dos paredes.
+                    if (IsTileBlocked(x + stepX, y) || IsTileBlocked(x, y + stepY))
+                    {
+                        return false;
+                    }
+
+                    x += stepX;
+                    y += stepY;
+                    tMaxX += tDeltaX;
+                    tMaxY += tDeltaY;
+                }
+
+                if (IsTileBlocked(x, y))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Comprueba <b>todos</b> los tiles que toca la caja (AABB) centrada en <paramref name="center"/>
         /// con semiancho/semialto <paramref name="half"/>. No basta con el punto central

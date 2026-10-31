@@ -1,7 +1,20 @@
 # Avelora: reglas para los agentes
 
 Avelora es un MMORPG 2D con servidor autoritativo en C# (.NET 10) y cliente en Unity 6.
-Lee `README.md` (estado, estructura y verificación de cada etapa) antes de tocar nada.
+**No leas `README.md` entero** (casi 1900 líneas): busca con `grep`/`rg` solo la sección que nombra la tarea.
+
+## Ahorro de tokens
+
+- Lee solo los archivos que nombra la tarea y lo que encuentres buscando; no explores el repo entero.
+- Para ubicar código, antes de buscar o leer usa el grafo (`graphify-out/`, se actualiza en cada commit):
+  `graphify explain "NombreDeClase"` (archivo, línea y relaciones), `graphify affected "Nombre"` (qué
+  depende de ello) o `graphify query "pregunta"`. Lee después solo las líneas que te indique.
+- Mientras iteras, ejecuta solo las pruebas afectadas (`dotnet test Avelora.slnx --filter <Clase>`); la
+  suite completa, una vez al final.
+- Filtra las salidas largas: `dotnet test ... | Select-String 'Superado|Con error|error'`,
+  `dotnet build ... -v q`, y de la sincronización con Unity anota solo cuántos archivos copió.
+- La carga (`tools/carga/carga.ps1`) solo si la tarea la pide, y una sola vez.
+- El informe es corto: lo que cambió, cifras de build/test/carga y riesgos. Sin repetir la tarea.
 
 ## Cómo se trabaja
 

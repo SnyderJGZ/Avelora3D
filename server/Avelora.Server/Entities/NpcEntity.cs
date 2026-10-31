@@ -191,6 +191,9 @@ namespace Avelora.Server.Entities
         /// </summary>
         public long NextDirectionChangeTick { get; set; }
 
+        /// <summary>Ticks consecutivos que quiso moverse sin cambiar de posición.</summary>
+        public int StuckTicks { get; set; }
+
         /// <summary>Vida máxima del tipo.</summary>
         public int MaxHealth { get; }
 

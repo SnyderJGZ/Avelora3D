@@ -13,6 +13,22 @@ namespace Avelora.Tests
     public sealed class BotItemCatalogTests
     {
         [Fact]
+        public void Fight_Equipa_Arma_Aunque_FistDamage_Con_Bono_Supere_Su_Daño_Base()
+        {
+            var transport = new ArmaConBonoTransport();
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 500, accountPrefix: "bot", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Fight,
+                transportFactory: () => transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.True(transport.EquipEnviado);
+            Assert.Equal(1, bot.Equipped);
+        }
+
+        [Fact]
         public void Fight_Equipa_El_Arma_Mas_Fuerte_Segun_El_Catalogo_Del_Servidor()
         {
             var transport = new CatalogTransport();
@@ -109,6 +125,222 @@ namespace Avelora.Tests
             if (slotEsperado < 0)
                 Assert.Equal((ushort)0, (ushort)typeof(BotClient).GetField("_pendingEquipItemId",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(bot)!);
+        }
+
+        [Fact]
+        public void Fight_Con_Pared_No_Ataca_Y_Sigue_Caminando_Hasta_Tener_Vista()
+        {
+            MapCollisionGrid map = MapCollisionGrid.FromRows(new[]
+            {
+                "...#....", "...#....", "...#....", "...#....", "...#....",
+            });
+            var transport = new SightTransport();
+            using var bot = NewSightBot(map, transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(0, transport.AttacksSent);
+            Assert.True(transport.PositiveMoveInputs > 0);
+            Assert.True(bot.AttacksSkippedLineOfSight > 0);
+        }
+
+        [Fact]
+        public void Fight_Con_Vista_Se_Pára_Ataca_Y_Procesa_CombatEvent()
+        {
+            var transport = new SightTransport();
+            using var bot = NewSightBot(MapCollisionGrid.AllWalkable(8, 5), transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.True(transport.AttacksSent > 0);
+            Assert.Equal(0, transport.PositiveMoveInputs);
+            Assert.Equal(0, bot.AttacksSkippedLineOfSight);
+            Assert.Equal(1, bot.CombatEventsReceived);
+        }
+
+        private static BotClient NewSightBot(MapCollisionGrid map, SightTransport transport) => new BotClient(
+            5, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize], seed: 71, runMs: 250,
+            accountPrefix: "bot-sight", password: "clave", invitationCode: "invitacion",
+            behavior: BotBehavior.Fight, transportFactory: () => transport, map: map);
+
+        private sealed class SightTransport : IClientTransport
+        {
+            private readonly Queue<byte[]> _incoming = new Queue<byte[]>();
+            private readonly byte[] _nonce = new byte[HelloSecrets.NonceSize];
+            private readonly RSAParameters _publicKey;
+            private bool _connectPending;
+            private bool _connected;
+
+            public SightTransport()
+            {
+                using RSA rsa = RSA.Create(2048);
+                _publicKey = rsa.ExportParameters(includePrivateParameters: false);
+            }
+
+            public bool IsConnected => _connected;
+            public int AttacksSent { get; private set; }
+            public int PositiveMoveInputs { get; private set; }
+            public event Action? Connected;
+            public event Action<DisconnectReason>? Disconnected;
+            public event TransportMessageHandler? Received;
+
+            public void Connect(string host, int port) => _connectPending = true;
+
+            public void Poll()
+            {
+                if (_connectPending)
+                {
+                    _connectPending = false;
+                    _connected = true;
+                    Connected?.Invoke();
+                    Deliver(MessageCodec.EncodeChallenge(new ChallengeMessage(
+                        _nonce, _publicKey.Modulus!, _publicKey.Exponent!)));
+                    return;
+                }
+
+                while (_incoming.Count > 0)
+                {
+                    Deliver(_incoming.Dequeue());
+                }
+            }
+
+            public void Send(byte[] data, int length, DeliveryMode mode)
+            {
+                if (length == 0)
+                {
+                    return;
+                }
+
+                if (data[0] == (byte)MessageType.Hello)
+                {
+                    _incoming.Enqueue(MessageCodec.EncodeWelcome(new WelcomeMessage(
+                        ProtocolConstants.Version, (ushort)SimulationConstants.TickRate, 42, 0, 0,
+                        1.5f, 2.5f, 4f, 0.4f, 0.4f, new byte[ProtocolConstants.MapHashSize])));
+                    _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                        1.5f, 10, 6f, 0.8f, Array.Empty<ItemCatalogEntry>())));
+                    _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
+                        0, Array.Empty<ushort>(), Array.Empty<ushort>())));
+                    _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(1, 0, new[]
+                    {
+                        new EntityState(42, 96, 160, 0, 0, EntityKind.Player, 100, EntityAction.None),
+                        new EntityState(100, 352, 160, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2001),
+                    })));
+                    _incoming.Enqueue(MessageCodec.EncodeCombatEvent(new CombatEventMessage(new[]
+                    {
+                        new CombatEventEntry(42, 100, 10, CombatEventFlags.Ranged),
+                    })));
+                }
+                else if (data[0] == (byte)MessageType.Attack)
+                {
+                    AttacksSent++;
+                }
+                else if (MessageCodec.TryReadMoveInput(data, 0, length, out MoveInputMessage input) &&
+                    input.TryGetDirection(0, out sbyte directionX, out _) && directionX > 0)
+                {
+                    PositiveMoveInputs++;
+                }
+            }
+
+            public void Disconnect()
+            {
+                if (_connected)
+                {
+                    _connected = false;
+                    Disconnected?.Invoke(DisconnectReason.LocalShutdown);
+                }
+            }
+
+            public void Dispose() { }
+
+            private void Deliver(byte[] message) => Received?.Invoke(0, message, 0, message.Length);
+        }
+
+        private sealed class ArmaConBonoTransport : IClientTransport
+        {
+            private readonly Queue<byte[]> _incoming = new Queue<byte[]>();
+            private readonly byte[] _nonce = new byte[HelloSecrets.NonceSize];
+            private readonly RSAParameters _publicKey;
+            private bool _connectPending;
+            private bool _connected;
+
+            public ArmaConBonoTransport()
+            {
+                using RSA rsa = RSA.Create(2048);
+                _publicKey = rsa.ExportParameters(includePrivateParameters: false);
+            }
+
+            public bool IsConnected => _connected;
+            public bool EquipEnviado { get; private set; }
+            public event Action? Connected;
+            public event Action<DisconnectReason>? Disconnected;
+            public event TransportMessageHandler? Received;
+
+            public void Connect(string host, int port) => _connectPending = true;
+
+            public void Poll()
+            {
+                if (_connectPending)
+                {
+                    _connectPending = false;
+                    _connected = true;
+                    Connected?.Invoke();
+                    Deliver(MessageCodec.EncodeChallenge(new ChallengeMessage(
+                        _nonce, _publicKey.Modulus!, _publicKey.Exponent!)));
+                    return;
+                }
+
+                while (_incoming.Count > 0)
+                {
+                    Deliver(_incoming.Dequeue());
+                }
+            }
+
+            public void Send(byte[] data, int length, DeliveryMode mode)
+            {
+                if (length == 0)
+                {
+                    return;
+                }
+
+                if (data[0] == (byte)MessageType.Hello)
+                {
+                    _incoming.Enqueue(MessageCodec.EncodeWelcome(new WelcomeMessage(
+                        ProtocolConstants.Version, (ushort)SimulationConstants.TickRate, 42, 0, 0,
+                        1.5f, 2.5f, 4f, 0.4f, 0.4f, new byte[ProtocolConstants.MapHashSize])));
+                    _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
+                        1.5f, 13, 1.2f, 0.8f, new[]
+                        {
+                            new ItemCatalogEntry(4101, ItemKind.Weapon, 1, 0, 12, 6f, 0.8f,
+                                "Arma ficticia", 0, weaponType: "TipoA", usableByClass: true,
+                                requiredLevel: 1, twoHanded: false),
+                        })));
+                    _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
+                        1, new ushort[] { 4101 }, new ushort[] { 1 })));
+                }
+                else if (data[0] == (byte)MessageType.Equip)
+                {
+                    Assert.True(MessageCodec.TryReadEquip(data, 0, length, out EquipMessage equip));
+                    Assert.Equal((byte)0, equip.Slot);
+                    EquipEnviado = true;
+                    var equipment = new ushort[ProtocolConstants.EquipSlotCount];
+                    equipment[(int)EquipSlot.Weapon] = 4101;
+                    _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
+                        1, new ushort[] { 0 }, new ushort[] { 0 }, equipment)));
+                }
+            }
+
+            public void Disconnect()
+            {
+                if (_connected)
+                {
+                    _connected = false;
+                    Disconnected?.Invoke(DisconnectReason.LocalShutdown);
+                }
+            }
+
+            public void Dispose() { }
+
+            private void Deliver(byte[] message) => Received?.Invoke(0, message, 0, message.Length);
         }
 
         private sealed class CatalogTransport : IClientTransport

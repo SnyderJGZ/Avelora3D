@@ -2,6 +2,8 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using Avelora.Server.Items;
+using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
@@ -401,6 +403,47 @@ namespace Avelora.Server.Configuration
             if (string.IsNullOrWhiteSpace(ClassesPath))
             {
                 throw new InvalidOperationException("classesPath está vacío.");
+            }
+        }
+
+        /// <summary>Comprueba que el área de interés contenga el alcance máximo de ataque.</summary>
+        public void ValidateAttackRanges(ItemCatalog? items, ClassCatalog classes)
+        {
+            if (classes is null)
+            {
+                throw new ArgumentNullException(nameof(classes));
+            }
+
+            float maxRange = 0f;
+            if (items?.Items != null)
+            {
+                for (int i = 0; i < items.Items.Count; i++)
+                {
+                    ItemType? item = items.Items[i];
+                    if (item != null && item.IsWeapon && item.Range > maxRange)
+                    {
+                        maxRange = item.Range;
+                    }
+                }
+            }
+
+            if (classes.Classes != null)
+            {
+                for (int i = 0; i < classes.Classes.Count; i++)
+                {
+                    float range = classes.Classes[i]?.Unarmed?.Range ?? 0f;
+                    if (range > maxRange)
+                    {
+                        maxRange = range;
+                    }
+                }
+            }
+
+            if (maxRange + AttackRangeTolerance >= InterestRadius)
+            {
+                throw new InvalidOperationException(
+                    "interestRadius (" + InterestRadius + ") debe ser mayor que el alcance máximo de ataque (" +
+                    maxRange + ") + attackRangeTolerance (" + AttackRangeTolerance + ").");
             }
         }
 

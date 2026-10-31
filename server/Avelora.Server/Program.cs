@@ -137,6 +137,9 @@ namespace Avelora.Server
                 {
                     classes.ValidateWeaponTypes(items);
                 }
+                config.ValidateAttackRanges(
+                    string.IsNullOrWhiteSpace(config.ItemsPath) ? null : items,
+                    classes);
             }
             catch (Exception ex) when (
                 ex is IOException || ex is System.Text.Json.JsonException || ex is InvalidOperationException)

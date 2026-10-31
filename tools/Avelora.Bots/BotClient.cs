@@ -210,6 +210,9 @@ namespace Avelora.Bots
         private readonly HashSet<int> _rankedNpcIds = new HashSet<int>();
         private long _nextAttackAt;
         private long _sentAttacks;
+        private long _sentRangedAttacks;
+        private long _attacksSkippedLineOfSight;
+        private long _combatEventsReceived;
         private long _sentChat;
         private long _receivedChat;
         private long _deathsSeen;
@@ -232,7 +235,6 @@ namespace Avelora.Bots
         private byte _pendingEquipSlot;
         private long _armorsEquipped;
         private long _equipOmittedRequirements;
-        private float _fistDamage = 10f;
         private float _fistRange = AttackRange;
         private float _fistCooldownSeconds = 0.8f;
         private SnapshotMessage _pendingFightSnapshot;
@@ -425,6 +427,12 @@ namespace Avelora.Bots
 
         /// <summary>Ataques enviados (modo <c>fight</c>, I-02).</summary>
         public long SentAttacks => Interlocked.Read(ref _sentAttacks);
+
+        public long SentRangedAttacks => Interlocked.Read(ref _sentRangedAttacks);
+
+        public long AttacksSkippedLineOfSight => Interlocked.Read(ref _attacksSkippedLineOfSight);
+
+        public long CombatEventsReceived => Interlocked.Read(ref _combatEventsReceived);
 
         /// <summary>Mensajes de chat enviados por el comportamiento <c>chat</c> (I-07).</summary>
         public long SentChat => Interlocked.Read(ref _sentChat);
@@ -982,7 +990,6 @@ namespace Avelora.Bots
             _equippedItemId = 0;
             _pendingEquipItemId = 0;
             _pendingEquipSlot = 0;
-            _fistDamage = 10f;
             _fistRange = AttackRange;
             _fistCooldownSeconds = _attackCooldownMs / 1000f;
             _itemDecisionPending = false;
@@ -1425,6 +1432,12 @@ namespace Avelora.Bots
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
+            if (MessageCodec.TryReadCombatEvent(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _combatEventsReceived);
+                return;
+            }
+
             if (MessageCodec.TryReadChallenge(buffer, offset, length, out ChallengeMessage challenge))
             {
                 HandleChallenge(challenge);
@@ -1568,7 +1581,6 @@ namespace Avelora.Bots
                 }
 
                 _pickupRange = catalog.PickupRange;
-                _fistDamage = catalog.FistDamage;
                 _fistRange = catalog.FistRange;
                 _fistCooldownSeconds = catalog.FistCooldownSeconds;
                 return;
@@ -2009,7 +2021,7 @@ namespace Avelora.Bots
         }
 
         /// <summary>
-        /// Camina hacia el enemigo vivo más cercano; si ya está a alcance, se para. Sin ninguno a la
+        /// Camina hacia el enemigo vivo más cercano; si ya está a alcance y tiene vista, se para. Sin ninguno a la
         /// vista pasea como <c>random</c> hasta encontrarlo: en el mapa grande el spawn no tiene
         /// enemigos dentro del área de interés (J-01).
         /// </summary>
@@ -2029,7 +2041,10 @@ namespace Avelora.Bots
             _nextDirectionChangeAt = 0;
 
             float range = CurrentAttackRange;
-            if (distanceSq <= range * range)
+            bool inRange = distanceSq <= range * range;
+            bool hasLineOfSight = _map == null || _map.HasLineOfSight(
+                new Vec2(_x, _y), new Vec2(_x + dx, _y + dy));
+            if (inRange && hasLineOfSight)
             {
                 _directionX = 0;
                 _directionY = 0;
@@ -2040,10 +2055,10 @@ namespace Avelora.Bots
             _directionY = Sign(dy);
         }
 
-        /// <summary>Manda un ataque al enemigo vivo más cercano si está dentro de alcance.</summary>
+        /// <summary>Manda un ataque al enemigo vivo más cercano si está a alcance y hay vista.</summary>
         private void SendAttackIfInRange(long now)
         {
-            int target = FindNearestAlive(out _, out _, out float distanceSq);
+            int target = FindNearestAlive(out float dx, out float dy, out float distanceSq);
 
             float range = CurrentAttackRange;
             if (target < 0 || distanceSq > range * range)
@@ -2051,9 +2066,22 @@ namespace Avelora.Bots
                 return;
             }
 
+            Vec2 self = new Vec2(_x, _y);
+            Vec2 targetPosition = new Vec2(_x + dx, _y + dy);
+            if (_map != null && !_map.HasLineOfSight(self, targetPosition))
+            {
+                Interlocked.Increment(ref _attacksSkippedLineOfSight);
+                _nextAttackAt = now + CurrentAttackCooldownMs + AttackSlackMs;
+                return;
+            }
+
             byte[] attack = MessageCodec.EncodeAttack(new AttackMessage(target));
             _transport!.Send(attack, attack.Length, DeliveryMode.ReliableOrdered);
             Interlocked.Increment(ref _sentAttacks);
+            if (CurrentAttackRange > 2f) // Mismo umbral que CombatSystem.RangedMinRange (I-13).
+            {
+                Interlocked.Increment(ref _sentRangedAttacks);
+            }
             _lastAttackTick = _lastSnapshotTick;
 
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
@@ -2159,7 +2187,8 @@ namespace Avelora.Bots
             uint equippedDamage = _itemCatalog.TryGetValue(_equippedItemId, out ItemCatalogEntry equipped) &&
                 equipped.Kind == ItemKind.Weapon
                     ? equipped.Damage
-                    : _fistDamage > 0f ? (uint)_fistDamage : 0u;
+                    // FistDamage ya lleva el bono de atributo y item.Damage no: compararlos falsea la elección.
+                    : 0u;
             uint bestDamage = equippedDamage;
             byte bestSlot = 0;
             ushort bestItemId = 0;

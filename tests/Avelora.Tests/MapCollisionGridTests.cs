@@ -157,5 +157,57 @@ namespace Avelora.Tests
             Assert.True(map.IsBoxWalkable(new Vec2(-1.5f, -1.5f), half)); // tile (-2,-2): libre
             Assert.False(map.IsBoxWalkable(new Vec2(0.5f, 0.5f), half));  // dentro del tile (0,0): bloqueado
         }
+
+        [Fact]
+        public void HasLineOfSight_Recorre_Celdas_Y_Respeta_Paredes_Y_Esquinas()
+        {
+            MapCollisionGrid open = MapCollisionGrid.FromRows(new[] { "........", "........", "........", "........", "........" });
+            Assert.True(open.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(6.5f, 3.5f)));
+
+            MapCollisionGrid crossed = MapCollisionGrid.FromRows(new[] { "........", "..#.....", "........", "........", "........" });
+            MapCollisionGrid nearby = MapCollisionGrid.FromRows(new[] { "........", "........", "..#.....", "........", "........" });
+            Assert.False(crossed.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(6.5f, 3.5f)));
+            Assert.True(nearby.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(6.5f, 3.5f)));
+
+            MapCollisionGrid middle = MapCollisionGrid.FromRows(new[] { ".....", "..#..", "....." });
+            Assert.False(middle.HasLineOfSight(new Vec2(0.5f, 1.5f), new Vec2(4.5f, 1.5f)));
+            Assert.True(middle.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(4.5f, 0.5f)));
+
+            Assert.True(open.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(0.5f, 0.5f)));
+            Assert.False(crossed.HasLineOfSight(new Vec2(2.5f, 1.5f), new Vec2(2.5f, 1.5f)));
+            Assert.False(crossed.HasLineOfSight(new Vec2(2.5f, 1.5f), new Vec2(0.5f, 0.5f)));
+            Assert.False(crossed.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(2.5f, 1.5f)));
+            Assert.False(open.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(8.5f, 0.5f)));
+
+            MapCollisionGrid vertical = MapCollisionGrid.FromRows(new[] { "...", ".#.", "..." });
+            Assert.False(vertical.HasLineOfSight(new Vec2(1.5f, 0.5f), new Vec2(1.5f, 2.5f)));
+            Assert.True(open.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(0.5f, 3.5f)));
+
+            MapCollisionGrid cornerWall = MapCollisionGrid.FromRows(new[] { "#.", ".." });
+            Vec2 lowerLeft = new Vec2(0.5f, 1.5f);
+            Vec2 upperRight = new Vec2(1.5f, 0.5f);
+            Assert.False(cornerWall.HasLineOfSight(lowerLeft, upperRight));
+            Assert.False(cornerWall.HasLineOfSight(upperRight, lowerLeft));
+            MapCollisionGrid clearCorner = MapCollisionGrid.FromRows(new[] { "..", ".." });
+            Assert.True(clearCorner.HasLineOfSight(lowerLeft, upperRight));
+            MapCollisionGrid diagonalSlit = MapCollisionGrid.FromRows(new[] { ".#", "#." });
+            Assert.False(diagonalSlit.HasLineOfSight(new Vec2(0.5f, 0.5f), new Vec2(1.5f, 1.5f)));
+            Assert.False(diagonalSlit.HasLineOfSight(new Vec2(1.5f, 1.5f), new Vec2(0.5f, 0.5f)));
+            Assert.True(cornerWall.HasLineOfSight(new Vec2(0.5f, 1.5f), new Vec2(1.5f, 0.6f)));
+            Assert.True(cornerWall.HasLineOfSight(new Vec2(1.5f, 0.6f), new Vec2(0.5f, 1.5f)));
+            Assert.False(cornerWall.HasLineOfSight(new Vec2(0.5f, 1.4f), new Vec2(1.5f, 0.5f)));
+            Assert.False(cornerWall.HasLineOfSight(new Vec2(1.5f, 0.5f), new Vec2(0.5f, 1.4f)));
+
+            var blocked = new bool[6];
+            blocked[3] = true; // x absoluto 0, origen de rejilla -3.
+            var negativeOrigin = new MapCollisionGrid(6, 1, blocked, originX: -3);
+            Assert.False(negativeOrigin.HasLineOfSight(new Vec2(-2.5f, 0.5f), new Vec2(2.5f, 0.5f)));
+            Assert.True(new MapCollisionGrid(6, 1, new bool[6], originX: -3).HasLineOfSight(
+                new Vec2(-2.5f, 0.5f), new Vec2(2.5f, 0.5f)));
+
+            Assert.False(cornerWall.HasLineOfSight(new Vec2(1.5f, 0.5f), new Vec2(0.5f, 1.5f)));
+            Assert.False(middle.HasLineOfSight(new Vec2(4.5f, 1.5f), new Vec2(0.5f, 1.5f)));
+            Assert.False(crossed.HasLineOfSight(new Vec2(6.5f, 3.5f), new Vec2(0.5f, 0.5f)));
+        }
     }
 }

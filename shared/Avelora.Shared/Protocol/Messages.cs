@@ -890,4 +890,39 @@ namespace Avelora.Shared.Protocol
         public string SenderName { get; }
         public string Text { get; }
     }
+
+    /// <summary>Marcas cosméticas de un evento de combate (I-13).</summary>
+    [Flags]
+    public enum CombatEventFlags : byte
+    {
+        None = 0,
+        Ranged = 1,
+        Magical = 2,
+        Killed = 4,
+    }
+
+    /// <summary>Un daño resuelto por el servidor.</summary>
+    public readonly struct CombatEventEntry
+    {
+        public CombatEventEntry(int attackerId, int targetId, ushort damage, CombatEventFlags flags)
+        {
+            AttackerId = attackerId;
+            TargetId = targetId;
+            Damage = damage;
+            Flags = flags;
+        }
+
+        public int AttackerId { get; }
+        public int TargetId { get; }
+        public ushort Damage { get; }
+        public CombatEventFlags Flags { get; }
+    }
+
+    /// <summary>Eventos de combate enviados junto al snapshot más próximo.</summary>
+    public readonly struct CombatEventMessage
+    {
+        public CombatEventMessage(CombatEventEntry[] entries) => Entries = entries ?? Array.Empty<CombatEventEntry>();
+
+        public CombatEventEntry[] Entries { get; }
+    }
 }

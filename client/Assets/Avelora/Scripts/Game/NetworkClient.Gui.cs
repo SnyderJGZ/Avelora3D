@@ -34,6 +34,7 @@ namespace Avelora.Client
         private GUIStyle _darkTitleStyle;
         private GUIStyle _darkButtonStyle;
         private GUIStyle _characterStatusStyle;
+        private GUIStyle _damageNumberStyle;
         private Rect _characterPanel;
         private string _deleteControlName = "avelora-character-delete";
         private string _createControlName = "avelora-character-create";
@@ -52,6 +53,8 @@ namespace Avelora.Client
                 DrawCharacterSelection();
                 return;
             }
+
+            DrawCombatEffects();
 
             if (!showOverlay)
             {
@@ -96,19 +99,95 @@ namespace Avelora.Client
 
         private void EnsureOverlayStyles()
         {
-            if (_overlayStyle != null)
+            if (_overlayStyle == null)
+            {
+                _overlayStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 13,
+                    wordWrap = true,
+                };
+                _overlayStyle.normal.textColor = Color.white;
+                // Sin texto enriquecido: un <size=400> escrito en el chat taparía la pantalla de todos.
+                _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
+            }
+
+            if (_damageNumberStyle == null)
+            {
+                _damageNumberStyle = new GUIStyle(GUI.skin.label)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 16,
+                    fontStyle = FontStyle.Bold,
+                    richText = false,
+                };
+                _damageNumberStyle.normal.textColor = Color.white;
+            }
+        }
+
+        private void DrawCombatEffects()
+        {
+            float now = Time.unscaledTime;
+            for (int i = _damageNumbers.Count - 1; i >= 0; i--)
+            {
+                if (now - _damageNumbers[i].StartTime >= 0.9f)
+                {
+                    _damageNumbers.RemoveAt(i);
+                }
+            }
+
+            Camera cam = Camera.main;
+            if (cam == null)
             {
                 return;
             }
 
-            _overlayStyle = new GUIStyle(GUI.skin.label)
+            if (_damageNumbers.Count > 0)
             {
-                fontSize = 13,
-                wordWrap = true,
-            };
-            _overlayStyle.normal.textColor = Color.white;
-            // Sin texto enriquecido: un <size=400> escrito en el chat taparía la pantalla de todos.
-            _chatLineStyle = new GUIStyle(_overlayStyle) { wordWrap = false, clipping = TextClipping.Clip, richText = false };
+                EnsureOverlayStyles();
+            }
+
+            Color previousColor = GUI.color;
+            for (int i = 0; i < _projectiles.Count; i++)
+            {
+                CombatProjectile projectile = _projectiles[i];
+                if (!TryGetEntityPosition(projectile.TargetId, out Vector3 destination))
+                {
+                    continue;
+                }
+
+                float progress = Mathf.Clamp01((now - projectile.StartTime) / projectile.Duration);
+                Vector3 screen = cam.WorldToScreenPoint(Vector3.Lerp(projectile.From, destination, progress));
+                if (screen.z < 0f)
+                {
+                    continue;
+                }
+
+                Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
+                GUI.color = (projectile.Flags & CombatEventFlags.Magical) != 0
+                    ? new Color(0.5f, 0.8f, 1f)
+                    : new Color(0.95f, 0.85f, 0.5f);
+                GUI.DrawTexture(new Rect(gui.x - 3f, gui.y - 3f, 6f, 6f), Texture2D.whiteTexture);
+            }
+
+            for (int i = 0; i < _damageNumbers.Count; i++)
+            {
+                DamageNumber number = _damageNumbers[i];
+                float elapsed = now - number.StartTime;
+                Vector3 world = number.Position + Vector3.up * (0.8f * elapsed / 0.9f);
+                Vector3 screen = cam.WorldToScreenPoint(world);
+                if (screen.z < 0f)
+                {
+                    continue;
+                }
+
+                Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
+                Color color = number.OnSelf ? new Color(1f, 0.35f, 0.3f) : Color.white;
+                color.a = 1f - elapsed / 0.9f;
+                GUI.color = color;
+                GUI.Label(new Rect(gui.x - 32f, gui.y - 20f, 64f, 24f), number.Text, _damageNumberStyle);
+            }
+
+            GUI.color = previousColor;
         }
 
         private void DrawCharacterSelection()

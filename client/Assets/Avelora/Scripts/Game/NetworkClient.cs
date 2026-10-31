@@ -106,6 +106,28 @@ namespace Avelora.Client
         private float _combatHintUntil;
         private int _attacksSent;
 
+        private struct CombatProjectile
+        {
+            public int AttackerId;
+            public int TargetId;
+            public Vector3 From;
+            public float StartTime;
+            public float Duration;
+            public ushort Damage;
+            public CombatEventFlags Flags;
+        }
+
+        private struct DamageNumber
+        {
+            public Vector3 Position;
+            public float StartTime;
+            public string Text;
+            public bool OnSelf;
+        }
+
+        private readonly List<CombatProjectile> _projectiles = new List<CombatProjectile>(32);
+        private readonly List<DamageNumber> _damageNumbers = new List<DamageNumber>(32);
+
         [Header("Diagnóstico")]
         [SerializeField] private bool showOverlay = true;
 
@@ -375,6 +397,8 @@ namespace Avelora.Client
                 }
             }
 
+            UpdateCombatProjectiles();
+
             if (!_welcomeReceived)
             {
                 if (_transport == null &&
@@ -613,6 +637,16 @@ namespace Avelora.Client
                 return;
             }
 
+            if (!HasLineOfSightTo(target))
+            {
+                if (!_autoAttack)
+                {
+                    ShowHint("sin línea de visión");
+                }
+
+                return;
+            }
+
             byte[] bytes = MessageCodec.EncodeAttack(new AttackMessage(target.EntityId));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             _attacksSent++;
@@ -760,10 +794,11 @@ namespace Avelora.Client
         }
 
         /// <summary>
-        /// Dirección hacia el objetivo del ataque automático (I-06c), o cero si ya está a alcance. Va
-        /// por el MoveInput de siempre: el servidor mueve y valida igual que con el teclado.
+        /// Dirección hacia el objetivo del ataque automático (I-06c), o cero si ya está a alcance y
+        /// hay línea de visión. Va por el MoveInput de siempre: el servidor mueve y valida igual que
+        /// con el teclado.
         /// </summary>
-        // shortcut: camina en línea recta y se queda contra la pared si hay una en medio; añadir
+        // shortcut: camina en línea recta y se queda contra la pared o detrás de una pared sin vista; añadir
         // búsqueda de caminos sobre la rejilla del mapa si en las salas grandes molesta.
         private void ApproachTarget(out sbyte directionX, out sbyte directionY)
         {
@@ -779,7 +814,7 @@ namespace Avelora.Client
             Vector2 delta = (Vector2)(target.transform.position - transform.position);
             CurrentWeapon(out float range, out _);
             float stop = range * ApproachFraction;
-            if (delta.sqrMagnitude <= stop * stop)
+            if (delta.sqrMagnitude <= stop * stop && HasLineOfSightTo(target))
             {
                 return;
             }
@@ -793,6 +828,13 @@ namespace Avelora.Client
             {
                 directionY = (sbyte)(delta.y > 0f ? 1 : -1);
             }
+        }
+
+        private bool HasLineOfSightTo(RemotePlayerView target)
+        {
+            return _map == null || _map.Grid == null || _map.Grid.HasLineOfSight(
+                new Vec2(transform.position.x, transform.position.y),
+                new Vec2(target.transform.position.x, target.transform.position.y));
         }
 
         /// <summary>Alcance y recarga del arma equipada, o de los puños si no hay (catálogo del servidor).</summary>
@@ -1129,7 +1171,112 @@ namespace Avelora.Client
                     }
 
                     break;
+
+                case MessageType.CombatEvent:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadCombatEvent(buffer, offset, length, out CombatEventMessage combatEvent))
+                    {
+                        HandleCombatEvent(combatEvent);
+                    }
+
+                    break;
             }
+        }
+
+        private void HandleCombatEvent(CombatEventMessage combatEvent)
+        {
+            CombatEventEntry[] entries = combatEvent.Entries;
+            if (entries == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                CombatEventEntry entry = entries[i];
+                if (!TryGetEntityPosition(entry.TargetId, out Vector3 targetPosition))
+                {
+                    continue;
+                }
+
+                if ((entry.Flags & CombatEventFlags.Ranged) != 0 &&
+                    TryGetEntityPosition(entry.AttackerId, out Vector3 attackerPosition))
+                {
+                    if (_projectiles.Count == 32)
+                    {
+                        _projectiles.RemoveAt(0);
+                    }
+
+                    float distance = Vector3.Distance(attackerPosition, targetPosition);
+                    _projectiles.Add(new CombatProjectile
+                    {
+                        AttackerId = entry.AttackerId,
+                        TargetId = entry.TargetId,
+                        From = attackerPosition,
+                        StartTime = Time.unscaledTime,
+                        Duration = Mathf.Clamp(distance / 20f, 0.08f, 0.3f),
+                        Damage = entry.Damage,
+                        Flags = entry.Flags,
+                    });
+                }
+                else
+                {
+                    AddDamageNumber(entry.TargetId, entry.Damage, entry.Flags, targetPosition);
+                }
+            }
+        }
+
+        private bool TryGetEntityPosition(int entityId, out Vector3 position)
+        {
+            if (entityId == _entityId)
+            {
+                position = transform.position;
+                return true;
+            }
+
+            if (_remoteViews.TryGetValue(entityId, out RemotePlayerView view) && view != null)
+            {
+                position = view.transform.position;
+                return true;
+            }
+
+            position = default;
+            return false;
+        }
+
+        private void UpdateCombatProjectiles()
+        {
+            for (int i = _projectiles.Count - 1; i >= 0; i--)
+            {
+                CombatProjectile projectile = _projectiles[i];
+                if (!TryGetEntityPosition(projectile.TargetId, out Vector3 targetPosition))
+                {
+                    _projectiles.RemoveAt(i);
+                    continue;
+                }
+
+                if (Time.unscaledTime - projectile.StartTime >= projectile.Duration)
+                {
+                    _projectiles.RemoveAt(i);
+                    AddDamageNumber(projectile.TargetId, projectile.Damage, projectile.Flags, targetPosition);
+                }
+            }
+        }
+
+        private void AddDamageNumber(int targetId, ushort damage, CombatEventFlags flags, Vector3 position)
+        {
+            if (_damageNumbers.Count == 32)
+            {
+                _damageNumbers.RemoveAt(0);
+            }
+
+            _damageNumbers.Add(new DamageNumber
+            {
+                Position = position,
+                StartTime = Time.unscaledTime,
+                Text = damage.ToString() + ((flags & CombatEventFlags.Killed) != 0 ? "!" : string.Empty),
+                OnSelf = targetId == _entityId,
+            });
         }
 
         private void HandleWelcome(WelcomeMessage welcome)
@@ -1480,6 +1627,8 @@ namespace Avelora.Client
             }
 
             _remoteViews.Clear();
+            _projectiles.Clear();
+            _damageNumbers.Clear();
         }
 
         private static string DescribeReject(RejectReason reason)

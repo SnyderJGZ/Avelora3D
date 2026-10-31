@@ -296,9 +296,18 @@ namespace Avelora.Tests
 
         [Theory]
         [InlineData(0f)]
-        [InlineData(5.01f)]
+        [InlineData(8.01f)]
         public void Range_De_Arma_Fuera_De_Rango_Se_Rechaza(float range) =>
             Assert.Throws<InvalidOperationException>(() => Catalog(Weapon(range: range)).Validate());
+
+        [Fact]
+        public void Range_Maximo_De_Arma_Es_8_Y_El_Error_Declara_El_Tope()
+        {
+            Catalog(Weapon(range: 8f)).Validate();
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                () => Catalog(Weapon(range: 8.01f)).Validate());
+            Assert.Contains("≤ 8", error.Message);
+        }
 
         [Theory]
         [InlineData(0.09d)]

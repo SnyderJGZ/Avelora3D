@@ -185,7 +185,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)16, ProtocolConstants.Version);
+            Assert.Equal((ushort)17, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -785,6 +785,52 @@ namespace Avelora.Tests
             Assert.True(MessageCodec.TryReadAttack(bytes, 0, bytes.Length, out AttackMessage decoded));
             Assert.Equal(5, bytes.Length);
             Assert.Equal(123456, decoded.TargetId);
+        }
+
+        [Fact]
+        public void CombatEvent_Va_Y_Vuelve_Con_Limites_Y_Rechaza_Entradas_Invalidas()
+        {
+            var one = new CombatEventMessage(new[]
+            {
+                new CombatEventEntry(12, 34, 65535, CombatEventFlags.Ranged | CombatEventFlags.Magical | CombatEventFlags.Killed),
+            });
+            byte[] oneBytes = MessageCodec.EncodeCombatEvent(one);
+            Assert.Equal(13, oneBytes.Length);
+            Assert.True(MessageCodec.TryReadCombatEvent(oneBytes, 0, oneBytes.Length, out CombatEventMessage oneRead));
+            Assert.Equal(one.Entries[0].AttackerId, oneRead.Entries[0].AttackerId);
+            Assert.Equal(one.Entries[0].TargetId, oneRead.Entries[0].TargetId);
+            Assert.Equal(ushort.MaxValue, oneRead.Entries[0].Damage);
+            Assert.Equal((CombatEventFlags)7, oneRead.Entries[0].Flags);
+
+            var manyEntries = new CombatEventEntry[ProtocolConstants.MaxCombatEventsPerMessage];
+            for (int i = 0; i < manyEntries.Length; i++)
+            {
+                manyEntries[i] = new CombatEventEntry(i, -i, ushort.MaxValue, (CombatEventFlags)7);
+            }
+
+            byte[] manyBytes = MessageCodec.EncodeCombatEvent(new CombatEventMessage(manyEntries));
+            Assert.Equal(706, manyBytes.Length);
+            Assert.True(MessageCodec.TryReadCombatEvent(manyBytes, 0, manyBytes.Length, out CombatEventMessage manyRead));
+            Assert.Equal(64, manyRead.Entries.Length);
+            Assert.Equal(63, manyRead.Entries[63].AttackerId);
+
+            Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 28, 0 }, 0, 2, out _));
+            Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 28, 65 }, 0, 2, out _));
+            Assert.False(MessageCodec.TryReadCombatEvent(oneBytes, 0, oneBytes.Length - 1, out _));
+            byte[] longer = new byte[oneBytes.Length + 1];
+            Array.Copy(oneBytes, longer, oneBytes.Length);
+            Assert.False(MessageCodec.TryReadCombatEvent(longer, 0, longer.Length, out _));
+            Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 27, 1 }, 0, 2, out _));
+
+            byte[] invalidFlags = (byte[])oneBytes.Clone();
+            invalidFlags[12] = 8;
+            Assert.False(MessageCodec.TryReadCombatEvent(invalidFlags, 0, invalidFlags.Length, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
+                new CombatEventMessage(Array.Empty<CombatEventEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
+                new CombatEventMessage(new CombatEventEntry[65])));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
+                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)8) })));
         }
 
         [Fact]

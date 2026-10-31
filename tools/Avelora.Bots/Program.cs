@@ -225,6 +225,9 @@ namespace Avelora.Bots
             long snaps = 0;
             long playedMs = 0;
             long sentAttacks = 0;
+            long sentRangedAttacks = 0;
+            long attacksSkippedLineOfSight = 0;
+            long combatEventsReceived = 0;
             long deathsSeen = 0;
             long elitesSeen = 0;
             long ownDeaths = 0;
@@ -273,6 +276,9 @@ namespace Avelora.Bots
                 corrections += bot.Corrections;
                 snaps += bot.Snaps;
                 sentAttacks += bot.SentAttacks;
+                sentRangedAttacks += bot.SentRangedAttacks;
+                attacksSkippedLineOfSight += bot.AttacksSkippedLineOfSight;
+                combatEventsReceived += bot.CombatEventsReceived;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
                 ownDeaths += bot.OwnDeaths;
@@ -345,6 +351,9 @@ namespace Avelora.Bots
                 {
                     Console.WriteLine(
                         "      combate: ataques=" + bot.SentAttacks +
+                        " ataques_distancia_enviados=" + bot.SentRangedAttacks +
+                        " ataques_omitidos_vision=" + bot.AttacksSkippedLineOfSight +
+                        " combate_recibidos=" + bot.CombatEventsReceived +
                         " muertes_vistas=" + bot.DeathsSeen +
                         " elites_vistos=" + bot.ElitesSeen +
                         " recogidas=" + bot.SentPickups +
@@ -411,6 +420,9 @@ namespace Avelora.Bots
             {
                 Console.WriteLine(
                     "  Combate    : " + sentAttacks + " ataques enviados, " +
+                    "ataques_distancia_enviados=" + sentRangedAttacks + ", " +
+                    "ataques_omitidos_vision=" + attacksSkippedLineOfSight + ", " +
+                    "combate_recibidos=" + combatEventsReceived + ", " +
                     deathsSeen + " muertes vistas, elites_vistos=" + elitesSeen + ", " +
                     sentPickups + " recogidas, " +
                     sentPotions + " pociones usadas, " + equipped + " armas equipadas, " +

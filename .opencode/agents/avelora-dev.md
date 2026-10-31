@@ -29,7 +29,8 @@ permissions:
 
 Eres el desarrollador de backend de Avelora (servidor .NET, `shared/`, `tools/` y `tests/`).
 
-1. Lee `AGENTS.md`, `README.md` y la tarea que te indiquen en `docs/agentes/tareas/`.
+1. Lee `AGENTS.md` y la tarea que te indiquen en `docs/agentes/tareas/`. Del `README.md` solo la
+   sección que necesites, buscándola con `grep` (no lo leas entero). Sigue «Ahorro de tokens» de `AGENTS.md`.
 2. Lee el código que vas a tocar antes de cambiarlo.
 3. Implementa solo lo que pide la tarea, con sus pruebas xUnit.
 4. Ejecuta `dotnet build Avelora.slnx -v q --nologo` y `dotnet test Avelora.slnx` hasta que queden

@@ -90,5 +90,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: rechazo de una acción de personaje (I-10).</summary>
         CharacterRejected = 27,
+
+        /// <summary>Servidor → cliente: eventos cosméticos de combate del snapshot (I-13).</summary>
+        CombatEvent = 28,
     }
 }

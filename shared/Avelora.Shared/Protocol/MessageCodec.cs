@@ -40,6 +40,8 @@ namespace Avelora.Shared.Protocol
         private const int ResetPointsSize = 1;
         private const int RejectSize = 1 + 1;
         private const int ProgressSize = 1 + 1 + 4 + 4 + 4;
+        private const int CombatEventHeaderSize = 1 + 1;
+        private const int CombatEventEntrySize = 4 + 4 + 2 + 1;
         private const int StatsSize = 37;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
@@ -1619,6 +1621,90 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
             catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica eventos de combate: cabecera de 2 bytes y 11 por entrada.</summary>
+        public static byte[] EncodeCombatEvent(in CombatEventMessage message)
+        {
+            CombatEventEntry[] entries = message.Entries ?? Array.Empty<CombatEventEntry>();
+            if (entries.Length < 1 || entries.Length > ProtocolConstants.MaxCombatEventsPerMessage)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(message), "CombatEvent debe contener entre 1 y " +
+                    ProtocolConstants.MaxCombatEventsPerMessage + " entradas.");
+            }
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (((byte)entries[i].Flags & ~7) != 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "CombatEvent contiene banderas desconocidas.");
+                }
+            }
+
+            var buffer = new byte[CombatEventHeaderSize + (CombatEventEntrySize * entries.Length)];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.CombatEvent);
+            writer.WriteByte((byte)entries.Length);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                writer.WriteInt32(entries[i].AttackerId);
+                writer.WriteInt32(entries[i].TargetId);
+                writer.WriteUInt16(entries[i].Damage);
+                writer.WriteByte((byte)entries[i].Flags);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee CombatEvent y valida el número de entradas, el tamaño y sus banderas.</summary>
+        public static bool TryReadCombatEvent(
+            byte[] buffer, int offset, int length, out CombatEventMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.CombatEvent) || length < CombatEventHeaderSize)
+            {
+                return false;
+            }
+
+            int count = buffer[offset + 1];
+            if (count < 1 || count > ProtocolConstants.MaxCombatEventsPerMessage ||
+                length != CombatEventHeaderSize + (CombatEventEntrySize * count))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 2, length - 2);
+                var entries = new CombatEventEntry[count];
+                for (int i = 0; i < count; i++)
+                {
+                    int attackerId = reader.ReadInt32();
+                    int targetId = reader.ReadInt32();
+                    ushort damage = reader.ReadUInt16();
+                    byte flags = reader.ReadByte();
+                    if ((flags & ~7) != 0)
+                    {
+                        return false;
+                    }
+
+                    entries[i] = new CombatEventEntry(
+                        attackerId, targetId, damage, (CombatEventFlags)flags);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new CombatEventMessage(entries);
+                return true;
+            }
+            catch (ProtocolException)
             {
                 return false;
             }

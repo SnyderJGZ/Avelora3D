@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-12 de servidor implementadas (cliente I-12b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-13 de servidor implementadas (cliente I-13b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -26,15 +26,17 @@ calcular igual (movimiento y colisión).
 > reparte entre varios mensajes y tirar un objeto lo destruye. I-10 sube el protocolo a **v15** y el
 > esquema SQLite a **v6**: el saludo autentica la cuenta y, después, cada conexión lista, crea, borra o
 > selecciona uno de hasta 10 personajes con su clase. I-12 sube el protocolo a **v16** con restricciones
-> de armas por clase/nivel y armas a dos manos; la persistencia actual sigue en esquema v6.
+> de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
+> a distancia con línea de visión; la persistencia actual sigue en esquema v6.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
 > [I-07](#chat-i-07-protocolo-v10), [I-09](#reparto-y-reajuste-de-atributos-i-09-protocolo-v11),
 > [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5),
 > [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13), [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14),
-> [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6), [I-11](#penalizacion-por-muerte-i-11) e
-> [I-12](#armas-por-clase-y-requisitos-i-12-protocolo-v16).
+> [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6), [I-11](#penalizacion-por-muerte-i-11),
+> [I-12](#armas-por-clase-y-requisitos-i-12-protocolo-v16) e
+> [I-13](#ataque-a-distancia-y-combatevent-i-13-protocolo-v17).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -43,7 +45,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx -v q --nologo` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **693/693 en verde** |
+| `dotnet test Avelora.slnx` | **709/709 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -367,6 +369,7 @@ pueden discrepar** del formato.
 | `SelectCharacter` | 25 | C → S | 5 B | `characterId` (i32) |
 | `CharacterList` | 26 | S → C | variable, ≤1400 B | máximo por cuenta, personajes (id, nombre, clase, nivel) y clases disponibles (id, nombre) |
 | `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
+| `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed` (u8); máximo 64 |
 
 Canales:
 
@@ -376,6 +379,8 @@ Canales:
   `CharacterRejected`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
+- **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
+  ni la vida del snapshot.
 
 > El **protocolo v5** (I-02) añade `Attack` y dos bytes por entidad en el snapshot (`HealthPercent` y
 > `EntityAction`). La versión sube siempre que cambie el formato, aunque el mensaje sea nuevo.
@@ -386,7 +391,7 @@ Canales:
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
-> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`.
+> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
@@ -847,7 +852,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v16** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v17** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1084,7 +1089,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-12 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b/I-12b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-13 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b/I-12b/I-13b |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1098,6 +1103,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-10** | Personajes por cuenta y elección de clase (protocolo v15; esquema SQLite v6) | ✅ servidor y bots; cliente I-10b pendiente |
 | **I-11** | Penalización de experiencia al morir por un PNJ (sin protocolo ni migración) | ✅ servidor |
 | **I-12** | Armas por clase, requisitos de nivel y dos manos (protocolo v16; esquema v6) | ✅ servidor y bots; cliente I-12b pendiente |
+| **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1667,7 +1673,7 @@ Solo una muerte causada por un PNJ resta experiencia: el servidor calcula el pis
 `umbral del nivel actual × porcentaje / 100`, limitado a la experiencia que tenga el jugador. No se
 reduce el nivel y el nivel máximo no pierde experiencia. `Progress` notifica el cambio en el tick
 siguiente, y los informes muestran `muertes_penalizadas` y `xp_perdida_muerte`. No cambia el protocolo
-sin introducir su propio cambio de protocolo ni esquema; el protocolo actual es v16 y la persistencia sigue en v6.
+sin introducir su propio cambio de protocolo ni esquema; el protocolo actual es v17 y la persistencia sigue en v6.
 
 **Verificación y carga I-11:** build sin advertencias; `dotnet test Avelora.slnx` **666/666**. La carga
 prescrita de 50 bots `fight` durante 120 s (`-LogCorrections -NuevaBase`) conectó 50/50 y completó
@@ -1730,6 +1736,75 @@ del servidor), hubo **806** ataques válidos (**30** con arma), **247** muertes 
 atribuir la diferencia a las armas de dos manos. `equipo_corregido_carga=0` y `equipo_aviso_carga=0`
 con base nueva. Logs: `tools/carga/resultados/20261029-231725-fight-50-redund4-corr/`. El protocolo es
 v16 y el esquema sigue v6.
+
+### Ataque a distancia y `CombatEvent` (I-13, protocolo v17)
+
+El alcance es numérico, no depende de nombres de clase, arma u objeto. El Arco corto (3103) pasa de
+3 a **6 tiles** y el Bastón de roble (3104) de 2,5 a **5 tiles**; daño y recarga no cambian. El arco
+supera el `aggroRadius` de los PNJ actuales (4 y 5), de modo que puede abrir el combate antes de ser
+detectado. El bastón iguala el aggro del guerrero, porque el daño mágico a distancia fuerte llegará con
+habilidades. Incluso 6 + `attackRangeTolerance` (0,5) = 6,5 queda por debajo de
+`interestRadius - interestHysteresis` (11), por lo que el objetivo sigue en el snapshot. El alcance sin
+arma de las clases se mantiene en 5.
+
+`ItemCatalog.MaxWeaponRange` fija el máximo de datos en **8**; `items.json` rechaza 8,01 con un mensaje
+que indica el límite. `ServerConfig.ValidateAttackRanges(items, classes)` comprueba al arrancar que
+`interestRadius` sea estrictamente mayor que el mayor alcance (armas y ataques sin arma) más
+`attackRangeTolerance`; se ejecuta también cuando `itemsPath` está vacío. El códec del catálogo no
+tenía un límite de alcance de 5, por lo que no hubo que modificarlo. La base SQLite sigue en esquema
+v6.
+
+**Línea de visión.** `MapCollisionGrid.HasLineOfSight` recorre con Amanatides–Woo las celdas absolutas
+que cruza el segmento entre los centros. Fuera del mapa cuenta como bloqueado; las celdas inicial y
+final también se comprueban. Si el segmento pasa exactamente por una esquina, se rechaza si cualquiera
+de las celdas laterales está bloqueada: esta regla conservadora evita disparar por la rendija diagonal
+entre dos paredes. No reserva memoria y la misma implementación está disponible para los bots.
+
+**Combate.** Tras validar atacante, objetivo, vida y distancia, el servidor valida línea de visión
+para **todos** los ataques. Si una pared bloquea, no hay daño, evento ni consumo de recarga; sin mapa,
+`CombatSystem` conserva el comportamiento anterior. Para el melé no cambia el resultado normal: con
+cajas de 0,35 tiles los centros no pueden quedar a alcance cuerpo a cuerpo atravesando una pared. Un
+PNJ en `Return` es inmune a ataques (también al melé), para que un tirador no lo mate por la espalda al
+volver a casa; cuenta `ataque_rech_regreso`. Otros contadores nuevos: `ataque_rech_vision` y
+`ataques_distancia` (alcance base > 2, sin tolerancia).
+
+**IA de PNJ.** `StuckTicks` cuenta los ticks consecutivos en que el PNJ quería moverse pero no avanzó.
+Tras **20 ticks (1 s)** atascado en `Chase`, abandona la persecución y vuelve a casa
+(`pnj_persecucion_abandonada`). Tras **40 ticks (2 s)** atascado en `Return`, se teletransporta a
+`Home`; en el tick siguiente recupera toda la vida y pasa a `Wander` (`pnj_regreso_forzado`). Deslizar
+por una pared mientras avanza no cuenta como atasco. A* sigue pendiente para mapas con interiores.
+
+**Eventos visuales.** El mensaje nuevo de servidor a cliente `CombatEvent` (tipo 28) lleva `N` y hasta
+64 entradas de 11 B: atacante y objetivo (i32), daño mitigado (u16) y banderas `Ranged`, `Magical` y
+`Killed`. Es cosmético: la vida ya viaja en el snapshot. Se manda un mensaje **no fiable** por
+destinatario y snapshot; acumula los eventos entre snapshots, envía los de los que el cliente es
+atacante/objetivo o tiene visibles, y luego vacía el buffer. El buffer de zona tiene capacidad 256;
+sin sesiones se vacía igualmente. Por destinatario se envían como máximo 64 entradas, y los excesos
+se cuentan en `combate_recortados`; el buffer saturado suma `combate_descartados`. El mensaje no se
+mezcla con `bytes enviados` de snapshot.
+
+Métricas de red: `combate_msgs`, `combate_entradas`, `combate_bytes` y `combate_recortados` (junto a
+`combate_descartados`). Los bots `fight` usan la misma línea de visión: si están a alcance pero tras una
+pared continúan caminando y omiten el ataque (`ataques_omitidos_vision`); cuentan los eventos recibidos
+(`combate_recibidos`) y los ataques enviados con alcance base > 2
+(`ataques_distancia_enviados`). `BotBehavior` conserva sus valores y numeración.
+
+**Coste de red estimado:** con las cifras de I-12, unos 1 500 eventos × 10 destinatarios × 13 B
+equivalen a ~200 KB frente a 27 082 379 B de snapshots (menos del 1 %). La carga del 30/10
+(`tools/carga/resultados/20261030-214716-fight-50-redund4-corr/`) midió `combate_bytes` de
+**192 524 B**, el **0,68 %** de **28 430 301 B** de snapshots, en línea con la estimación (~200 KB).
+Hubo **0 recortados, 0 descartados, 0 correcciones** y tick p99 de **0,063 ms**.
+Sin embargo, dio **`ataques_distancia = 0`** por un defecto previo del bot: comparaba el daño base
+del arma con `FistDamage`, que incluye el bono de atributo. Ya está corregido: sin arma equipada,
+el umbral es 0; el resultado a distancia queda pendiente de repetir la carga.
+El cambio de datos de carga tampoco es una repetición idéntica de I-12: allí solo 0,05
+del Orco / 0,08 del Orco guerrero daban los objetos 3103/3104; la copia de carga de I-13 sube ambas
+probabilidades a **0,3** para generar suficientes ataques a distancia. Los JSON del servidor no
+cambian esas probabilidades.
+
+**Verificación I-13:** `dotnet build Avelora.slnx -v q --nologo` y `dotnet test Avelora.slnx` se
+documentan en `docs/agentes/informes/I-13.md`; la suite tiene **709 pruebas**. El protocolo es v17,
+sin migración SQLite. La hoja de ruta mantiene pendiente el cliente I-13b.
 
 ### Chat (I-07, protocolo v10)
 
@@ -1820,7 +1895,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-La **Etapa F** sigue cerrada: las cuentas y los personajes viven en SQLite y la posición sobrevive a
-la desconexión. El backend de **I-04 a I-09** añade botín, inventario, equipo, progreso, clases, puntos
-de atributo y chat, con persistencia actual en esquema v4 y protocolo v11. Siguen pendientes los
-clientes **I-04b/I-05b/I-06b/I-07b/I-09b** y los trabajos de seguridad de H que no forman parte de esta tarea.
+El servidor ya implementa **I-04 a I-13**, con persistencia SQLite en esquema v6 y protocolo v17.
+Quedan pendientes el cliente **I-13b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
+además de los trabajos de seguridad H aún abiertos.

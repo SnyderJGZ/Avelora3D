@@ -251,6 +251,9 @@ namespace Avelora.Server.Items
     /// </remarks>
     public sealed class ItemCatalog
     {
+        /// <summary>Alcance máximo permitido para cualquier arma (I-13).</summary>
+        public const float MaxWeaponRange = 8f;
+
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -477,11 +480,11 @@ namespace Avelora.Server.Items
                             "; debe estar entre 1 y 100000.");
                     }
 
-                    if (!item.HasRange || !(item.Range > 0f) || item.Range > 5f ||
+                    if (!item.HasRange || !(item.Range > 0f) || item.Range > MaxWeaponRange ||
                         float.IsNaN(item.Range) || float.IsInfinity(item.Range))
                     {
                         throw new InvalidOperationException(
-                            "items.json: " + where + " (id " + item.Id + ") tiene range inválido; debe ser > 0 y ≤ 5.");
+                            "items.json: " + where + " (id " + item.Id + ") tiene range inválido; debe ser > 0 y ≤ 8.");
                     }
 
                     if (!item.HasCooldownSeconds || !(item.CooldownSeconds >= 0.1d) ||

@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using Avelora.Server.Items;
+using Avelora.Server.Progression;
 using Avelora.Server.Configuration;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -61,6 +64,41 @@ namespace Avelora.Tests
             Assert.Equal(1.5f, config.PickupRange);
             Assert.Equal(1d, config.PotionCooldownSeconds);
             Assert.Equal(1024, config.MaxQueuedItemActions);
+        }
+
+        [Fact]
+        public void ValidateAttackRanges_Exige_Interes_Mayor_Que_Alcance_Mas_Tolerancia()
+        {
+            var classes = new ClassCatalog
+            {
+                Classes = new List<CharacterClass>
+                {
+                    new CharacterClass { Unarmed = new UnarmedAttack { Range = 1.2f } },
+                },
+            };
+            var items = new ItemCatalog
+            {
+                Items = new List<ItemType>
+                {
+                    new ItemType { Kind = "weapon", Range = 8f },
+                },
+            };
+
+            new ServerConfig { InterestRadius = 12f, AttackRangeTolerance = 0.5f }
+                .ValidateAttackRanges(items, classes);
+
+            InvalidOperationException weaponError = Assert.Throws<InvalidOperationException>(
+                () => new ServerConfig { InterestRadius = 8f, AttackRangeTolerance = 0.5f }
+                    .ValidateAttackRanges(items, classes));
+            Assert.Contains("interestRadius (8)", weaponError.Message);
+            Assert.Contains("alcance máximo de ataque (8)", weaponError.Message);
+            Assert.Contains("attackRangeTolerance", weaponError.Message);
+
+            classes.Classes[0].Unarmed!.Range = 8f;
+            InvalidOperationException unarmedError = Assert.Throws<InvalidOperationException>(
+                () => new ServerConfig { InterestRadius = 8.5f, AttackRangeTolerance = 0.5f }
+                    .ValidateAttackRanges(null, classes));
+            Assert.Contains("alcance máximo de ataque (8)", unarmedError.Message);
         }
 
         [Fact]
