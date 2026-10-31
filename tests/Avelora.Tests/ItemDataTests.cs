@@ -158,6 +158,42 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void DamageType_Desconocido_En_Arma_Se_Rechaza()
+        {
+            ItemType weapon = Weapon();
+            weapon.DamageType = "fuego";
+
+            Assert.Throws<InvalidOperationException>(() => Catalog(weapon).Validate());
+        }
+
+        [Fact]
+        public void DamageType_En_No_Arma_Se_Rechaza()
+        {
+            var potion = new ItemType
+            {
+                Id = 3002,
+                Name = "Poción",
+                Kind = "potion",
+                MaxStack = 10,
+                Heal = 30,
+                DamageType = "magical",
+            };
+
+            Assert.Throws<InvalidOperationException>(() => Catalog(potion).Validate());
+        }
+
+        [Fact]
+        public void DamageType_Valido_Pasa_La_Validacion()
+        {
+            ItemType physicalWeapon = Weapon();
+            physicalWeapon.DamageType = "physical";
+            ItemType magicalWeapon = Weapon(id: 3102);
+            magicalWeapon.DamageType = "magical";
+
+            Catalog(physicalWeapon, magicalWeapon).Validate();
+        }
+
+        [Fact]
         public void JSON_Valida_Armor_Sin_Slot_Obligatorio()
         {
             string path = Path.Combine(_folder, "armor-sin-slot.json");

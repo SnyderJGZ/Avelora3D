@@ -92,7 +92,8 @@ namespace Avelora.Server.Progression
             int? weaponDamage,
             out string damageType,
             ItemCatalog? items = null,
-            ushort[]? equipment = null)
+            ushort[]? equipment = null,
+            string? weaponDamageType = null)
         {
             if (catalog == null)
             {
@@ -103,7 +104,9 @@ namespace Avelora.Server.Progression
             DerivedCharacterStats stats = Calculate(
                 catalog, classId, level, allocStr, allocDex, allocInt, allocVit, items, equipment);
             int baseDamage = weaponDamage ?? characterClass.Unarmed!.Damage;
-            damageType = weaponDamage.HasValue ? "physical" : characterClass.Unarmed!.DamageType;
+            damageType = weaponDamage.HasValue
+                ? weaponDamageType ?? "physical"
+                : characterClass.Unarmed!.DamageType;
 
             int primary = characterClass.Primary == "str"
                 ? stats.Str

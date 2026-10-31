@@ -58,6 +58,7 @@ namespace Avelora.Tests
             {
                 new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
                 new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", WeaponType = "Hacha", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
+                new ItemType { Id = 3104, Name = "Bastón de roble", Kind = "weapon", DamageType = "magical", Damage = 10, Range = 5f, CooldownSeconds = 1.0d, WeaponType = "Bastón", MaxStack = 1 },
             },
         };
 
@@ -476,6 +477,37 @@ namespace Avelora.Tests
             Attack(magicalZone, mage, resistant);
             magicalZone.Tick();
             Assert.Equal(19, resistant.Health); // floor(14 × 100 / 120) = 11
+        }
+
+        [Fact]
+        public void Baston_Mitigado_Por_Resistencia_Magica_Y_No_Por_Defensa()
+        {
+            ItemCatalog items = WeaponCatalog();
+            ItemType staff = Assert.IsType<ItemType>(items.Find(3104));
+            ClassCatalog classes = ClassCatalog.Default;
+            int raw = CharacterStats.GetAttackDamage(
+                classes, 2, 3, 0, 0, 0, 0, staff.Damage, out _, items,
+                weaponDamageType: staff.DamageType);
+
+            Zone physicalZone = NewZone(items: items, classes: classes);
+            PlayerEntity firstMage = physicalZone.SpawnPlayer(
+                1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8, level: 3, classId: 2);
+            firstMage.EquippedWeaponId = 3104;
+            NpcEntity armored = AddNpc(physicalZone, 100, new Vec2(11f, 10f), maxHealth: 1000, defense: 20);
+            Attack(physicalZone, firstMage, armored);
+            physicalZone.Tick();
+
+            Assert.Equal(1000 - raw, armored.Health);
+
+            Zone magicalZone = NewZone(items: items, classes: classes);
+            PlayerEntity secondMage = magicalZone.SpawnPlayer(
+                2, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8, level: 3, classId: 2);
+            secondMage.EquippedWeaponId = 3104;
+            NpcEntity resistant = AddNpc(magicalZone, 101, new Vec2(11f, 10f), maxHealth: 1000, magicResist: 20);
+            Attack(magicalZone, secondMage, resistant);
+            magicalZone.Tick();
+
+            Assert.Equal(1000 - CharacterStats.MitigateDamage(raw, 20), resistant.Health);
         }
 
         [Fact]

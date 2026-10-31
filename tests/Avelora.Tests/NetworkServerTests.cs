@@ -992,6 +992,29 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Stats_Con_Baston_Equipado_Indica_Daño_Magico()
+        {
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            using var harness = new Harness(customItems: items);
+            harness.Connect(1);
+            harness.Handshake(1, classId: 2);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Level = 3;
+            player.Inventory[0] = new InventorySlot(3104, 1);
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeEquip(new EquipMessage(0)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.Equal((ushort)3104, player.EquippedWeaponId);
+            Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.DamageType == 1);
+        }
+
+        [Fact]
         public void Reajuste_Con_Piedra_Envia_Inventario_Y_Stats()
         {
             using var harness = new Harness(withItems: true);

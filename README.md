@@ -1325,6 +1325,8 @@ en materiales y pociones. El catálogo incluye la espada corta (3101: daño 14, 
 0,8 s) y el hacha de orco (3102: daño 22, alcance 1,3, recarga 1,2 s). El orco 2001 suelta la espada
 con probabilidad 0,05; el 2002 suelta el hacha con probabilidad 0,15; ambos montos son una unidad.
 
+`kind: "weapon"` admite `damageType` (`physical` por defecto o `magical`, I-23); el bastón 3104 lo declara mágico y lo mitiga `magicResist`.
+
 El jugador tiene un único hueco de equipo, `EquippedWeaponId` (0 = puños). `Equip(slot)` solo se
 acepta si está vivo y el hueco contiene un arma; equipa la nueva y devuelve la anterior a ese mismo
 hueco, sin requerir espacio libre. `Unequip` guarda el arma en el primer hueco vacío; si el inventario

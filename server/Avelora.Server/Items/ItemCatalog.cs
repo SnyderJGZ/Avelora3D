@@ -138,6 +138,22 @@ namespace Avelora.Server.Items
         [JsonIgnore]
         public bool HasDamage { get; private set; }
 
+        private string _damageType = "physical";
+
+        /// <summary>Tipo de daño del arma; physical por defecto o magical.</summary>
+        public string DamageType
+        {
+            get => _damageType;
+            set
+            {
+                _damageType = value ?? string.Empty;
+                HasDamageType = true;
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasDamageType { get; private set; }
+
         private float _range;
 
         /// <summary>Alcance del arma, obligatorio solo para <c>weapon</c>.</summary>
@@ -480,6 +496,13 @@ namespace Avelora.Server.Items
                             "; debe estar entre 1 y 100000.");
                     }
 
+                    if (item.DamageType != "physical" && item.DamageType != "magical")
+                    {
+                        throw new InvalidOperationException(
+                            "items.json: " + where + " (id " + item.Id +
+                            ") tiene damageType inválido; debe ser physical o magical.");
+                    }
+
                     if (!item.HasRange || !(item.Range > 0f) || item.Range > MaxWeaponRange ||
                         float.IsNaN(item.Range) || float.IsInfinity(item.Range))
                     {
@@ -495,7 +518,7 @@ namespace Avelora.Server.Items
                             ") tiene cooldownSeconds inválido; debe ser ≥ 0,1.");
                     }
                 }
-                else if (item.HasDamage || item.HasRange || item.HasCooldownSeconds)
+                else if (item.HasDamage || item.HasDamageType || item.HasRange || item.HasCooldownSeconds)
                 {
                     throw new InvalidOperationException(
                         "items.json: " + where + " (id " + item.Id +

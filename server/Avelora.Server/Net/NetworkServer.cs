@@ -1828,9 +1828,13 @@ namespace Avelora.Server.Net
                 player.AllocVit,
                 _zone.Items,
                 player.Equipment);
-            int? weaponDamage = _zone.Items?.Find(player.EquippedWeaponId) is ItemType weapon && weapon.IsWeapon
+            ItemType? weapon = _zone.Items?.Find(player.EquippedWeaponId);
+            int? weaponDamage = weapon?.IsWeapon == true
                 ? weapon.Damage
                 : (int?)null;
+            string? weaponDamageType = weapon?.IsWeapon == true
+                ? weapon.DamageType
+                : null;
             int attackDamage = CharacterStats.GetAttackDamage(
                 _zone.Classes,
                 player.ClassId,
@@ -1842,7 +1846,8 @@ namespace Avelora.Server.Net
                 weaponDamage,
                 out string damageType,
                 _zone.Items,
-                player.Equipment);
+                player.Equipment,
+                weaponDamageType);
 
             return MessageCodec.EncodeStats(new StatsMessage(
                 checked((byte)player.ClassId),

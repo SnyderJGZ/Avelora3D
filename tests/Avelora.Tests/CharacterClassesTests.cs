@@ -217,6 +217,36 @@ namespace Avelora.Tests
             Assert.Equal("physical", damageType);
         }
 
+        [Fact]
+        public void Baston_Hace_Daño_Magico()
+        {
+            ClassCatalog catalog = Load();
+            DerivedCharacterStats stats = CharacterStats.Calculate(catalog, 2, 1, 0, 0, 0, 0);
+            int bonus = checked((int)decimal.Floor(stats.Int * catalog.DamagePerPoint));
+
+            int damage = CharacterStats.GetAttackDamage(
+                catalog, 2, 1, 0, 0, 0, 0, weaponDamage: 10, out string damageType,
+                weaponDamageType: "magical");
+
+            Assert.Equal("magical", damageType);
+            Assert.Equal(10 + bonus, damage);
+        }
+
+        [Fact]
+        public void Espada_Hace_Daño_Fisico()
+        {
+            ClassCatalog catalog = Load();
+            DerivedCharacterStats stats = CharacterStats.Calculate(catalog, 1, 1, 0, 0, 0, 0);
+            int bonus = checked((int)decimal.Floor(stats.Str * catalog.DamagePerPoint));
+
+            int damage = CharacterStats.GetAttackDamage(
+                catalog, 1, 1, 0, 0, 0, 0, weaponDamage: 10, out string damageType,
+                weaponDamageType: "physical");
+
+            Assert.Equal("physical", damageType);
+            Assert.Equal(10 + bonus, damage);
+        }
+
         [Theory]
         [InlineData(10, 0, 10)]
         [InlineData(10, 20, 8)]
