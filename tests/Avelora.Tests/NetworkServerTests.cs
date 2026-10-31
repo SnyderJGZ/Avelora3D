@@ -728,6 +728,68 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Seleccion_En_Cola_Se_Procesa_Aunque_El_Tope_De_Logins_Este_Lleno()
+        {
+            var repository = new BlockingLoginRepository();
+            try
+            {
+                using var saves = new CharacterSaveService(repository);
+                using var harness = new Harness(
+                    config => config.MaxPendingLogins = 1,
+                    repository: repository,
+                    saves: saves);
+
+                harness.Connect(1);
+                harness.Handshake(1, automaticallySelect: false, accountNameOverride: "jugador");
+                CharacterListMessage list = harness.WaitForCharacterList(1);
+                CharacterListEntry character = Assert.Single(list.Characters);
+
+                harness.Connect(2);
+                harness.Handshake(2, automaticallySelect: false, accountNameOverride: "bloqueo");
+                harness.Server.PollOnce();
+                Assert.True(repository.BlockingLoginStarted.Wait(5_000), "El segundo login no bloqueó el hilo.");
+
+                harness.Transport.RaiseReceived(1, MessageCodec.EncodeSelectCharacter(
+                    new SelectCharacterMessage(character.CharacterId)));
+                harness.Server.PollOnce();
+
+                repository.BlockingLoginGate.Set();
+                Assert.True(repository.BlockingLoginFinished.Wait(5_000), "El segundo login no terminó.");
+
+                bool HasWelcome()
+                {
+                    for (int i = 0; i < harness.Transport.Sent.Count; i++)
+                    {
+                        SentMessage sent = harness.Transport.Sent[i];
+                        if (sent.ConnectionId == 1 &&
+                            MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _))
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
+                long deadline = Environment.TickCount64 + 5_000;
+                while (Environment.TickCount64 < deadline && !HasWelcome())
+                {
+                    harness.Server.PollOnce();
+                    harness.Server.BeforeTick(harness.Zone);
+                    harness.Server.PollOnce();
+                    Thread.Sleep(1);
+                }
+
+                Assert.True(HasWelcome(), "La selección encolada no recibió Welcome.");
+            }
+            finally
+            {
+                repository.BlockingLoginGate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
         public void Una_Cuenta_Nueva_Echa_A_La_Conexion_Que_Sigue_En_Seleccion()
         {
             using var harness = new Harness();
@@ -2572,6 +2634,68 @@ namespace Avelora.Tests
                 SelectionStarted.Dispose();
                 SelectionGate.Dispose();
                 SelectionFinished.Dispose();
+            }
+        }
+
+        private sealed class BlockingLoginRepository : IPlayerRepository
+        {
+            private readonly CharacterRecord _character = new CharacterRecord(
+                1,
+                1,
+                "Jugador",
+                1,
+                0,
+                100,
+                100,
+                1,
+                new Vec2(-1.5f, -2.5f),
+                new byte[ProtocolConstants.MapHashSize],
+                DateTime.UtcNow,
+                DateTime.UtcNow);
+
+            public ManualResetEventSlim BlockingLoginStarted { get; } = new ManualResetEventSlim(false);
+            public ManualResetEventSlim BlockingLoginGate { get; } = new ManualResetEventSlim(false);
+            public ManualResetEventSlim BlockingLoginFinished { get; } = new ManualResetEventSlim(false);
+
+            public void Initialize()
+            {
+            }
+
+            public AccountLoginResult Login(
+                string accountName,
+                string password,
+                string invitationCode,
+                string registrationCode)
+            {
+                if (accountName == "bloqueo")
+                {
+                    BlockingLoginStarted.Set();
+                    BlockingLoginGate.Wait(TimeSpan.FromSeconds(10));
+                    BlockingLoginFinished.Set();
+                    return AccountLoginResult.Ok(2);
+                }
+
+                return AccountLoginResult.Ok(1);
+            }
+
+            public CharacterRecord[] ListCharacters(int accountId) =>
+                accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();
+
+            public bool TryGetCharacter(int accountId, int characterId, out CharacterRecord? character)
+            {
+                character = accountId == _character.AccountId && characterId == _character.Id ? _character : null;
+                return character != null;
+            }
+
+            public void SaveCharacter(CharacterRecord character)
+            {
+            }
+
+            public void Dispose()
+            {
+                BlockingLoginStarted.Dispose();
+                BlockingLoginGate.Dispose();
+                BlockingLoginFinished.Dispose();
             }
         }
 

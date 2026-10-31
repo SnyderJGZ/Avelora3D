@@ -115,7 +115,6 @@ namespace Avelora.Server.Net
         private readonly List<Entity> _visibleBuffer = new List<Entity>(64);
         private readonly List<Entity> _deferredItems = new List<Entity>(64);
         private readonly List<CombatEventEntry> _combatEventEntries = new List<CombatEventEntry>(64);
-        private int _nextCharacterId;
 
         private Thread? _netThread;
         private volatile bool _stopping;
@@ -197,7 +196,6 @@ namespace Avelora.Server.Net
             _memoryRepository?.Initialize();
             _saves = saves;
             _registrationCode = registrationCode ?? string.Empty;
-            _nextCharacterId = config.FirstCharacterId;
 
             if (_repository != null && _saves == null)
             {
@@ -1153,7 +1151,7 @@ namespace Avelora.Server.Net
             byte classId,
             int characterId)
         {
-            if (_login == null || _login.InFlight >= _config.MaxPendingLogins)
+            if (_login == null)
             {
                 Interlocked.Increment(ref _messagesRejected);
                 return;
@@ -1516,18 +1514,11 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            // Misma cuenta en otra conexión: se echa a la anterior antes de contar el aforo, así
-            // reconectar no depende de que quede hueco. Al echarla se encola su guardado.
-            if (control.ReplacesConnectionId != NoConnection)
-            {
-                RemoveSession(control.ReplacesConnectionId, RejectReason.LoggedInElsewhere);
-            }
-
             // El login leyó la base en su hilo, quizá antes de que se escribiera el guardado de la
             // sesión anterior (la que se acaba de echar, o una que salió hace un momento). La última
             // foto encolada es la buena: posición, vida e inventario vivos.
-            CharacterRecord? character = control.Character;
-            if (character != null && _saves != null && _saves.TryGetLatest(character.Id, out CharacterRecord latest))
+            CharacterRecord character = control.Character!;
+            if (_saves != null && _saves.TryGetLatest(character.Id, out CharacterRecord latest))
             {
                 character = latest;
             }
@@ -1541,62 +1532,52 @@ namespace Avelora.Server.Net
                 return;
             }
 
-            Vec2 spawn = _config.Spawn;
-            int characterId = _nextCharacterId++;
-
-            if (character != null)
-            {
-                characterId = character.Id;
-                spawn = ResolveSpawn(zone, character);
-            }
+            Vec2 spawn = ResolveSpawn(zone, character);
 
             PlayerEntity player = zone.SpawnPlayer(
-                characterId,
+                character.Id,
                 spawn,
                 _config.PlayerHalfSize,
                 _config.InputBufferCapacity,
-                character?.Health ?? 0,
-                character?.Level ?? 1,
-                character?.Experience ?? 0,
-                character?.ClassId ?? 1,
-                character?.AllocStr ?? 0,
-                character?.AllocDex ?? 0,
-                character?.AllocInt ?? 0,
-                character?.AllocVit ?? 0,
-                character?.Mana ?? -1);
+                character.Health,
+                character.Level,
+                character.Experience,
+                character.ClassId,
+                character.AllocStr,
+                character.AllocDex,
+                character.AllocInt,
+                character.AllocVit,
+                character.Mana);
 
-            if (character != null)
+            for (int i = 0; i < character.InventoryItems.Length; i++)
             {
-                for (int i = 0; i < character.InventoryItems.Length; i++)
+                InventoryItemRecord saved = character.InventoryItems[i];
+                if (saved.Slot >= 0 && saved.Slot < player.Inventory.Length)
                 {
-                    InventoryItemRecord saved = character.InventoryItems[i];
-                    if (saved.Slot >= 0 && saved.Slot < player.Inventory.Length)
-                    {
-                        player.Inventory[saved.Slot] = new InventorySlot(
-                            (ushort)saved.ItemId,
-                            (ushort)saved.Count);
-                    }
+                    player.Inventory[saved.Slot] = new InventorySlot(
+                        (ushort)saved.ItemId,
+                        (ushort)saved.Count);
                 }
+            }
 
-                Array.Copy(character.Equipment, player.Equipment, ProtocolConstants.EquipSlotCount);
-                player.CharacterName = character.Name;
-                zone.EnforceEquipment(player);
-                zone.RecalculateEquipmentStats(player);
-                // SpawnPlayer recortó la vida a la máxima sin equipo; con el equipo puesto vale la guardada.
-                if (character.Health > 0)
-                {
-                    player.Health = Math.Min(character.Health, player.MaxHealth);
-                }
+            Array.Copy(character.Equipment, player.Equipment, ProtocolConstants.EquipSlotCount);
+            player.CharacterName = character.Name;
+            zone.EnforceEquipment(player);
+            zone.RecalculateEquipmentStats(player);
+            // SpawnPlayer recortó la vida a la máxima sin equipo; con el equipo puesto vale la guardada.
+            if (character.Health > 0)
+            {
+                player.Health = Math.Min(character.Health, player.MaxHealth);
+            }
 
-                if (character.Mana >= 0)
-                {
-                    player.Mana = Math.Min(character.Mana, player.MaxMana);
-                }
+            if (character.Mana >= 0)
+            {
+                player.Mana = Math.Min(character.Mana, player.MaxMana);
             }
 
             player.ConnectionId = connectionId;
 
-            string characterName = character?.Name ?? control.AccountName;
+            string characterName = character.Name;
             characterName = TruncateUtf8(characterName, ProtocolConstants.MaxChatNameBytes);
 
             _sessions[connectionId] = new Session(
@@ -2027,7 +2008,7 @@ namespace Avelora.Server.Net
                     item.IsWeapon ? item.WeaponType : string.Empty,
                     item.IsTwoHanded,
                     checked((byte)item.RequiredLevel),
-                    !item.IsWeapon || CanUseWeaponType(characterClass, item.WeaponType));
+                    !item.IsWeapon || EquipRules.Check(item, characterClass, int.MaxValue) != EquipCheck.WrongClass);
             }
 
             return MessageCodec.EncodeItemCatalogChunks(new ItemCatalogMessage(
@@ -2036,25 +2017,6 @@ namespace Avelora.Server.Net
                 unarmed.Range,
                 (float)unarmed.CooldownSeconds,
                 entries));
-        }
-
-        private static bool CanUseWeaponType(CharacterClass characterClass, string weaponType)
-        {
-            List<string>? weaponTypes = characterClass.WeaponTypes;
-            if (weaponTypes == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < weaponTypes.Count; i++)
-            {
-                if (string.Equals(weaponTypes[i], weaponType, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static byte[] EncodeInventory(PlayerEntity player)
@@ -2283,8 +2245,7 @@ namespace Avelora.Server.Net
                 HelloMessage hello,
                 int accountId,
                 string accountName,
-                CharacterRecord? character,
-                int replacesConnectionId)
+                CharacterRecord? character)
             {
                 Kind = kind;
                 ConnectionId = connectionId;
@@ -2292,7 +2253,6 @@ namespace Avelora.Server.Net
                 AccountId = accountId;
                 AccountName = accountName;
                 Character = character;
-                ReplacesConnectionId = replacesConnectionId;
             }
 
             public ControlEventKind Kind { get; }
@@ -2305,30 +2265,22 @@ namespace Avelora.Server.Net
 
             public string AccountName { get; }
 
-            /// <summary>Personaje cargado de la base de datos; <c>null</c> en el modo sin persistencia.</summary>
+            /// <summary>Personaje cargado de la base de datos; nulo en eventos que no sean Join.</summary>
             public CharacterRecord? Character { get; }
-
-            /// <summary>
-            /// Conexión anterior de la misma cuenta (hay que echarla), o <see cref="NoConnection"/>
-            /// si no había.
-            /// </summary>
-            public int ReplacesConnectionId { get; }
 
             public static ControlEvent Join(
                 int connectionId,
                 HelloMessage hello,
                 int accountId,
                 string accountName,
-                CharacterRecord? character,
-                int replacesConnectionId = NoConnection) =>
+                CharacterRecord character) =>
                 new ControlEvent(
                     ControlEventKind.Join,
                     connectionId,
                     hello,
                     accountId,
                     accountName,
-                    character,
-                    replacesConnectionId);
+                    character);
 
             public static ControlEvent Leave(int connectionId) =>
                 new ControlEvent(
@@ -2337,8 +2289,7 @@ namespace Avelora.Server.Net
                     default,
                     0,
                     string.Empty,
-                    null,
-                    NoConnection);
+                    null);
 
             public static ControlEvent Eject(int connectionId) =>
                 new ControlEvent(
@@ -2347,8 +2298,7 @@ namespace Avelora.Server.Net
                     default,
                     0,
                     string.Empty,
-                    null,
-                    NoConnection);
+                    null);
         }
 
         private readonly struct OutboundMessage
