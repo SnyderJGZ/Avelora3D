@@ -177,6 +177,11 @@ namespace Avelora.Client
         private ZoneInfo[] _zones = new ZoneInfo[0];
         private ushort _zoneId;
         private ZoneKind _zoneKind = ZoneKind.Normal;
+        private PvpStatusMessage _pvpStatus;
+        private bool _pvpStatusReceived;
+        private float _pvpChangeReadyAt;
+        private float _pvpForcedEndsAt;
+        private Rect _pvpButtonRect;
         private Texture2D _minimapTexture;
         private bool _minimapDirty = true;
         // Objeto equipado por hueco, en el orden de EquipSlot (I-14); 0 = vacío.
@@ -365,6 +370,8 @@ namespace Avelora.Client
             _zones = new ZoneInfo[0];
             _zoneId = 0;
             _zoneKind = ZoneKind.Normal;
+            _pvpStatus = default;
+            _pvpStatusReceived = false;
             _minimapDirty = true;
             _inventoryCounts = new ushort[0];
             System.Array.Clear(_equipment, 0, _equipment.Length);
@@ -600,7 +607,8 @@ namespace Avelora.Client
                 overPanel = (_showStats && _statsPanel.Contains(gui)) ||
                     (_showInventory && _inventoryPanel.Contains(gui)) ||
                     _hotbarPanel.Contains(gui) ||
-                    (_discardSlot >= 0 && _discardDialog.Contains(gui));
+                    (_discardSlot >= 0 && _discardDialog.Contains(gui)) ||
+                    _pvpButtonRect.Contains(gui);
             }
 
             if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
@@ -608,6 +616,11 @@ namespace Avelora.Client
                 Vector2 screen = mouse.position.ReadValue();
                 Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
                 int picked = PickEntityAt(world, EntityKind.Npc, PickRadius);
+                if (picked == 0)
+                {
+                    picked = PickPvpPlayerAt(world, PickRadius);
+                }
+
                 bool doubleClick = picked != 0 && picked == _lastClickId &&
                     Time.unscaledTime - _lastClickAt <= DoubleClickSeconds;
                 _lastClickId = picked;
@@ -646,7 +659,7 @@ namespace Avelora.Client
 
             if (target == null)
             {
-                ShowHint("sin objetivo: haz clic en un enemigo");
+                ShowHint("sin objetivo: haz clic en un enemigo o jugador PvP");
                 return;
             }
 
@@ -689,6 +702,11 @@ namespace Avelora.Client
             if (keyboard == null || _transport == null)
             {
                 return;
+            }
+
+            if (keyboard.pKey.wasPressedThisFrame && _pvpStatus.Change != PvpChangeState.Unavailable)
+            {
+                RequestPvpModeToggle();
             }
 
             if (keyboard.eKey.wasPressedThisFrame)
@@ -902,6 +920,31 @@ namespace Avelora.Client
             return best;
         }
 
+        private int PickPvpPlayerAt(Vector3 world, float radius)
+        {
+            int best = 0;
+            float bestDistance = radius * radius;
+
+            foreach (KeyValuePair<int, RemotePlayerView> pair in _remoteViews)
+            {
+                RemotePlayerView view = pair.Value;
+                if (pair.Key == _entityId || view == null || view.Kind != EntityKind.Player || !view.Pvp || view.IsDead)
+                {
+                    continue;
+                }
+
+                Vector2 delta = (Vector2)(view.transform.position - world);
+                float distance = delta.sqrMagnitude;
+                if (distance <= bestDistance)
+                {
+                    best = pair.Key;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
         private RemotePlayerView SelectedTarget()
         {
             if (_selectedNpcId == 0 ||
@@ -911,7 +954,24 @@ namespace Avelora.Client
                 return null;
             }
 
+            if (view.Kind == EntityKind.Player && !view.Pvp)
+            {
+                return null;
+            }
+
             return view;
+        }
+
+        private void RequestPvpModeToggle()
+        {
+            if (_transport == null || !_pvpStatusReceived)
+            {
+                return;
+            }
+
+            PvpMode mode = _pvpStatus.Mode == PvpMode.Pvp ? PvpMode.Pve : PvpMode.Pvp;
+            byte[] bytes = MessageCodec.EncodeSetPvpMode(new SetPvpModeMessage(mode));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
         private void Select(int entityId)
@@ -1236,6 +1296,29 @@ namespace Avelora.Client
                     }
 
                     break;
+
+                case MessageType.PvpStatus:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadPvpStatus(buffer, offset, length, out PvpStatusMessage pvpStatus))
+                    {
+                        _pvpStatus = pvpStatus;
+                        _pvpStatusReceived = true;
+                        _pvpChangeReadyAt = Time.unscaledTime + pvpStatus.ChangeSeconds;
+                        _pvpForcedEndsAt = Time.unscaledTime + pvpStatus.ForcedSeconds;
+                    }
+
+                    break;
+
+                case MessageType.PvpModeRejected:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadPvpModeRejected(buffer, offset, length, out PvpModeRejectedMessage rejected))
+                    {
+                        ShowHint(rejected.Reason == PvpModeRejectReason.NotInSafeZone
+                            ? "el modo solo se cambia en zona segura"
+                            : "aún no: espera en la zona segura");
+                    }
+
+                    break;
             }
         }
 
@@ -1433,6 +1516,8 @@ namespace Avelora.Client
             _zones = new ZoneInfo[0];
             _zoneId = 0;
             _zoneKind = ZoneKind.Normal;
+            _pvpStatus = default;
+            _pvpStatusReceived = false;
             _minimapDirty = true;
 
             var halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
@@ -1575,6 +1660,7 @@ namespace Avelora.Client
                 }
 
                 view.SetRank(state.Rank);
+                view.Pvp = state.Pvp;
                 if (sample.Kind == EntityKind.Player)
                 {
                     view.SetPlayerClassColor(ClassColor((byte)sample.TypeId));

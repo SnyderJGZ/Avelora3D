@@ -109,6 +109,9 @@ namespace Avelora.Client
         /// <summary>Rango del PNJ: 0 normal, 1 élite, 2 campeón.</summary>
         public byte Rank { get; private set; }
 
+        /// <summary>PvP efectivo del snapshot; solo jugadores.</summary>
+        public bool Pvp { get; set; }
+
         /// <summary>Tipo de la última muestra aplicada.</summary>
         public EntityKind Kind { get; private set; }
 

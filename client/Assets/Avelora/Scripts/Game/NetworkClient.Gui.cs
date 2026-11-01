@@ -94,6 +94,8 @@ namespace Avelora.Client
                 _dropTarget = -1;
                 DrawOwnHealth();
                 DrawZoneLabel();
+                DrawPvpStatus();
+                DrawPvpMarks();
                 DrawMinimap();
                 DrawChat();
             }
@@ -125,6 +127,106 @@ namespace Avelora.Client
                 text,
                 _damageNumberStyle);
             GUI.color = previous;
+        }
+
+        private void DrawPvpStatus()
+        {
+            _pvpButtonRect = Rect.zero;
+            if (!_pvpStatusReceived)
+            {
+                return;
+            }
+
+            string text;
+            Color color;
+            if (_pvpStatus.Forced == PvpForcedState.InZone)
+            {
+                text = "PvP forzado";
+                color = new Color(1f, 0.4f, 0.35f);
+            }
+            else if (_pvpStatus.Forced == PvpForcedState.Timer)
+            {
+                text = "PvP forzado " + Clock(_pvpForcedEndsAt);
+                color = new Color(1f, 0.6f, 0.3f);
+            }
+            else if (_pvpStatus.Mode == PvpMode.Pvp)
+            {
+                text = "PvP";
+                color = new Color(1f, 0.4f, 0.35f);
+            }
+            else
+            {
+                text = "PvE";
+                color = new Color(0.45f, 0.9f, 0.5f);
+            }
+
+            Color previousColor = GUI.color;
+            GUI.color = color;
+            GUI.Label(
+                new Rect((Screen.width - 240f) / 2f, Screen.height - 172f, 240f, 22f),
+                text,
+                _damageNumberStyle);
+            GUI.color = previousColor;
+
+            if (_pvpStatus.Change == PvpChangeState.Unavailable)
+            {
+                return;
+            }
+
+            _pvpButtonRect = new Rect((Screen.width - 240f) / 2f, Screen.height - 198f, 240f, 24f);
+            if (_pvpStatus.Change == PvpChangeState.Waiting && Time.unscaledTime < _pvpChangeReadyAt)
+            {
+                bool previousEnabled = GUI.enabled;
+                GUI.enabled = false;
+                GUI.Button(_pvpButtonRect, "Cambio de modo en " + Clock(_pvpChangeReadyAt));
+                GUI.enabled = previousEnabled;
+                return;
+            }
+
+            string buttonText = _pvpStatus.Mode == PvpMode.Pvp ? "Pasar a PvE (P)" : "Pasar a PvP (P)";
+            if (GUI.Button(_pvpButtonRect, buttonText))
+            {
+                RequestPvpModeToggle();
+            }
+        }
+
+        private string Clock(float endsAt)
+        {
+            int seconds = Mathf.Max(0, Mathf.CeilToInt(endsAt - Time.unscaledTime));
+            return (seconds / 60) + ":" + (seconds % 60).ToString("00");
+        }
+
+        private void DrawPvpMarks()
+        {
+            Camera cam = Camera.main;
+            if (cam == null)
+            {
+                return;
+            }
+
+            Color previousColor = GUI.color;
+            GUI.color = new Color(1f, 0.4f, 0.35f);
+            foreach (KeyValuePair<int, RemotePlayerView> pair in _remoteViews)
+            {
+                RemotePlayerView view = pair.Value;
+                if (view == null || view.Kind != EntityKind.Player || !view.Pvp || view.IsDead)
+                {
+                    continue;
+                }
+
+                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 0.9f);
+                if (screen.z < 0f)
+                {
+                    continue;
+                }
+
+                GUI.Label(
+                    new Rect(screen.x - 24f, Screen.height - screen.y - 12f, 48f, 18f),
+                    "PvP",
+                    _damageNumberStyle);
+            }
+
+            GUI.color = previousColor;
         }
 
         private void DrawMinimap()
