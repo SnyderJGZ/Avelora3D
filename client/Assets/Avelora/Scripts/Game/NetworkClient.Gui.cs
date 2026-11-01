@@ -17,6 +17,13 @@ namespace Avelora.Client
         private Rect _statsPanel;
         private Rect _inventoryPanel;
         private Rect _hotbarPanel;
+        private Rect _skillsPanel;
+        private Vector2? _skillsPosition;
+        private ushort _skillDragId;
+        private int _skillDragFrom = -1;
+        private bool _skillDragging;
+        private Vector2 _skillPressAt;
+        private int _hotbarHover = -1;
 
         // Arte oscuro de la interfaz (Resources/GUI/Dark) y sus estilos de texto.
         private Texture2D _darkWindow;
@@ -778,7 +785,7 @@ namespace Avelora.Client
             LeftButton(rect, new GUIContent(text), style);
 
         // Paneles movibles (como en Lineage 2): se arrastran con el clic izquierdo por la barra del
-        // título y la posición se guarda en PlayerPrefs. 0 = ninguno, 1 = personaje, 2 = inventario.
+        // título y la posición se guarda en PlayerPrefs. 0 = ninguno, 1 = personaje, 2 = inventario, 3 = habilidades.
         private int _draggedPanel;
         private Vector2 _dragOffset;
         private Vector2? _statsPosition;
@@ -845,6 +852,7 @@ namespace Avelora.Client
                 new Vector2((Screen.width * 0.5f) + Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f),
                 new Vector2(panelWidth, WindowHeight * scale),
                 75f * scale);
+            ClearCoveredDropTargets(_inventoryPanel);
             GUI.DrawTexture(_inventoryPanel, _darkWindow);
             if (LeftButton(Part(_inventoryPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
             {
@@ -894,6 +902,7 @@ namespace Avelora.Client
         /// </summary>
         private void DrawHotbar()
         {
+            _hotbarHover = -1;
             EnsureGuiArt();
 
             const float scale = 0.42f; // tamaño fijo: el texto no escala, así que los paneles tampoco
@@ -907,6 +916,12 @@ namespace Avelora.Client
             {
                 // Huecos de 123×120 cada 132 px desde x = 77, y = 16 en la imagen original.
                 Rect slot = Part(_hotbarPanel, scale, 77f + (i * 132f) + 13.5f, 16f + 12f, 96f, 96f);
+                if (slot.Contains(mouse)) _hotbarHover = i;
+                if (HotbarSkillAt(i, out SkillCatalogEntry skill))
+                {
+                    DrawSkillOnSlot(slot, i, skill);
+                    continue;
+                }
                 SlotInput(slot, i, _inventoryIds[i]);
                 if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i], drawFrame: false) && slot.Contains(mouse))
                 {
@@ -920,6 +935,138 @@ namespace Avelora.Client
             }
         }
 
+        private void DrawSkills()
+        {
+            const float scale = 0.62f;
+            float panelWidth = WindowWidth * scale;
+            _skillsPanel = PlacePanel(3, ref _skillsPosition,
+                new Vector2(Mathf.Max(10f, Screen.width * 0.5f - panelWidth - 20f), 80f),
+                new Vector2(panelWidth, WindowHeight * scale), 75f * scale);
+            ClearCoveredDropTargets(_skillsPanel);
+            GUI.DrawTexture(_skillsPanel, _darkWindow);
+            if (LeftButton(Part(_skillsPanel, scale, 775f, 12f, 50f, 50f), GUIContent.none, GUIStyle.none))
+            {
+                _showSkills = false;
+            }
+
+            Rect content = Part(_skillsPanel, scale, 17f, 75f, 810f, 620f);
+            SkillCatalogEntry[] skills = _skillCatalog.Skills;
+            int count = skills == null ? 0 : skills.Length;
+            float rowHeight = count == 0 ? 48f : Mathf.Min(48f, (content.height - 30f) / count);
+            Event e = Event.current;
+            for (int i = 0; i < count; i++)
+            {
+                SkillCatalogEntry skill = skills[i];
+                var row = new Rect(content.x, content.y + i * rowHeight, content.width, rowHeight);
+                Color previous = GUI.color;
+                bool locked = skill.RequiredLevel > _level;
+                if (locked) GUI.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+                GUI.Label(new Rect(row.x, row.y, row.width * 0.34f, row.height), skill.Name, _darkSmallStyle);
+                GUI.Label(new Rect(row.x + row.width * 0.34f, row.y, row.width * 0.3f, row.height),
+                    "Coste " + skill.ResourceCost + " " + _skillCatalog.ResourceName, _darkSmallStyle);
+                GUI.Label(new Rect(row.x + row.width * 0.64f, row.y, row.width * 0.24f, row.height),
+                    "Recarga " + (skill.CooldownTicks / (float)SimulationConstants.TickRate).ToString("0.#") + " s", _darkSmallStyle);
+                GUI.Label(new Rect(row.x + row.width * 0.88f, row.y, row.width * 0.12f, row.height),
+                    "Nv " + skill.RequiredLevel, _darkSmallStyle);
+                GUI.color = previous;
+                if (!locked && e.type == EventType.MouseDown && e.button == 0 && row.Contains(e.mousePosition))
+                {
+                    _skillDragId = skill.Id;
+                    _skillDragFrom = -1;
+                    _skillPressAt = e.mousePosition;
+                    e.Use();
+                }
+            }
+            GUI.Label(new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
+                "Arrastra una habilidad a la barra · clic dcho. en el hueco: quitar", _darkSmallStyle);
+        }
+
+        private void DrawSkillOnSlot(Rect slot, int index, SkillCatalogEntry skill)
+        {
+            Color previous = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.55f);
+            GUI.DrawTexture(slot, Texture2D.whiteTexture);
+            GUI.color = ResourceCurrent < skill.ResourceCost || _level < skill.RequiredLevel
+                ? new Color(0.6f, 0.6f, 0.6f, 1f) : previous;
+            string name = skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name;
+            GUI.Label(new Rect(slot.x, slot.y + slot.height * 0.35f, slot.width, slot.height * 0.65f), name, _overlayStyle);
+            GUI.Label(new Rect(slot.x + 2f, slot.y, slot.width, 18f), ((index + 1) % 10).ToString(), _overlayStyle);
+            float seconds = SkillSecondsLeft(skill.Id);
+            if (seconds > 0f)
+            {
+                float fraction = Mathf.Clamp01(seconds / (skill.CooldownTicks / (float)SimulationConstants.TickRate));
+                GUI.color = new Color(0f, 0f, 0f, 0.6f);
+                GUI.DrawTexture(new Rect(slot.x, slot.yMax - slot.height * fraction, slot.width, slot.height * fraction), Texture2D.whiteTexture);
+                GUI.color = previous;
+                GUI.Label(slot, Mathf.CeilToInt(seconds).ToString(), _damageNumberStyle);
+            }
+            GUI.color = previous;
+
+            Event e = Event.current;
+            if (e.type != EventType.MouseDown || !slot.Contains(e.mousePosition)) return;
+            if (e.button == 0)
+            {
+                _skillDragId = skill.Id;
+                _skillDragFrom = index;
+                _skillPressAt = e.mousePosition;
+                e.Use();
+            }
+            else if (e.button == 1)
+            {
+                _hotbarSkills[index] = 0;
+                SaveHotbarSkills();
+                e.Use();
+            }
+        }
+
+        private void HandleSkillDrag()
+        {
+            if (_skillDragId == 0) return;
+            Event e = Event.current;
+            if (!_skillDragging && e.type == EventType.MouseDrag && (e.mousePosition - _skillPressAt).sqrMagnitude > 36f)
+            {
+                _skillDragging = true;
+            }
+            if (_skillDragging && e.type == EventType.Repaint && TryGetSkill(_skillDragId, out SkillCatalogEntry skill))
+            {
+                var rect = new Rect(e.mousePosition.x - 22f, e.mousePosition.y - 22f, 44f, 44f);
+                Color previous = GUI.color;
+                GUI.color = new Color(0f, 0f, 0f, 0.55f);
+                GUI.DrawTexture(rect, Texture2D.whiteTexture);
+                GUI.color = previous;
+                GUI.Label(rect, skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name, _overlayStyle);
+            }
+            if (e.rawType != EventType.MouseUp || e.button != 0) return;
+            bool overPanel = (_showStats && _statsReceived && _statsPanel.Contains(e.mousePosition)) ||
+                (_showInventory && _inventoryPanel.Contains(e.mousePosition)) ||
+                (_showSkills && _skillCatalogReceived && _skillsPanel.Contains(e.mousePosition));
+            if (_skillDragging && !overPanel)
+            {
+                if (_hotbarHover >= 0)
+                {
+                    if (_skillDragFrom >= 0)
+                    {
+                        ushort previous = _hotbarSkills[_hotbarHover];
+                        _hotbarSkills[_hotbarHover] = _hotbarSkills[_skillDragFrom];
+                        _hotbarSkills[_skillDragFrom] = previous;
+                    }
+                    else
+                    {
+                        _hotbarSkills[_hotbarHover] = _skillDragId;
+                    }
+                    SaveHotbarSkills();
+                }
+                else if (_skillDragFrom >= 0)
+                {
+                    _hotbarSkills[_skillDragFrom] = 0;
+                    SaveHotbarSkills();
+                }
+            }
+            _skillDragId = 0;
+            _skillDragFrom = -1;
+            _skillDragging = false;
+        }
+
         // Inventario interactivo (I-14b). Un «origen» es un hueco del inventario (0…) o del equipo
         // (EquipSource + EquipSlot). El cliente solo pide; el servidor valida y manda el Inventory nuevo.
         private const int EquipSource = InventoryDrag.EquipSource;
@@ -931,6 +1078,14 @@ namespace Avelora.Client
         private ushort _discardItemId;
         private int _discardAmount;
         private Rect _discardDialog;
+
+        private void ClearCoveredDropTargets(Rect panel)
+        {
+            // Cada panel tapa los destinos anteriores; sus huecos visibles se registran después.
+            if (!panel.Contains(Event.current.mousePosition)) return;
+            _dropTarget = -1;
+            _hotbarHover = -1;
+        }
 
         /// <summary>
         /// Clics sobre un hueco: izquierdo empieza a arrastrar (doble clic usa o quita), derecho equipa
@@ -1035,6 +1190,7 @@ namespace Avelora.Client
             int to = _dropTarget;
             bool overPanel = (_showStats && _statsPanel.Contains(e.mousePosition)) ||
                 (_showInventory && _inventoryPanel.Contains(e.mousePosition)) ||
+                (_showSkills && _skillsPanel.Contains(e.mousePosition)) ||
                 _hotbarPanel.Contains(e.mousePosition);
             byte equipSlot = _catalog.TryGetValue(id, out ItemCatalogEntry item) ? item.EquipSlot : byte.MaxValue;
             switch (InventoryDrag.Resolve(from, to, overPanel, id, equipSlot))
@@ -1335,6 +1491,7 @@ namespace Avelora.Client
                 new Vector2(Mathf.Max(10f, ((Screen.width * 0.5f) - panelWidth) / 2f), 80f),
                 new Vector2(panelWidth, CharacterHeight * scale),
                 75f * scale);
+            ClearCoveredDropTargets(_statsPanel);
             GUI.DrawTexture(_statsPanel, _darkCharacter);
             if (LeftButton(Part(_statsPanel, scale, 848f, 17f, 51f, 49f), GUIContent.none, GUIStyle.none))
             {
@@ -1581,6 +1738,14 @@ namespace Avelora.Client
             GUI.color = new Color(0.95f, 0.8f, 0.2f, 1f);
             float xpFill = _experienceToNext == 0 ? 1f : (float)_experience / _experienceToNext;
             GUI.DrawTexture(new Rect(xp.x, xp.y, width * xpFill, xp.height), Texture2D.whiteTexture);
+            if (ResourceMax > 0)
+            {
+                var res = new Rect(back.x, xp.y + xp.height + 3f, width, 6f);
+                GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+                GUI.DrawTexture(res, Texture2D.whiteTexture);
+                GUI.color = new Color(0.25f, 0.55f, 1f, 1f);
+                GUI.DrawTexture(new Rect(res.x, res.y, width * ResourceCurrent / (float)ResourceMax, res.height), Texture2D.whiteTexture);
+            }
             GUI.color = previous;
 
             // El snapshot solo trae el porcentaje; la vida absoluta es aproximada.
@@ -1590,7 +1755,9 @@ namespace Avelora.Client
             string level = _level > 0
                 ? "Nv " + _level + " · " + (_experienceToNext == 0 ? "máx." : _experience + "/" + _experienceToNext + " XP") + " · "
                 : string.Empty;
-            GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), level + health, _overlayStyle);
+            string resource = _skillCatalogReceived && ResourceMax > 0
+                ? " · " + _skillCatalog.ResourceName + " " + ResourceCurrent + "/" + ResourceMax : string.Empty;
+            GUI.Label(new Rect(back.x + 6f, back.y - 1f, width, height + 2f), level + health + resource, _overlayStyle);
 
             DrawHotbar();
 
@@ -1604,7 +1771,13 @@ namespace Avelora.Client
                 DrawInventory();
             }
 
+            if (_showSkills && _skillCatalogReceived)
+            {
+                DrawSkills();
+            }
+
             HandleDrag();
+            HandleSkillDrag();
             if (_discardSlot >= 0)
             {
                 DrawDiscardDialog();

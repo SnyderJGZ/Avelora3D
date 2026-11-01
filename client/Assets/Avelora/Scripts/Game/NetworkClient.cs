@@ -177,6 +177,13 @@ namespace Avelora.Client
         private ZoneInfo[] _zones = new ZoneInfo[0];
         private ushort _zoneId;
         private ZoneKind _zoneKind = ZoneKind.Normal;
+        private SkillCatalogMessage _skillCatalog;
+        private bool _skillCatalogReceived;
+        private ResourceStatusMessage _resource;
+        private bool _resourceReceived;
+        private readonly Dictionary<ushort, float> _skillReadyAt = new Dictionary<ushort, float>();
+        private readonly ushort[] _hotbarSkills = new ushort[10];
+        private bool _showSkills;
         private PvpStatusMessage _pvpStatus;
         private bool _pvpStatusReceived;
         private float _pvpChangeReadyAt;
@@ -370,6 +377,16 @@ namespace Avelora.Client
             _zones = new ZoneInfo[0];
             _zoneId = 0;
             _zoneKind = ZoneKind.Normal;
+            _skillCatalog = default;
+            _skillCatalogReceived = false;
+            _resource = default;
+            _resourceReceived = false;
+            _skillReadyAt.Clear();
+            Array.Clear(_hotbarSkills, 0, _hotbarSkills.Length);
+            _showSkills = false;
+            _skillDragId = 0;
+            _skillDragFrom = -1;
+            _skillDragging = false;
             _pvpStatus = default;
             _pvpStatusReceived = false;
             _minimapDirty = true;
@@ -470,6 +487,11 @@ namespace Avelora.Client
             if (!_chatOpen && Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
             {
                 _showStats = !_showStats;
+            }
+
+            if (!_chatOpen && Keyboard.current != null && Keyboard.current.kKey.wasPressedThisFrame)
+            {
+                _showSkills = !_showSkills;
             }
 
             double frame = Time.deltaTime;
@@ -606,6 +628,7 @@ namespace Avelora.Client
                 var gui = new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y);
                 overPanel = (_showStats && _statsPanel.Contains(gui)) ||
                     (_showInventory && _inventoryPanel.Contains(gui)) ||
+                    (_showSkills && _skillsPanel.Contains(gui)) ||
                     _hotbarPanel.Contains(gui) ||
                     (_discardSlot >= 0 && _discardDialog.Contains(gui)) ||
                     _pvpButtonRect.Contains(gui);
@@ -736,19 +759,19 @@ namespace Avelora.Client
                 }
             }
 
-            // 1–9: equipa el arma de ese hueco o bebe la poción; U guarda el arma (I-05b).
+            // 1–9 y 0: hueco n de la barra: objeto o habilidad (I-16b).
             for (int n = 0; n < 9; n++)
             {
                 if (keyboard[(Key)((int)Key.Digit1 + n)].wasPressedThisFrame)
                 {
-                    UseSlot(n);
+                    PressHotbar(n);
                 }
             }
 
             // El 0 es el décimo hueco de la barra rápida.
             if (keyboard.digit0Key.wasPressedThisFrame && _inventoryIds.Length > 9)
             {
-                UseSlot(9);
+                PressHotbar(9);
             }
 
             if (keyboard.uKey.wasPressedThisFrame)
@@ -783,6 +806,127 @@ namespace Avelora.Client
         {
             byte[] bytes = MessageCodec.EncodeMoveItem(new MoveItemMessage((byte)from, (byte)to, (ushort)count));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        private bool TryGetSkill(ushort id, out SkillCatalogEntry skill)
+        {
+            SkillCatalogEntry[] skills = _skillCatalog.Skills;
+            if (skills != null)
+            {
+                for (int i = 0; i < skills.Length; i++)
+                {
+                    if (skills[i].Id == id)
+                    {
+                        skill = skills[i];
+                        return true;
+                    }
+                }
+            }
+
+            skill = default;
+            return false;
+        }
+
+        private float SkillSecondsLeft(ushort id)
+        {
+            return _skillReadyAt.TryGetValue(id, out float readyAt)
+                ? Mathf.Max(0f, readyAt - Time.unscaledTime) : 0f;
+        }
+
+        private void LoadHotbarSkills()
+        {
+            if (_selectedCharacterId == 0) return;
+            for (int i = 0; i < _hotbarSkills.Length; i++)
+            {
+                int id = PlayerPrefs.GetInt("avelora.skillbar." + _selectedCharacterId + "." + i, 0);
+                _hotbarSkills[i] = id > 0 && id <= ushort.MaxValue ? (ushort)id : (ushort)0;
+            }
+        }
+
+        private void SaveHotbarSkills()
+        {
+            if (_selectedCharacterId == 0) return;
+            for (int i = 0; i < _hotbarSkills.Length; i++)
+            {
+                PlayerPrefs.SetInt("avelora.skillbar." + _selectedCharacterId + "." + i, _hotbarSkills[i]);
+            }
+            PlayerPrefs.Save();
+        }
+
+        private int ResourceCurrent => _resourceReceived ? _resource.Current : _stats.Resource;
+        private int ResourceMax => _resourceReceived ? _resource.Max : _stats.MaxResource;
+
+        private bool HotbarSkillAt(int slot, out SkillCatalogEntry skill)
+        {
+            skill = default;
+            return slot >= 0 && slot < _hotbarSkills.Length && _hotbarSkills[slot] != 0 &&
+                TryGetSkill(_hotbarSkills[slot], out skill);
+        }
+
+        private void PressHotbar(int n)
+        {
+            if (HotbarSkillAt(n, out SkillCatalogEntry skill))
+                TryUseSkill(skill, SelectedTarget());
+            else
+                UseSlot(n);
+        }
+
+        private void TryUseSkill(SkillCatalogEntry skill, RemotePlayerView target)
+        {
+            if (_transport == null) return;
+            if (_level < skill.RequiredLevel)
+            {
+                ShowHint("nivel insuficiente");
+                return;
+            }
+            if (target == null)
+            {
+                ShowHint("sin objetivo: haz clic en un enemigo o jugador PvP");
+                return;
+            }
+            float seconds = SkillSecondsLeft(skill.Id);
+            if (seconds > 0f)
+            {
+                ShowHint("recarga: " + Mathf.CeilToInt(seconds) + " s");
+                return;
+            }
+            if (ResourceCurrent < skill.ResourceCost)
+            {
+                ShowHint("sin " + _skillCatalog.ResourceName + " suficiente");
+                return;
+            }
+            Vector2 delta = (Vector2)(target.transform.position - transform.position);
+            if (delta.sqrMagnitude > skill.Range * skill.Range)
+            {
+                ShowHint("fuera de alcance");
+                return;
+            }
+            if (!HasLineOfSightTo(target))
+            {
+                ShowHint("sin línea de visión");
+                return;
+            }
+            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, target.EntityId));
+            _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+        }
+
+        private string SkillRejectText(SkillRejectReason reason)
+        {
+            switch (reason)
+            {
+                case SkillRejectReason.UnknownSkill: return "habilidad desconocida";
+                case SkillRejectReason.WrongClass: return "habilidad de otra clase";
+                case SkillRejectReason.LevelTooLow: return "nivel insuficiente";
+                case SkillRejectReason.Dead: return "estás muerto";
+                case SkillRejectReason.InvalidTarget: return "objetivo no válido";
+                case SkillRejectReason.SafeZone: return "zona segura: no se puede atacar";
+                case SkillRejectReason.PvpNotAllowed: return "hace falta PvP en los dos";
+                case SkillRejectReason.OutOfRange: return "fuera de alcance";
+                case SkillRejectReason.NoLineOfSight: return "sin línea de visión";
+                case SkillRejectReason.Cooldown: return "habilidad en recarga";
+                case SkillRejectReason.NotEnoughResource: return "sin " + _skillCatalog.ResourceName + " suficiente";
+                default: return "habilidad rechazada";
+            }
         }
 
         /// <summary>Equipa el arma o armadura del hueco o bebe su poción; el servidor valida.</summary>
@@ -1309,6 +1453,37 @@ namespace Avelora.Client
 
                     break;
 
+                case MessageType.SkillCatalog:
+                    if (_welcomeReceived && MessageCodec.TryReadSkillCatalog(buffer, offset, length, out SkillCatalogMessage skillCatalog))
+                    {
+                        _skillCatalog = skillCatalog;
+                        _skillCatalogReceived = true;
+                    }
+                    break;
+
+                case MessageType.ResourceStatus:
+                    if (_welcomeReceived && MessageCodec.TryReadResourceStatus(buffer, offset, length, out ResourceStatusMessage resource))
+                    {
+                        _resource = resource;
+                        _resourceReceived = true;
+                    }
+                    break;
+
+                case MessageType.SkillUsed:
+                    if (_welcomeReceived && MessageCodec.TryReadSkillUsed(buffer, offset, length, out SkillUsedMessage skillUsed) &&
+                        TryGetSkill(skillUsed.SkillId, out SkillCatalogEntry entry))
+                    {
+                        _skillReadyAt[entry.Id] = Time.unscaledTime + entry.CooldownTicks / (float)SimulationConstants.TickRate;
+                    }
+                    break;
+
+                case MessageType.SkillRejected:
+                    if (_welcomeReceived && MessageCodec.TryReadSkillRejected(buffer, offset, length, out SkillRejectedMessage skillRejected))
+                    {
+                        ShowHint(SkillRejectText(skillRejected.Reason));
+                    }
+                    break;
+
                 case MessageType.PvpModeRejected:
                     if (_welcomeReceived &&
                         MessageCodec.TryReadPvpModeRejected(buffer, offset, length, out PvpModeRejectedMessage rejected))
@@ -1516,6 +1691,17 @@ namespace Avelora.Client
             _zones = new ZoneInfo[0];
             _zoneId = 0;
             _zoneKind = ZoneKind.Normal;
+            _skillCatalog = default;
+            _skillCatalogReceived = false;
+            _resource = default;
+            _resourceReceived = false;
+            _skillReadyAt.Clear();
+            Array.Clear(_hotbarSkills, 0, _hotbarSkills.Length);
+            _showSkills = false;
+            LoadHotbarSkills();
+            _skillDragId = 0;
+            _skillDragFrom = -1;
+            _skillDragging = false;
             _pvpStatus = default;
             _pvpStatusReceived = false;
             _minimapDirty = true;
