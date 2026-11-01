@@ -117,12 +117,20 @@ namespace Avelora.Client
             public CombatEventFlags Flags;
         }
 
+        private struct AreaFlash
+        {
+            public Vector3 Center;
+            public float Radius;
+            public float StartTime;
+        }
+
         private struct DamageNumber
         {
             public Vector3 Position;
             public float StartTime;
             public string Text;
             public bool OnSelf;
+            public bool Heal;
         }
 
         private struct LootText
@@ -134,6 +142,7 @@ namespace Avelora.Client
         }
 
         private readonly List<CombatProjectile> _projectiles = new List<CombatProjectile>(32);
+        private readonly List<AreaFlash> _areaFlashes = new List<AreaFlash>(8);
         private readonly List<DamageNumber> _damageNumbers = new List<DamageNumber>(32);
         private readonly List<LootText> _lootTexts = new List<LootText>(16);
 
@@ -919,22 +928,19 @@ namespace Avelora.Client
                 ShowHint("nivel insuficiente");
                 return;
             }
+            if (skill.Effect == 1 && (target == null || target.Kind != EntityKind.Player))
+            {
+                if (!SkillReady(skill)) return;
+                byte[] selfBytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, _entityId));
+                _transport.Send(selfBytes, selfBytes.Length, DeliveryMode.ReliableOrdered);
+                return;
+            }
             if (target == null)
             {
                 ShowHint("sin objetivo: haz clic en un enemigo o jugador PvP");
                 return;
             }
-            float seconds = SkillSecondsLeft(skill.Id);
-            if (seconds > 0f)
-            {
-                ShowHint("recarga: " + Mathf.CeilToInt(seconds) + " s");
-                return;
-            }
-            if (ResourceCurrent < skill.ResourceCost)
-            {
-                ShowHint("sin " + _skillCatalog.ResourceName + " suficiente");
-                return;
-            }
+            if (!SkillReady(skill)) return;
             Vector2 delta = (Vector2)(target.transform.position - transform.position);
             if (delta.sqrMagnitude > skill.Range * skill.Range)
             {
@@ -950,6 +956,22 @@ namespace Avelora.Client
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
+        private bool SkillReady(SkillCatalogEntry skill)
+        {
+            float seconds = SkillSecondsLeft(skill.Id);
+            if (seconds > 0f)
+            {
+                ShowHint("recarga: " + Mathf.CeilToInt(seconds) + " s");
+                return false;
+            }
+            if (ResourceCurrent < skill.ResourceCost)
+            {
+                ShowHint("sin " + _skillCatalog.ResourceName + " suficiente");
+                return false;
+            }
+            return true;
+        }
+
         private string SkillRejectText(SkillRejectReason reason)
         {
             switch (reason)
@@ -960,11 +982,12 @@ namespace Avelora.Client
                 case SkillRejectReason.Dead: return "estás muerto";
                 case SkillRejectReason.InvalidTarget: return "objetivo no válido";
                 case SkillRejectReason.SafeZone: return "zona segura: no se puede atacar";
-                case SkillRejectReason.PvpNotAllowed: return "hace falta PvP en los dos";
+                case SkillRejectReason.PvpNotAllowed: return "PvP no permitido con ese objetivo";
                 case SkillRejectReason.OutOfRange: return "fuera de alcance";
                 case SkillRejectReason.NoLineOfSight: return "sin línea de visión";
                 case SkillRejectReason.Cooldown: return "habilidad en recarga";
                 case SkillRejectReason.NotEnoughResource: return "sin " + _skillCatalog.ResourceName + " suficiente";
+                case SkillRejectReason.FullHealth: return "ya tiene la vida llena";
                 default: return "habilidad rechazada";
             }
         }
@@ -1514,6 +1537,16 @@ namespace Avelora.Client
                         TryGetSkill(skillUsed.SkillId, out SkillCatalogEntry entry))
                     {
                         _skillReadyAt[entry.Id] = Time.unscaledTime + entry.CooldownTicks / (float)SimulationConstants.TickRate;
+                        if (entry.Radius > 0f && TryGetEntityPosition(skillUsed.TargetId, out Vector3 center))
+                        {
+                            if (_areaFlashes.Count == 8) _areaFlashes.RemoveAt(0);
+                            _areaFlashes.Add(new AreaFlash
+                            {
+                                Center = center,
+                                Radius = entry.Radius,
+                                StartTime = Time.unscaledTime,
+                            });
+                        }
                     }
                     break;
 
@@ -1553,7 +1586,8 @@ namespace Avelora.Client
                     continue;
                 }
 
-                if ((entry.Flags & CombatEventFlags.Ranged) != 0 &&
+                if ((entry.Flags & CombatEventFlags.Heal) == 0 &&
+                    (entry.Flags & CombatEventFlags.Ranged) != 0 &&
                     TryGetEntityPosition(entry.AttackerId, out Vector3 attackerPosition))
                 {
                     if (_projectiles.Count == 32)
@@ -1628,8 +1662,10 @@ namespace Avelora.Client
             {
                 Position = position,
                 StartTime = Time.unscaledTime,
-                Text = damage.ToString() + ((flags & CombatEventFlags.Killed) != 0 ? "!" : string.Empty),
+                Text = (flags & CombatEventFlags.Heal) != 0 ? "+" + damage
+                    : damage.ToString() + ((flags & CombatEventFlags.Killed) != 0 ? "!" : string.Empty),
                 OnSelf = targetId == _entityId,
+                Heal = (flags & CombatEventFlags.Heal) != 0,
             });
         }
 

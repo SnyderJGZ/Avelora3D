@@ -377,6 +377,13 @@ namespace Avelora.Client
         private void DrawCombatEffects()
         {
             float now = Time.unscaledTime;
+            for (int i = _areaFlashes.Count - 1; i >= 0; i--)
+            {
+                if (now - _areaFlashes[i].StartTime >= 0.35f)
+                {
+                    _areaFlashes.RemoveAt(i);
+                }
+            }
             for (int i = _damageNumbers.Count - 1; i >= 0; i--)
             {
                 if (now - _damageNumbers[i].StartTime >= 0.9f)
@@ -427,6 +434,21 @@ namespace Avelora.Client
                 GUI.DrawTexture(new Rect(gui.x - 3f, gui.y - 3f, 6f, 6f), Texture2D.whiteTexture);
             }
 
+            for (int i = 0; i < _areaFlashes.Count; i++)
+            {
+                AreaFlash flash = _areaFlashes[i];
+                GUI.color = new Color(1f, 0.55f, 0.2f, 1f - (now - flash.StartTime) / 0.35f);
+                for (int k = 0; k < 24; k++)
+                {
+                    float a = k * 2f * Mathf.PI / 24f;
+                    Vector3 world = flash.Center + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * flash.Radius;
+                    Vector3 screen = cam.WorldToScreenPoint(world);
+                    if (screen.z < 0f) continue;
+                    GUI.DrawTexture(new Rect(screen.x - 2.5f, Screen.height - screen.y - 2.5f, 5f, 5f),
+                        Texture2D.whiteTexture);
+                }
+            }
+
             for (int i = 0; i < _damageNumbers.Count; i++)
             {
                 DamageNumber number = _damageNumbers[i];
@@ -439,7 +461,8 @@ namespace Avelora.Client
                 }
 
                 Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
-                Color color = number.OnSelf ? new Color(1f, 0.35f, 0.3f) : Color.white;
+                Color color = number.Heal ? new Color(0.35f, 1f, 0.4f)
+                    : (number.OnSelf ? new Color(1f, 0.35f, 0.3f) : Color.white);
                 color.a = 1f - elapsed / 0.9f;
                 GUI.color = color;
                 GUI.Label(new Rect(gui.x - 32f, gui.y - 20f, 64f, 24f), number.Text, _damageNumberStyle);
@@ -967,7 +990,8 @@ namespace Avelora.Client
                 Color previous = GUI.color;
                 bool locked = skill.RequiredLevel > _level;
                 if (locked) GUI.color = new Color(0.5f, 0.5f, 0.5f, 1f);
-                GUI.Label(new Rect(row.x, row.y, row.width * 0.34f, row.height), skill.Name, _darkSmallStyle);
+                GUI.Label(new Rect(row.x, row.y, row.width * 0.34f, row.height),
+                    skill.Name + " · " + SkillKindText(skill), _darkSmallStyle);
                 GUI.Label(new Rect(row.x + row.width * 0.34f, row.y, row.width * 0.3f, row.height),
                     "Coste " + skill.ResourceCost + " " + _skillCatalog.ResourceName, _darkSmallStyle);
                 GUI.Label(new Rect(row.x + row.width * 0.64f, row.y, row.width * 0.24f, row.height),
@@ -985,6 +1009,13 @@ namespace Avelora.Client
             }
             GUI.Label(new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
                 "Arrastra una habilidad a la barra · clic dcho. en el hueco: quitar", _darkSmallStyle);
+        }
+
+        private static string SkillKindText(SkillCatalogEntry skill)
+        {
+            if (skill.Effect == 1) return "cura";
+            if (skill.Radius > 0f) return "área " + skill.Radius.ToString("0.#") + " m";
+            return "un objetivo";
         }
 
         private void DrawSkillOnSlot(Rect slot, int index, SkillCatalogEntry skill)
