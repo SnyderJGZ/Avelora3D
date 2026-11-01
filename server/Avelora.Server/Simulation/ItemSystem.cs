@@ -654,7 +654,7 @@ namespace Avelora.Server.Simulation
 
         private static int FindFirstEmptySlot(InventorySlot[] inventory)
         {
-            for (int i = 0; i < inventory.Length; i++)
+            for (int i = ProtocolConstants.QuickBarSlotCount; i < inventory.Length; i++)
             {
                 if (inventory[i].ItemId == 0 && inventory[i].Count == 0)
                 {
@@ -773,7 +773,7 @@ namespace Avelora.Server.Simulation
                 }
             }
 
-            for (int i = 0; i < inventory.Length; i++)
+            for (int i = ProtocolConstants.QuickBarSlotCount; i < inventory.Length; i++)
             {
                 if (inventory[i].ItemId == 0)
                 {
@@ -801,7 +801,7 @@ namespace Avelora.Server.Simulation
                 remaining -= added;
             }
 
-            for (int i = 0; i < inventory.Length && remaining > 0; i++)
+            for (int i = ProtocolConstants.QuickBarSlotCount; i < inventory.Length && remaining > 0; i++)
             {
                 if (inventory[i].ItemId != 0)
                 {

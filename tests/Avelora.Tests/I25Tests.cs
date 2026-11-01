@@ -98,7 +98,7 @@ namespace Avelora.Tests
             combat: new CombatSettings(0, tagTicks),
             items: Items(),
             itemActions: new ItemActionQueue(64),
-            inventorySlots: 4,
+            inventorySlots: 14,
             groundItemTicks: 1200,
             classes: Classes(),
             lootReserveTicks: reserveTicks);
@@ -113,6 +113,27 @@ namespace Avelora.Tests
         {
             attacker.LastAttackTick = -1;
             Assert.True(zone.Attacks!.TryEnqueue(new AttackIntent(attacker.Id, target.Id)));
+        }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public void Botin_Respeta_La_Barra(bool mochilaLlena, bool pilaEnBarra)
+        {
+            Zone zone = NewZone();
+            PlayerEntity owner = Player(zone, 1);
+            if (mochilaLlena)
+                for (int i = ProtocolConstants.QuickBarSlotCount; i < owner.Inventory.Length; i++)
+                    owner.Inventory[i] = new InventorySlot(4000, 1);
+            if (pilaEnBarra) owner.Inventory[0] = new InventorySlot(3001, 1);
+            NpcEntity npc = Npc(zone);
+            npc.Health = 1;
+            EnqueueAttack(zone, owner, npc);
+            zone.Tick();
+            Assert.Equal(mochilaLlena && !pilaEnBarra ? 1 : 0, zone.GroundItemCount);
+            Assert.Equal(pilaEnBarra ? (ushort)2 : (ushort)0, owner.Inventory[0].Count);
+            if (!mochilaLlena) Assert.Equal((ushort)3001, owner.Inventory[ProtocolConstants.QuickBarSlotCount].ItemId);
         }
 
         [Fact]
@@ -296,7 +317,7 @@ namespace Avelora.Tests
             Zone zone = NewZone();
             PlayerEntity owner = Player(zone, 1);
             PlayerEntity other = Player(zone, 2);
-            for (int i = 0; i < owner.Inventory.Length; i++)
+            for (int i = ProtocolConstants.QuickBarSlotCount; i < owner.Inventory.Length; i++)
             {
                 owner.Inventory[i] = new InventorySlot((ushort)(4000 + i), 1);
             }
@@ -335,7 +356,7 @@ namespace Avelora.Tests
         {
             Zone zone = NewZone();
             PlayerEntity owner = Player(zone, 1);
-            for (int i = 0; i < owner.Inventory.Length; i++)
+            for (int i = ProtocolConstants.QuickBarSlotCount; i < owner.Inventory.Length; i++)
             {
                 owner.Inventory[i] = new InventorySlot((ushort)(4000 + i), 1);
             }
@@ -346,7 +367,7 @@ namespace Avelora.Tests
             zone.Tick();
             GroundItemEntity item = Assert.IsType<GroundItemEntity>(
                 zone.Entities.All.Single(entity => entity is GroundItemEntity));
-            owner.Inventory[0] = default;
+            owner.Inventory[10] = default;
 
             Assert.True(zone.ItemActions!.TryEnqueue(ItemAction.PickUp(owner.Id, item.Id)));
             zone.Tick();

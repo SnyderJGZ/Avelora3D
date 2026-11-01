@@ -1834,6 +1834,8 @@ sin migración SQLite. La hoja de ruta mantiene pendiente el cliente I-13b.
 
 ### Botín directo, dueño del botín y oro (I-25, protocolo v18, esquema v7)
 
+Los objetos nuevos ocupan huecos libres desde el 10, fuera de la barra rápida (0-9). Se permite apilar en pilas existentes de la barra. Sin espacio en la mochila, el botín directo cae reservado para su dueño y recoger con E se rechaza. Desequipar automáticamente sigue esta regla; los destinos explícitos y MoveItem conservan su comportamiento.
+
 **Dueño.** El primer jugador que acierta marca al PNJ durante 10 s; sus siguientes golpes renuevan
 la marca. Si no vuelve a acertar en ese plazo, otro golpe aceptado puede cambiarla. Si el dueño ya no
 está en la zona, la marca pasa al último atacante presente; si ninguno está, no se entrega botín,

@@ -72,7 +72,7 @@ namespace Avelora.Tests
             int seed = 12345,
             NpcCatalog? npcs = null,
             int maxGroundItems = 500,
-            int slots = 4,
+            int slots = 14,
             long despawnTicks = 10,
             long cooldownTicks = 2,
             LevelTable? levels = null)
@@ -124,6 +124,27 @@ namespace Avelora.Tests
 
         private static GroundItemEntity[] GroundItems(Zone zone) =>
             zone.Entities.All.OfType<GroundItemEntity>().ToArray();
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public void Recoger_Respeta_La_Barra(bool mochilaLlena, bool pilaEnBarra)
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = SpawnPlayer(zone);
+            if (mochilaLlena)
+                for (int i = ProtocolConstants.QuickBarSlotCount; i < player.Inventory.Length; i++)
+                    player.Inventory[i] = new InventorySlot(4000, 1);
+            if (pilaEnBarra) player.Inventory[0] = new InventorySlot(3001, 1);
+            GroundItemEntity item = AddGroundItem(zone, 3001, 1, new Vec2(5, 5));
+            zone.ItemActions!.TryEnqueue(ItemAction.PickUp(player.Id, item.Id));
+            zone.Tick();
+            Assert.Equal(mochilaLlena && !pilaEnBarra ? 1 : 0, zone.RejectedPickupFull);
+            Assert.Equal(mochilaLlena && !pilaEnBarra, zone.Entities.TryGet(item.Id, out _));
+            Assert.Equal(pilaEnBarra ? (ushort)2 : (ushort)0, player.Inventory[0].Count);
+            if (!mochilaLlena) Assert.Equal((ushort)3001, player.Inventory[ProtocolConstants.QuickBarSlotCount].ItemId);
+        }
 
         [Fact]
         public void Botin_Chance_Uno_Crea_Cantidad_Valida_Y_Es_Determinista()
@@ -247,7 +268,7 @@ namespace Avelora.Tests
         [Fact]
         public void Recoger_Rellena_Primero_La_Pila_Y_Luego_Los_Huecos()
         {
-            Zone zone = NewZone(slots: 3);
+            Zone zone = NewZone(slots: 13);
             PlayerEntity player = SpawnPlayer(zone);
             player.Inventory[0] = new InventorySlot(3001, 3);
             GroundItemEntity item = AddGroundItem(zone, 3001, 7, new Vec2(5.5f, 5));
@@ -256,7 +277,7 @@ namespace Avelora.Tests
             zone.Tick();
 
             Assert.Equal(new InventorySlot(3001, 5), player.Inventory[0]);
-            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[1]);
+            Assert.Equal(new InventorySlot(3001, 5), player.Inventory[10]);
             Assert.Equal(1, zone.ItemsPickedUp);
             Assert.False(zone.Entities.TryGet(item.Id, out _));
         }
@@ -280,7 +301,7 @@ namespace Avelora.Tests
         [Fact]
         public void Dos_Jugadores_Que_Piden_El_Mismo_Objeto_Ganan_Por_Orden_De_Cola()
         {
-            Zone zone = NewZone(slots: 1);
+            Zone zone = NewZone(slots: 11);
             PlayerEntity first = SpawnPlayer(zone);
             PlayerEntity second = zone.SpawnPlayer(2, new Vec2(5.1f, 5), new Vec2(0.4f, 0.4f), 8);
             GroundItemEntity item = AddGroundItem(zone, 3001, 1, new Vec2(5, 5));
@@ -289,8 +310,8 @@ namespace Avelora.Tests
 
             zone.Tick();
 
-            Assert.Equal((ushort)3001, first.Inventory[0].ItemId);
-            Assert.Equal((ushort)0, second.Inventory[0].ItemId);
+            Assert.Equal((ushort)3001, first.Inventory[10].ItemId);
+            Assert.Equal((ushort)0, second.Inventory[10].ItemId);
             Assert.Equal(1, zone.ItemsPickedUp);
             Assert.Equal(1, zone.RejectedPickupItem);
         }
@@ -463,7 +484,7 @@ namespace Avelora.Tests
         [Fact]
         public void Desequipar_Guarda_El_Arma_En_El_Primer_Hueco_Libre()
         {
-            Zone zone = NewZone(slots: 3);
+            Zone zone = NewZone(slots: 13);
             PlayerEntity player = SpawnPlayer(zone);
             player.EquippedWeaponId = 3102;
             player.Inventory[0] = new InventorySlot(3001, 1);
@@ -473,7 +494,7 @@ namespace Avelora.Tests
             zone.Tick();
 
             Assert.Equal((ushort)0, player.EquippedWeaponId);
-            Assert.Equal(new InventorySlot(3102, 1), player.Inventory[1]);
+            Assert.Equal(new InventorySlot(3102, 1), player.Inventory[10]);
             Assert.Equal(1, zone.ItemsUnequipped);
         }
 
@@ -537,7 +558,7 @@ namespace Avelora.Tests
         [Fact]
         public void Bonus_De_VIT_Al_Equipar_No_Cura_Y_Al_Desequipar_Recorta_Vida()
         {
-            Zone zone = NewZone(slots: 1);
+            Zone zone = NewZone(slots: 11);
             PlayerEntity player = SpawnPlayer(zone);
             player.Health = 70;
             player.Inventory[0] = new InventorySlot(3308, 1);
@@ -576,7 +597,7 @@ namespace Avelora.Tests
         [Fact]
         public void MoveItem_Mueve_A_Hueco_Vacio_Y_Divide_Una_Pila()
         {
-            Zone zone = NewZone(slots: 3);
+            Zone zone = NewZone(slots: 13);
             PlayerEntity player = SpawnPlayer(zone);
             player.Inventory[0] = new InventorySlot(3001, 5);
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avelora.Net;
 using Avelora.Shared;
@@ -902,6 +902,15 @@ namespace Avelora.Client
         /// </summary>
         private void DrawHotbar()
         {
+            // Defensa ?nica: los objetos del servidor prevalecen incluso con PlayerPrefs antiguos.
+            bool changed = false;
+            for (int i = 0; i < _hotbarSkills.Length && i < _inventoryIds.Length; i++)
+            {
+                if (_inventoryIds[i] == 0 || _hotbarSkills[i] == 0) continue;
+                _hotbarSkills[i] = 0;
+                changed = true;
+            }
+            if (changed) SaveHotbarSkills();
             _hotbarHover = -1;
             EnsureGuiArt();
 
@@ -919,6 +928,7 @@ namespace Avelora.Client
                 if (slot.Contains(mouse)) _hotbarHover = i;
                 if (HotbarSkillAt(i, out SkillCatalogEntry skill))
                 {
+                    if (slot.Contains(mouse)) _dropTarget = i;
                     DrawSkillOnSlot(slot, i, skill);
                     continue;
                 }
@@ -1044,17 +1054,7 @@ namespace Avelora.Client
             {
                 if (_hotbarHover >= 0)
                 {
-                    if (_skillDragFrom >= 0)
-                    {
-                        ushort previous = _hotbarSkills[_hotbarHover];
-                        _hotbarSkills[_hotbarHover] = _hotbarSkills[_skillDragFrom];
-                        _hotbarSkills[_skillDragFrom] = previous;
-                    }
-                    else
-                    {
-                        _hotbarSkills[_hotbarHover] = _skillDragId;
-                    }
-                    SaveHotbarSkills();
+                    PlaceHotbarSkill(_hotbarHover, _skillDragFrom, _skillDragId);
                 }
                 else if (_skillDragFrom >= 0)
                 {
