@@ -1910,11 +1910,11 @@ namespace Avelora.Server.Net
             }
         }
 
-        private void OnSkillUsed(PlayerEntity player, ushort skillId)
+        private void OnSkillUsed(PlayerEntity player, ushort skillId, int targetId)
         {
             if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
             {
-                byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(skillId));
+                byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(skillId, targetId));
                 Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
                 Interlocked.Increment(ref _skillUsedMessages);
             }
@@ -2052,7 +2052,7 @@ namespace Avelora.Server.Net
                         checked((ushort)skill.CooldownTicks),
                         skill.Range,
                         checked((ushort)skill.Damage),
-                        skill.Name.Trim()));
+                        skill.Name.Trim(), skill.IsHeal ? (byte)1 : (byte)0, skill.Radius));
                 }
             }
 

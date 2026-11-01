@@ -12,6 +12,8 @@ namespace Avelora.Server.Progression
     /// <summary>Catálogo de habilidades cargado desde <c>skills.json</c> (I-16).</summary>
     public sealed class SkillCatalog
     {
+        public const int MaxAreaTargets = 16;
+
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -138,6 +140,19 @@ namespace Avelora.Server.Progression
                         "skills.json: " + where + ".damageType debe ser physical o magical.");
                 }
 
+                if (skill.Effect != "damage" && skill.Effect != "heal")
+                    throw new InvalidOperationException("skills.json: " + where + ".effect debe ser damage o heal.");
+                if (!float.IsFinite(skill.Radius) || (skill.Radius != 0 && (skill.Radius < 0.5f || skill.Radius > 8f)))
+                    throw new InvalidOperationException("skills.json: " + where + ".radius debe ser 0 o estar entre 0.5 y 8.");
+                if (skill.Radius == 0 && skill.MaxTargets != 0)
+                    throw new InvalidOperationException("skills.json: " + where + ".maxTargets solo vale con radius.");
+                if (skill.Radius > 0 && (skill.MaxTargets < 2 || skill.MaxTargets > MaxAreaTargets))
+                    throw new InvalidOperationException("skills.json: " + where + ".maxTargets debe estar entre 2 y 16.");
+                if (skill.IsHeal && skill.Radius > 0)
+                    throw new InvalidOperationException("skills.json: " + where + ".radius: la curación en área no existe todavía.");
+                if (skill.IsHeal && skill.Damage < 1)
+                    throw new InvalidOperationException("skills.json: " + where + ".damage de una cura debe ser al menos 1.");
+
                 skill.CooldownTicks = Math.Max(1, (int)Math.Ceiling(skill.CooldownSeconds * SimulationConstants.TickRate));
                 _byId[skill.Id] = skill;
             }
@@ -210,6 +225,11 @@ namespace Avelora.Server.Progression
         public float Range { get; set; } = float.NaN;
         public int Damage { get; set; } = -1;
         public string DamageType { get; set; } = string.Empty;
+        public string Effect { get; set; } = "damage";
+        public float Radius { get; set; }
+        public int MaxTargets { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsHeal => Effect == "heal";
 
         /// <summary>Ticks de recarga calculados en <see cref="SkillCatalog.Validate"/>.</summary>
         [System.Text.Json.Serialization.JsonIgnore]

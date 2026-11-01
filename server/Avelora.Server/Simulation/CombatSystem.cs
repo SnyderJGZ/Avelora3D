@@ -43,7 +43,9 @@ namespace Avelora.Server.Simulation
         private readonly CombatEventBuffer? _events;
         private readonly ZoneMap _zones;
         private readonly SkillCatalog? _skills;
-        private readonly long[] _skillRejected = new long[12];
+        private readonly int[] _areaIds = new int[SkillCatalog.MaxAreaTargets];
+        private readonly float[] _areaDistSq = new float[SkillCatalog.MaxAreaTargets];
+        private readonly long[] _skillRejected = new long[13];
 
         public CombatSystem(
             CombatSettings settings,
@@ -104,6 +106,14 @@ namespace Avelora.Server.Simulation
         /// <summary>Cambios de una marca de botín ya asignada a otro jugador.</summary>
         public long LootOwnerChanges { get; private set; }
 
+        /// <summary>Secundarios golpeados por áreas.</summary>
+        public long AreaTargetsHit { get; private set; }
+        /// <summary>Áreas con exceso de candidatos válidos.</summary>
+        public long AreaCapped { get; private set; }
+        /// <summary>Curas realizadas.</summary>
+        public long HealsDone { get; private set; }
+        /// <summary>Vida realmente curada.</summary>
+        public long HealAmount { get; private set; }
         /// <summary>Habilidades que han resultado válidas (I-16).</summary>
         public long SkillsUsed { get; private set; }
 
@@ -115,7 +125,7 @@ namespace Avelora.Server.Simulation
         }
 
         /// <summary>El servidor aceptó una habilidad; el cliente cuenta la recarga (I-16).</summary>
-        public event Action<PlayerEntity, ushort>? SkillUsed;
+        public event Action<PlayerEntity, ushort, int>? SkillUsed;
 
         /// <summary>El servidor rechazó una habilidad; el cliente recibe el motivo (I-16).</summary>
         public event Action<PlayerEntity, ushort, SkillRejectReason>? SkillRejected;
@@ -312,6 +322,12 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (skill.IsHeal)
+            {
+                ResolveHeal(entities, caster, skill, intent, tick);
+                return;
+            }
+
             TargetCheck targetCheck = CheckTarget(entities, caster, intent.TargetId, out Entity? target, out PlayerEntity? victim, out NpcEntity? npc);
             switch (targetCheck)
             {
@@ -360,6 +376,7 @@ namespace Avelora.Server.Simulation
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
 
+            int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
             int damage = CharacterStats.GetAttackDamage(
                 _classes,
                 caster.ClassId,
@@ -376,8 +393,101 @@ namespace Avelora.Server.Simulation
 
             ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
 
+            for (int k = 0; k < found; k++)
+            {
+                if (CheckTarget(entities, caster, _areaIds[k], out Entity? t, out PlayerEntity? v, out NpcEntity? n) != TargetCheck.Ok)
+                    continue;
+                ApplyDamage(entities, caster, t!, v, n, damage, damageType, skill.Range > RangedMinRange, tick);
+            }
+            AreaTargetsHit += found;
             SkillsUsed++;
-            SkillUsed?.Invoke(caster, (ushort)skill.Id);
+            SkillUsed?.Invoke(caster, (ushort)skill.Id, hitTarget.Id);
+        }
+
+        private int CollectAreaTargets(EntityStore entities, PlayerEntity caster, Entity center, SkillDefinition skill)
+        {
+            int limit = skill.MaxTargets - 1;
+            int count = 0;
+            bool capped = false;
+            float r2 = skill.Radius * skill.Radius;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity e = entities[i];
+                if (e.Id == center.Id) continue;
+                float dx = e.Position.X - center.Position.X;
+                float dy = e.Position.Y - center.Position.Y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 > r2 || CheckTarget(entities, caster, e.Id, out _, out _, out _) != TargetCheck.Ok) continue;
+                if (_map != null && !_map.HasLineOfSight(center.Position, e.Position)) continue;
+                if (count == limit)
+                {
+                    capped = true;
+                    if (d2 >= _areaDistSq[count - 1]) continue;
+                }
+                else count++;
+                int slot = count - 1;
+                while (slot > 0 && d2 < _areaDistSq[slot - 1])
+                {
+                    _areaIds[slot] = _areaIds[slot - 1];
+                    _areaDistSq[slot] = _areaDistSq[slot - 1];
+                    slot--;
+                }
+                _areaIds[slot] = e.Id;
+                _areaDistSq[slot] = d2;
+            }
+            if (capped) AreaCapped++;
+            return count;
+        }
+
+        private void ResolveHeal(EntityStore entities, PlayerEntity caster, SkillDefinition skill, in AttackIntent intent, long tick)
+        {
+            if (!entities.TryGet(intent.TargetId, out Entity? entity) || !(entity is PlayerEntity target) || target.IsDead)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
+                return;
+            }
+            if (target != caster)
+            {
+                ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
+                ZoneKind targetZone = _zones.KindAt(target.Position.X, target.Position.Y);
+                if (target.IsPvpEffective(targetZone) && !caster.IsPvpEffective(casterZone))
+                {
+                    Reject(caster, intent.SkillId, SkillRejectReason.PvpNotAllowed);
+                    return;
+                }
+                ReachCheck reach = CheckReach(caster, target, skill.Range);
+                if (reach != ReachCheck.Ok)
+                {
+                    Reject(caster, intent.SkillId, reach == ReachCheck.Distance ? SkillRejectReason.OutOfRange : SkillRejectReason.NoLineOfSight);
+                    return;
+                }
+            }
+            if (target.Health >= target.MaxHealth)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.FullHealth);
+                return;
+            }
+            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
+                return;
+            }
+            if (caster.Mana < skill.ResourceCost)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NotEnoughResource);
+                return;
+            }
+            caster.Mana -= skill.ResourceCost;
+            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            int raw = CharacterStats.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, out _, _catalog, caster.Equipment, skill.DamageType);
+            int healed = Math.Min(raw, target.MaxHealth - target.Health);
+            target.Health += healed;
+            HealsDone++;
+            HealAmount += healed;
+            _events?.Add(new CombatEventEntry(caster.Id, target.Id, (ushort)Math.Min(healed, ushort.MaxValue), CombatEventFlags.Heal));
+            SkillsUsed++;
+            SkillUsed?.Invoke(caster, (ushort)skill.Id, target.Id);
         }
 
         private void Reject(PlayerEntity caster, ushort skillId, SkillRejectReason reason)

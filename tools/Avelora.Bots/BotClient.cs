@@ -229,6 +229,10 @@ namespace Avelora.Bots
         private readonly bool _useSkills;
         private SkillCatalogEntry _skill;
         private bool _hasSkill;
+        private SkillCatalogEntry _healSkill;
+        private bool _hasHealSkill;
+        private long _nextHealAt;
+        private long _healsSent;
         private ushort _resource;
         private long _nextSkillAt;
         private long _skillsSent;
@@ -475,6 +479,7 @@ namespace Avelora.Bots
         public long PvpStatuses => Interlocked.Read(ref _pvpStatuses);
         public long PvpRejects => Interlocked.Read(ref _pvpRejects);
         public long PvpModeRequests => Interlocked.Read(ref _pvpModeRequests);
+        public long HealsSent => Interlocked.Read(ref _healsSent);
         public long SkillsSent => Interlocked.Read(ref _skillsSent);
         public long SkillsOk => Interlocked.Read(ref _skillsOk);
         public long SkillsRejected => Interlocked.Read(ref _skillsRejected);
@@ -799,6 +804,7 @@ namespace Avelora.Bots
                         !_ownDead && _itemDecisionPending)
                     {
                         UpdateItemActions(_pendingFightSnapshot);
+                        SendSelfHealIfNeeded(now);
                         _itemDecisionPending = false;
                     }
 
@@ -1054,6 +1060,8 @@ namespace Avelora.Bots
             _hasStats = false;
             _classId = 0;
             _hasSkill = false;
+            _hasHealSkill = false;
+            _nextHealAt = 0;
             _resource = 0;
             _lastFreePoints = 0;
             _pendingAllocationPoints = 0;
@@ -1514,11 +1522,20 @@ namespace Avelora.Bots
 
             if (MessageCodec.TryReadSkillCatalog(buffer, offset, length, out SkillCatalogMessage skillCatalog))
             {
-                // Solo hay una habilidad por clase en este catálogo de pruebas (I-16).
-                if (skillCatalog.Skills.Length > 0)
+                _hasSkill = false;
+                _hasHealSkill = false;
+                foreach (SkillCatalogEntry entry in skillCatalog.Skills)
                 {
-                    _skill = skillCatalog.Skills[0];
-                    _hasSkill = true;
+                    if (entry.Effect == 1 && !_hasHealSkill)
+                    {
+                        _healSkill = entry;
+                        _hasHealSkill = true;
+                    }
+                    if (entry.Effect == 0 && (!_hasSkill || (_skill.Radius == 0 && entry.Radius > 0)))
+                    {
+                        _skill = entry;
+                        _hasSkill = true;
+                    }
                 }
 
                 return;
@@ -2295,6 +2312,17 @@ namespace Avelora.Bots
                 new AllocatePointsMessage(str, dex, intelligence, (byte)vit));
             _transport.Send(message, message.Length, DeliveryMode.ReliableOrdered);
             _pendingAllocationPoints = freePoints;
+        }
+
+        /// <summary>Usa la cura propia bajo el 70 % de vida, con recurso y recarga suficientes.</summary>
+        private void SendSelfHealIfNeeded(long now)
+        {
+            if (!_useSkills || !_hasHealSkill || _ownHealthPercent >= 70 || _resource < _healSkill.ResourceCost ||
+                now < _nextHealAt || EntityId <= 0) return;
+            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(_healSkill.Id, EntityId));
+            _transport!.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            Interlocked.Increment(ref _healsSent);
+            _nextHealAt = now + _healSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>

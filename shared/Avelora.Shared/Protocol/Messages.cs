@@ -913,6 +913,7 @@ namespace Avelora.Shared.Protocol
         Ranged = 1,
         Magical = 2,
         Killed = 4,
+        Heal = 8,
     }
 
     /// <summary>Un daño resuelto por el servidor.</summary>
@@ -1112,7 +1113,8 @@ namespace Avelora.Shared.Protocol
         OutOfRange = 8,
         NoLineOfSight = 9,
         Cooldown = 10,
-        NotEnoughResource = 11
+        NotEnoughResource = 11,
+        FullHealth = 12
     }
 
     /// <summary>Petición del cliente para usar una habilidad (I-16). 0 = ataque básico.</summary>
@@ -1139,8 +1141,10 @@ namespace Avelora.Shared.Protocol
             ushort cooldownTicks,
             float range,
             ushort damage,
-            string name)
+            string name, byte effect = 0, float radius = 0f)
         {
+            Effect = effect;
+            Radius = radius;
             Id = id;
             RequiredLevel = requiredLevel;
             DamageType = damageType;
@@ -1152,6 +1156,8 @@ namespace Avelora.Shared.Protocol
         }
 
         public ushort Id { get; }
+        public byte Effect { get; } // 0 daño, 1 cura
+        public float Radius { get; }
         public byte RequiredLevel { get; }
         public byte DamageType { get; }
         public ushort ResourceCost { get; }
@@ -1177,7 +1183,8 @@ namespace Avelora.Shared.Protocol
     /// <summary>Confirmación de que el servidor aceptó el uso de la habilidad (I-16).</summary>
     public readonly struct SkillUsedMessage
     {
-        public SkillUsedMessage(ushort skillId) => SkillId = skillId;
+        public SkillUsedMessage(ushort skillId, int targetId) { SkillId = skillId; TargetId = targetId; }
+        public int TargetId { get; }
         public ushort SkillId { get; }
     }
 

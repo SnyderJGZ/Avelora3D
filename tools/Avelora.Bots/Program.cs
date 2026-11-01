@@ -269,6 +269,7 @@ namespace Avelora.Bots
             long pvpRejects = 0;
             long pvpModeRequests = 0;
             long skillsSent = 0;
+            long healsSent = 0;
             long skillsOk = 0;
             long skillsRejected = 0;
             long resourceMessages = 0;
@@ -311,6 +312,7 @@ namespace Avelora.Bots
                 pvpRejects += bot.PvpRejects;
                 pvpModeRequests += bot.PvpModeRequests;
                 skillsSent += bot.SkillsSent;
+                healsSent += bot.HealsSent;
                 skillsOk += bot.SkillsOk;
                 skillsRejected += bot.SkillsRejected;
                 resourceMessages += bot.ResourceMessages;
@@ -386,6 +388,7 @@ namespace Avelora.Bots
                       " pvp_rechazos=" + bot.PvpRejects +
                       " pvp_modo_pedidos=" + bot.PvpModeRequests +
                       " hab_enviadas=" + bot.SkillsSent +
+                      " hab_curas_enviadas=" + bot.HealsSent +
                       " hab_ok=" + bot.SkillsOk +
                       " hab_rechazadas=" + bot.SkillsRejected +
                       " recurso_msgs=" + bot.ResourceMessages);
@@ -476,6 +479,7 @@ namespace Avelora.Bots
                 ", pvp_rechazos=" + pvpRejects + ", pvp_modo_pedidos=" + pvpModeRequests);
             Console.WriteLine(
                 "  Habilidades: hab_enviadas=" + skillsSent +
+                ", hab_curas_enviadas=" + healsSent +
                 ", hab_ok=" + skillsOk +
                 ", hab_rechazadas=" + skillsRejected +
                 ", recurso_msgs=" + resourceMessages);

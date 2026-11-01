@@ -305,6 +305,8 @@ namespace Avelora.Server.Diagnostics
                 " pvp_rech_msgs=" + network.PvpRejectedMessages);
             Console.WriteLine(
                 "            habilidades: hab_usadas=" + zone.SkillsUsed +
+                " hab_area_objetivos=" + zone.AreaTargetsHit + " hab_area_tope=" + zone.AreaCapped +
+                " hab_curas=" + zone.HealsDone + " hab_cura_total=" + zone.HealAmount +
                 " hab_rechazadas=" + TotalSkillRejections(zone) +
                 " recurso_msgs=" + network.ResourceMessages +
                 " recurso_bytes=" + network.ResourceBytes +
@@ -327,7 +329,7 @@ namespace Avelora.Server.Diagnostics
         private static long TotalSkillRejections(Zone zone)
         {
             long total = 0;
-            for (int reason = (int)SkillRejectReason.UnknownSkill; reason <= (int)SkillRejectReason.NotEnoughResource; reason++)
+            for (int reason = (int)SkillRejectReason.UnknownSkill; reason <= (int)SkillRejectReason.FullHealth; reason++)
             {
                 total += zone.SkillsRejected((SkillRejectReason)reason);
             }
@@ -463,6 +465,9 @@ namespace Avelora.Server.Diagnostics
                 ", xp_perdida_muerte=" + zone.ExperienceLost);
             Console.WriteLine(
                 "  Habilidades     : hab_usadas=" + zone.SkillsUsed +
+                ", hab_area_objetivos=" + zone.AreaTargetsHit + ", hab_area_tope=" + zone.AreaCapped +
+                ", hab_curas=" + zone.HealsDone + ", hab_cura_total=" + zone.HealAmount +
+                ", hab_rech_vida_llena=" + zone.SkillsRejected(SkillRejectReason.FullHealth) +
                 ", hab_rechazadas=" + TotalSkillRejections(zone) +
                 ", recurso_msgs=" + network.ResourceMessages +
                 ", recurso_bytes=" + network.ResourceBytes +

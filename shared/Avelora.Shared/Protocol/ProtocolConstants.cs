@@ -32,7 +32,7 @@ namespace Avelora.Shared.Protocol
         /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP;
         /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus.
         /// </summary>
-        public const ushort Version = 21;
+        public const ushort Version = 22;
 
         /// <summary>Máximo de zonas de mapa anunciadas al entrar (I-15).</summary>
         public const int MaxZones = 32;

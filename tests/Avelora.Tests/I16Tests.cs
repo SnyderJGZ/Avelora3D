@@ -268,10 +268,10 @@ namespace Avelora.Tests
         {
             SkillCatalog catalog = SkillCatalog.Load(RepoFile("skills.json"), ClassCatalog.Default);
 
-            Assert.Equal(4, catalog.Skills!.Count);
+            Assert.Equal(6, catalog.Skills!.Count);
             for (int classId = 1; classId <= 4; classId++)
             {
-                Assert.Single(catalog.Skills, skill => skill.ClassId == classId);
+                Assert.Contains(catalog.Skills, skill => skill.ClassId == classId);
             }
 
             SkillDefinition skill = Assert.IsType<SkillDefinition>(catalog.Find(4001));
@@ -425,7 +425,7 @@ namespace Avelora.Tests
             PlayerEntity warrior = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             NpcEntity npc = AddNpc(zone, 100, new Vec2(11f, 10f), health: 1000, defense: 50);
             var used = new List<ushort>();
-            zone.SkillUsed += (_, id) => used.Add(id);
+            zone.SkillUsed += (_, id, _) => used.Add(id);
             int manaBefore = warrior.Mana;
 
             Use(zone, warrior, npc.Id, WarriorSkill);

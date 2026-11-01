@@ -7,6 +7,8 @@
     { "id": 4003, "name": "Disparo certero", "classId": 3, "requiredLevel": 1, "resourceCost": 25,
       "cooldownSeconds": 5, "range": 7, "damage": 18, "damageType": "physical" },
     { "id": 4004, "name": "Castigo", "classId": 4, "requiredLevel": 1, "resourceCost": 20,
-      "cooldownSeconds": 5, "range": 5, "damage": 14, "damageType": "magical" }
+      "cooldownSeconds": 5, "range": 5, "damage": 14, "damageType": "magical" },
+    { "id": 4005, "name": "Bola de fuego", "classId": 2, "requiredLevel": 1, "resourceCost": 35, "cooldownSeconds": 8, "range": 6, "damage": 14, "damageType": "magical", "radius": 2.5, "maxTargets": 6 },
+    { "id": 4006, "name": "Curación", "classId": 4, "requiredLevel": 1, "resourceCost": 25, "cooldownSeconds": 3, "range": 6, "damage": 20, "damageType": "magical", "effect": "heal" }
   ]
 }

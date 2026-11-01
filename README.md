@@ -29,7 +29,7 @@ calcular igual (movimiento y colisión).
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
 > a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**;
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
-> I-16 añade habilidades y regeneración: **protocolo v21, esquema v8**.
+> I-17 añade áreas y curación: **protocolo v22, esquema v8**.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -383,7 +383,7 @@ pueden discrepar** del formato.
 | `PvpModeRejected` | 34 | S → C | 2 B | `NotInSafeZone` o `TooSoon` |
 | `UseSkill` | 35 | C → S | 7 B | habilidad y objetivo |
 | `SkillCatalog` | 36 | S → C | variable | habilidades de la clase y recurso |
-| `SkillUsed` | 37 | S → C | 3 B | uso aceptado |
+| `SkillUsed` | 37 | S → C | 7 B | uso aceptado y objetivo |
 | `SkillRejected` | 38 | S → C | 4 B | habilidad y motivo |
 | `ResourceStatus` | 39 | S → C | 5 B | recurso actual y máximo |
 
@@ -408,7 +408,7 @@ Canales:
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
-> I-16 sube a **v21** por los cinco mensajes de habilidades y recurso; esquema v8 sin cambios.
+> I-17 sube a **v22** por los campos de área, curación y objetivo; esquema v8 sin cambios.
 > I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
@@ -870,7 +870,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v21** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v22** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1125,6 +1125,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor, bots y cliente I-15b |
 | **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor, bots y cliente I-15pb |
 | **I-16** | Habilidades, regeneración y bots (protocolo v21, esquema v8) | ✅ servidor; cliente I-16b/I-16c implementado, Play pendiente |
+| **I-17** | Áreas y curación (protocolo v22, esquema v8) | ✅ servidor; cliente I-17b pendiente |
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
@@ -2009,6 +2010,37 @@ habilidad sobre el objetivo, con recarga, coste y bloqueo por nivel. Los accesos
 PlayerPrefs por personaje, solo en este ordenador; las antiguas claves de habilidades se migran.
 Verificación y comprobaciones pendientes en Play: [informe I-16c](docs/agentes/informes/I-16c.md).
 
+
+#### Áreas y curación (I-17, protocolo v22)
+
+El catálogo contiene seis habilidades. `effect` vale `damage` (por defecto) o `heal`;
+`radius` vale 0 para un objetivo o 0.5..8 para área; `maxTargets` vale 2..16 e incluye
+al principal (sin radio debe ser 0). La curación con radio se rechaza al cargar.
+
+El área se centra en el objetivo principal, validado con las reglas de I-16, alcance y visión
+desde el lanzador. Incluye el borde del radio sin tolerancia. Los secundarios pasan por
+`CheckTarget` (vivos, distintos del lanzador, PNJ fuera de Return, zonas seguras y PvP efectivo)
+y se omiten en silencio si fallan. La visión se comprueba desde el centro a cada secundario.
+El tope elige los más cercanos; empates conservan el orden de `EntityStore`. El bruto se calcula
+una vez y cada objetivo lo mitiga; botín, aggro, muerte y eventos se atribuyen por objetivo.
+Recurso y recarga se cobran una vez por lanzamiento.
+
+Se cura a uno mismo o a cualquier jugador vivo: PNJ, muertos e inexistentes son `InvalidTarget`.
+Un lanzador sin PvP efectivo no puede curar a quien lo tiene (`PvpNotAllowed`); las zonas seguras
+permiten curar. Alcance y visión se comprueban salvo sobre uno mismo. Vida llena produce
+`FullHealth = 12`, sin gasto ni recarga. Se usa la fórmula de habilidad sin mitigación y se
+recorta al déficit de vida; no cambia daño reciente, regeneración, acción, botín ni amenaza.
+
+`CombatEvent` mantiene entradas de 11 B: `Heal = 8`, atacante sanador, objetivo curado y cantidad
+real en `Damage`, sin otras banderas. `SkillCatalogEntry` añade `effect u8` (0 daño, 1 cura) y
+`radius f32`; `maxTargets` no viaja. `SkillUsed` mide 7 B e incluye `targetId i32`: solo el
+lanzador recibe la confirmación para dibujar el área; observadores reciben eventos de combate.
+
+Métricas nuevas: `hab_area_objetivos`, `hab_area_tope`, `hab_curas`, `hab_cura_total` y, en el
+resumen, `hab_rech_vida_llena`. Los bots priorizan área y se curan bajo el 70 % de vida;
+publican `hab_curas_enviadas`. Suite: **898/898** pruebas (39 nuevas). Validación y carga: [informe I-17](docs/agentes/informes/I-17.md).
+
+
 ### Chat (I-07, protocolo v10)
 
 Hay un único canal de chat por zona. Un `ChatSend` válido se devuelve como `Chat` a **todos los
@@ -2098,7 +2130,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v21, incluidos I-15p/I-15q e I-16.
-El cliente usa v21 e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v22, incluidos I-15p/I-15q, I-16 e I-17.
+El cliente usa v21 (I-17b pendiente; incompatible con el servidor v22) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

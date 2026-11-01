@@ -186,7 +186,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)21, ProtocolConstants.Version);
+            Assert.Equal((ushort)22, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -684,7 +684,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_Pvp_Usa_La_Version_20()
         {
-            Assert.Equal((ushort)21, ProtocolConstants.Version);
+            Assert.Equal((ushort)22, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -963,14 +963,14 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 27, 1 }, 0, 2, out _));
 
             byte[] invalidFlags = (byte[])oneBytes.Clone();
-            invalidFlags[12] = 8;
+            invalidFlags[12] = 16;
             Assert.False(MessageCodec.TryReadCombatEvent(invalidFlags, 0, invalidFlags.Length, out _));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(Array.Empty<CombatEventEntry>())));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(new CombatEventEntry[65])));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
-                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)8) })));
+                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)16) })));
         }
 
         [Fact]
@@ -1702,15 +1702,15 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void SkillUsed_Va_Y_Vuelve_En_3_Bytes_Y_Rechaza_Id_Cero()
+        public void SkillUsed_Va_Y_Vuelve_En_7_Bytes_Y_Rechaza_Id_Cero()
         {
-            byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4002));
-            Assert.Equal(3, bytes.Length);
+            byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4002, 1));
+            Assert.Equal(7, bytes.Length);
             Assert.True(MessageCodec.TryReadSkillUsed(bytes, 0, bytes.Length, out SkillUsedMessage decoded));
             Assert.Equal(4002, decoded.SkillId);
 
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillUsed(
-                new SkillUsedMessage(0)));
+                new SkillUsedMessage(0, 1)));
             Assert.False(MessageCodec.TryReadSkillUsed(new byte[] { (byte)MessageType.SkillUsed, 0, 0 }, 0, 3, out _));
             Assert.False(MessageCodec.TryReadSkillUsed(bytes, 0, 2, out _));
         }
@@ -1732,9 +1732,9 @@ namespace Avelora.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillRejected(
                 new SkillRejectedMessage(4003, (SkillRejectReason)0)));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillRejected(
-                new SkillRejectedMessage(4003, (SkillRejectReason)12)));
+                new SkillRejectedMessage(4003, (SkillRejectReason)13)));
             Assert.False(MessageCodec.TryReadSkillRejected(
-                new byte[] { (byte)MessageType.SkillRejected, 1, 0, 12 }, 0, 4, out _));
+                new byte[] { (byte)MessageType.SkillRejected, 1, 0, 13 }, 0, 4, out _));
             Assert.False(MessageCodec.TryReadSkillRejected(bytes, 0, 3, out _));
         }
 
@@ -1853,20 +1853,49 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadSkillCatalog(zeroCooldown, 0, zeroCooldown.Length, out _));
 
             byte[] emptyName = (byte[])bytes.Clone();
-            emptyName[entryStart + 14] = 0;
-            emptyName[entryStart + 15] = 0;
+            emptyName[entryStart + 19] = 0;
+            emptyName[entryStart + 20] = 0;
             Assert.False(MessageCodec.TryReadSkillCatalog(emptyName, 0, emptyName.Length, out _));
         }
 
         [Fact]
-        public void El_Protocolo_De_Habilidades_Usa_La_Version_21()
+        public void El_Protocolo_De_Habilidades_Usa_La_Version_22()
         {
-            Assert.Equal((ushort)21, ProtocolConstants.Version);
+            Assert.Equal((ushort)22, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);
             Assert.Equal((byte)38, (byte)MessageType.SkillRejected);
             Assert.Equal((byte)39, (byte)MessageType.ResourceStatus);
+        }
+
+        [Fact]
+        public void I17_Catalogo_Cura_Area_Y_Confirmacion_Con_Objetivo()
+        {
+            var entries = new[] { new SkillCatalogEntry(4005,1,1,35,160,6,14,"área",0,2.5f),
+                new SkillCatalogEntry(4006,1,1,25,60,6,20,"Cura",1) };
+            byte[] bytes = MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage("Maná",entries));
+            Assert.True(MessageCodec.TryReadSkillCatalog(bytes,0,bytes.Length,out var catalog));
+            Assert.Equal(2.5f,catalog.Skills[0].Radius);Assert.Equal(1,catalog.Skills[1].Effect);
+            bytes=MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4005,123));
+            Assert.Equal(7,bytes.Length);Assert.True(MessageCodec.TryReadSkillUsed(bytes,0,7,out var used));Assert.Equal(123,used.TargetId);
+            Assert.Throws<ArgumentOutOfRangeException>(()=>MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4005,0)));
+            Array.Clear(bytes,3,4);Assert.False(MessageCodec.TryReadSkillUsed(bytes,0,7,out _));
+            bytes=MessageCodec.EncodeSkillRejected(new SkillRejectedMessage(4006,SkillRejectReason.FullHealth));
+            Assert.True(MessageCodec.TryReadSkillRejected(bytes,0,4,out var rejected));Assert.Equal(SkillRejectReason.FullHealth,rejected.Reason);
+            bytes=MessageCodec.EncodeCombatEvent(new CombatEventMessage(new[]{new CombatEventEntry(1,1,5,CombatEventFlags.Heal)}));
+            Assert.True(MessageCodec.TryReadCombatEvent(bytes,0,bytes.Length,out var combat));Assert.Equal(CombatEventFlags.Heal,combat.Entries[0].Flags);
+        }
+
+        [Theory]
+        [InlineData(2,0f)] [InlineData(0,-1f)] [InlineData(0,float.NaN)] [InlineData(0,float.PositiveInfinity)]
+        public void I17_Catalogo_Rechaza_Efecto_Y_Radio_En_Ambos_Sentidos(byte effect,float radius)
+        {
+            var entry=new SkillCatalogEntry(4005,1,1,35,160,6,14,"área",effect,radius);
+            Assert.Throws<ArgumentOutOfRangeException>(()=>MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage("M",new[]{entry})));
+            byte[] bytes=MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage("M",new[]{new SkillCatalogEntry(4005,1,1,35,160,6,14,"área")}));
+            int start=5;bytes[start+14]=effect;Array.Copy(BitConverter.GetBytes(radius),0,bytes,start+15,4);
+            Assert.False(MessageCodec.TryReadSkillCatalog(bytes,0,bytes.Length,out _));
         }
     }
 }

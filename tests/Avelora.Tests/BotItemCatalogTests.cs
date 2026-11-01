@@ -352,8 +352,8 @@ namespace Avelora.Tests
 
                     if (_sendSkillTelemetry)
                     {
-                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001)));
-                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001)));
+                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001, 1)));
+                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001, 1)));
                         _incoming.Enqueue(MessageCodec.EncodeSkillRejected(new SkillRejectedMessage(4001, SkillRejectReason.Cooldown)));
                         _incoming.Enqueue(MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(30, 100)));
                         _incoming.Enqueue(MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(34, 100)));

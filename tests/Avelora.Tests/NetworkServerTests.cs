@@ -423,7 +423,7 @@ namespace Avelora.Tests
             Assert.Equal(DeliveryMode.ReliableOrdered, sent.Mode);
             Assert.True(MessageCodec.TryReadSkillCatalog(sent.Data, 0, sent.Data.Length, out var catalog));
             Assert.Equal(Assert.IsType<CharacterResource>(ClassCatalog.Default.Find(2)!.Resource).Name, catalog.ResourceName);
-            Assert.Equal((ushort)4002, Assert.Single(catalog.Skills).Id);
+            Assert.Equal(new ushort[]{4002,4005},catalog.Skills.Select(s=>s.Id));
             harness.Transport.Sent.Clear();
             harness.Zone.Tick();
             harness.Server.PollOnce();
@@ -490,6 +490,23 @@ namespace Avelora.Tests
             Assert.Equal(DeliveryMode.ReliableOrdered, resource.Mode);
             Assert.True(MessageCodec.TryReadResourceStatus(resource.Data, 0, resource.Data.Length, out var status));
             Assert.Equal(mana - CargarHabilidades().Find(4001)!.ResourceCost, status.Current);
+        }
+
+        [Fact]
+        public void Cura_Propia_En_Red_Confirma_Objetivo_Y_Evento_Heal()
+        {
+            using var harness = new Harness(config => config.SnapshotEveryTicks=1, classes: ClassCatalog.Default, skills: CargarHabilidades());
+            harness.Connect(1);harness.Handshake(1,classId:4);harness.Pump();
+            var p=Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count-1]);
+            p.ClassId=4;p.Mana=100;p.Health=20;
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1,MessageCodec.EncodeUseSkill(new UseSkillMessage(4006,p.Id)));
+            harness.Server.PollOnce();harness.Zone.Tick();harness.Server.AfterTick(harness.Zone);harness.Server.PollOnce();
+            var sent=Assert.Single(harness.Transport.Sent,s=>s.Data[0]==(byte)MessageType.SkillUsed);
+            Assert.True(MessageCodec.TryReadSkillUsed(sent.Data,0,sent.Data.Length,out var used));
+            Assert.Equal(4006,used.SkillId);Assert.Equal(p.Id,used.TargetId);
+            Assert.Contains(harness.Transport.Sent,s=>MessageCodec.TryReadCombatEvent(s.Data,0,s.Data.Length,out var ev) &&
+                ev.Entries.Any(e=>e.TargetId==p.Id && e.Flags==CombatEventFlags.Heal));
         }
 
         [Fact]

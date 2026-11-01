@@ -158,7 +158,7 @@ solo manda el id (`TypeId` de jugador = `classId`).
     En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos, salvo que se entre en una zona segura,
     donde se cancela al entrar. PvP efectivo significa modo elegido PvP, estar en zona PvP o tener forzado restante. Dos jugadores
    vivos con PvP efectivo se pueden dañar fuera de zonas seguras, también en zona normal.
-   Alcance, visión, defensa y recarga los decide el servidor. La curación de aliados se afina en I-17.
+   Alcance, visión, defensa y recarga los decide el servidor. La curación de aliados se afina en I-17. Decidido en I-17: se cura a uno mismo y a cualquier jugador vivo, salvo a uno con PvP efectivo si tú no lo tienes; en zona segura también; sin amenaza.
 4. **Armas de dos manos y base para clases futuras.** Cada arma declara `handedness`
    (`one` | `two`); una `two` bloquea `offhand`. Los tipos de arma y la lista que cada clase puede usar
    son **datos** (`weaponTypes` en `classes.json`), así bárbaro (hacha a dos manos), paladín (maza y
@@ -787,6 +787,8 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
 - **Fuera:** áreas, curas, estados, habilidades finales.
 
 ### I-17 — Áreas y curación (protocolo v22)
+
+Implementado: servidor con área centrada en objetivo, radio, tope por cercanía y visión; cura propia y a jugadores vivos con reglas PvP, sin amenaza; catálogo v22, eventos Heal, bots y métricas. Cliente I-17b pendiente.
 
 - **Alcance:** efecto de área centrado en el objetivo con radio; curación de aliado (ver §0.6: quién es
   aliado); sanador funcional; mago con área.

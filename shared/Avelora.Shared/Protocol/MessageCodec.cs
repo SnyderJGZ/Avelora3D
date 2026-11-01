@@ -1665,7 +1665,7 @@ namespace Avelora.Shared.Protocol
 
             for (int i = 0; i < entries.Length; i++)
             {
-                if (((byte)entries[i].Flags & ~7) != 0)
+                if (((byte)entries[i].Flags & ~15) != 0)
                 {
                     throw new ArgumentOutOfRangeException(nameof(message), "CombatEvent contiene banderas desconocidas.");
                 }
@@ -1713,7 +1713,7 @@ namespace Avelora.Shared.Protocol
                     int targetId = reader.ReadInt32();
                     ushort damage = reader.ReadUInt16();
                     byte flags = reader.ReadByte();
-                    if ((flags & ~7) != 0)
+                    if ((flags & ~15) != 0)
                     {
                         return false;
                     }
@@ -2331,7 +2331,7 @@ namespace Avelora.Shared.Protocol
         // ---------------------------------------------------------------- I-16: Habilidades
 
         private const int UseSkillSize = 1 + 2 + 4;
-        private const int SkillUsedSize = 1 + 2;
+        private const int SkillUsedSize = 1 + 2 + 4;
         private const int SkillRejectedSize = 1 + 2 + 1;
         private const int ResourceStatusSize = 1 + 2 + 2;
 
@@ -2380,7 +2380,7 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica SkillCatalog: tipo, resourceName (string), count (u8), por entrada: id (u16), requiredLevel (u8), damageType (u8), resourceCost (u16), cooldownTicks (u16), range (f32), damage (u16), name (string).</summary>
+        /// <summary>Codifica SkillCatalog: tipo, resourceName (string), count (u8), por entrada: id (u16), requiredLevel (u8), damageType (u8), resourceCost (u16), cooldownTicks (u16), range (f32), damage (u16), effect (u8), radius (f32), name (string).</summary>
         public static byte[] EncodeSkillCatalog(in SkillCatalogMessage message)
         {
             SkillCatalogEntry[] skills = message.Skills ?? Array.Empty<SkillCatalogEntry>();
@@ -2426,13 +2426,15 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentOutOfRangeException(nameof(message), "range debe ser finito y > 0.");
                 }
 
+                if (skill.Effect > 1 || float.IsNaN(skill.Radius) || float.IsInfinity(skill.Radius) || skill.Radius < 0f)
+                    throw new ArgumentOutOfRangeException(nameof(message), "effect o radius inválido.");
                 int nameBytes = GetStrictUtf8ByteCount(skill.Name);
                 if (nameBytes == 0 || nameBytes > ProtocolConstants.MaxSkillNameBytes)
                 {
                     throw new ArgumentException("El nombre de la habilidad debe ocupar 1.." + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
                 }
 
-                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 2 + nameBytes;
+                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 1 + 4 + 2 + nameBytes;
             }
 
             if (size > ProtocolConstants.MaxMessageSize)
@@ -2456,6 +2458,8 @@ namespace Avelora.Shared.Protocol
                 writer.WriteUInt16(skill.CooldownTicks);
                 writer.WriteSingle(skill.Range);
                 writer.WriteUInt16(skill.Damage);
+                writer.WriteByte(skill.Effect);
+                writer.WriteSingle(skill.Radius);
                 writer.WriteString(skill.Name, ProtocolConstants.MaxSkillNameBytes);
             }
 
@@ -2497,16 +2501,18 @@ namespace Avelora.Shared.Protocol
                     ushort cooldownTicks = reader.ReadUInt16();
                     float range = reader.ReadSingle();
                     ushort damage = reader.ReadUInt16();
+                    byte effect = reader.ReadByte();
+                    float radius = reader.ReadSingle();
                     string name = reader.ReadString(ProtocolConstants.MaxSkillNameBytes);
 
-                    if (id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
+                    if (effect > 1 || float.IsNaN(radius) || float.IsInfinity(radius) || radius < 0f || id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
                         float.IsNaN(range) || float.IsInfinity(range) || range <= 0f ||
                         string.IsNullOrEmpty(name))
                     {
                         return false;
                     }
 
-                    skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks, range, damage, name);
+                    skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks, range, damage, name, effect, radius);
                 }
 
                 if (reader.Remaining != 0)
@@ -2527,10 +2533,10 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica SkillUsed: tipo, skillId (u16) = 3 bytes.</summary>
+        /// <summary>Codifica SkillUsed: tipo, skillId (u16), targetId (i32) = 7 bytes.</summary>
         public static byte[] EncodeSkillUsed(in SkillUsedMessage message)
         {
-            if (message.SkillId == 0)
+            if (message.SkillId == 0 || message.TargetId <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(message), "skillId no puede ser 0.");
             }
@@ -2539,10 +2545,11 @@ namespace Avelora.Shared.Protocol
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.SkillUsed);
             writer.WriteUInt16(message.SkillId);
+            writer.WriteInt32(message.TargetId);
             return buffer;
         }
 
-        /// <summary>Lee SkillUsed; exige 3 bytes exactos y skillId != 0.</summary>
+        /// <summary>Lee SkillUsed; exige 7 bytes exactos, skillId != 0 y targetId > 0.</summary>
         public static bool TryReadSkillUsed(byte[] buffer, int offset, int length, out SkillUsedMessage message)
         {
             message = default;
@@ -2556,12 +2563,13 @@ namespace Avelora.Shared.Protocol
             {
                 var reader = new WireReader(buffer, offset + 1, length - 1);
                 ushort skillId = reader.ReadUInt16();
-                if (skillId == 0 || reader.Remaining != 0)
+                int targetId = reader.ReadInt32();
+                if (skillId == 0 || targetId <= 0 || reader.Remaining != 0)
                 {
                     return false;
                 }
 
-                message = new SkillUsedMessage(skillId);
+                message = new SkillUsedMessage(skillId, targetId);
                 return true;
             }
             catch (ProtocolException)
@@ -2573,7 +2581,7 @@ namespace Avelora.Shared.Protocol
         /// <summary>Codifica SkillRejected: tipo, skillId (u16), reason (u8) = 4 bytes.</summary>
         public static byte[] EncodeSkillRejected(in SkillRejectedMessage message)
         {
-            if (message.Reason < SkillRejectReason.UnknownSkill || message.Reason > SkillRejectReason.NotEnoughResource)
+            if (message.Reason < SkillRejectReason.UnknownSkill || message.Reason > SkillRejectReason.FullHealth)
             {
                 throw new ArgumentOutOfRangeException(nameof(message), "reason fuera de rango.");
             }
@@ -2586,7 +2594,7 @@ namespace Avelora.Shared.Protocol
             return buffer;
         }
 
-        /// <summary>Lee SkillRejected; valida tipo, tamaño y reason en 1..11 (skillId 0 vale: lo mandó el cliente).</summary>
+        /// <summary>Lee SkillRejected; valida tipo, tamaño y reason en 1..12 (skillId 0 vale: lo mandó el cliente).</summary>
         public static bool TryReadSkillRejected(byte[] buffer, int offset, int length, out SkillRejectedMessage message)
         {
             message = default;
@@ -2601,7 +2609,7 @@ namespace Avelora.Shared.Protocol
                 var reader = new WireReader(buffer, offset + 1, length - 1);
                 ushort skillId = reader.ReadUInt16();
                 byte reasonByte = reader.ReadByte();
-                if (reasonByte < (byte)SkillRejectReason.UnknownSkill || reasonByte > (byte)SkillRejectReason.NotEnoughResource || reader.Remaining != 0)
+                if (reasonByte < (byte)SkillRejectReason.UnknownSkill || reasonByte > (byte)SkillRejectReason.FullHealth || reader.Remaining != 0)
                 {
                     return false;
                 }

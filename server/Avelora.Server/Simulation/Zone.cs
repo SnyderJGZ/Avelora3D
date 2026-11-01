@@ -278,7 +278,7 @@ namespace Avelora.Server.Simulation
         public event Action<PlayerEntity, PvpModeRejectReason>? PvpModeRejected;
 
         /// <summary>El servidor aceptó una habilidad del jugador (I-16).</summary>
-        public event Action<PlayerEntity, ushort>? SkillUsed;
+        public event Action<PlayerEntity, ushort, int>? SkillUsed;
 
         /// <summary>El servidor rechazó una habilidad del jugador (I-16).</summary>
         public event Action<PlayerEntity, ushort, SkillRejectReason>? SkillRejected;
@@ -349,6 +349,14 @@ namespace Avelora.Server.Simulation
         public long RejectedPvpTargetDead => _combat?.RejectedPvpTargetDead ?? 0;
         public long RejectedPvpSelf => _combat?.RejectedPvpSelf ?? 0;
 
+        /// <summary>Secundarios golpeados por áreas.</summary>
+        public long AreaTargetsHit => _combat?.AreaTargetsHit ?? 0;
+        /// <summary>Áreas con candidatos que exceden el tope.</summary>
+        public long AreaCapped => _combat?.AreaCapped ?? 0;
+        /// <summary>Curas realizadas.</summary>
+        public long HealsDone => _combat?.HealsDone ?? 0;
+        /// <summary>Vida realmente curada.</summary>
+        public long HealAmount => _combat?.HealAmount ?? 0;
         /// <summary>Habilidades válidas (I-16).</summary>
         public long SkillsUsed => _combat?.SkillsUsed ?? 0;
 
@@ -765,8 +773,8 @@ namespace Avelora.Server.Simulation
         private void OnPvpModeRejected(PlayerEntity player, PvpModeRejectReason reason) =>
             PvpModeRejected?.Invoke(player, reason);
 
-        private void OnSkillUsed(PlayerEntity player, ushort skillId) =>
-            SkillUsed?.Invoke(player, skillId);
+        private void OnSkillUsed(PlayerEntity player, ushort skillId, int targetId) =>
+            SkillUsed?.Invoke(player, skillId, targetId);
 
         private void OnSkillRejected(PlayerEntity player, ushort skillId, SkillRejectReason reason) =>
             SkillRejected?.Invoke(player, skillId, reason);
