@@ -2328,6 +2328,338 @@ namespace Avelora.Shared.Protocol
             }
         }
 
+        // ---------------------------------------------------------------- I-16: Habilidades
+
+        private const int UseSkillSize = 1 + 2 + 4;
+        private const int SkillUsedSize = 1 + 2;
+        private const int SkillRejectedSize = 1 + 2 + 1;
+        private const int ResourceStatusSize = 1 + 2 + 2;
+
+        /// <summary>Codifica UseSkill: tipo, skillId (u16), targetId (i32) = 7 bytes.</summary>
+        public static byte[] EncodeUseSkill(in UseSkillMessage message)
+        {
+            if (message.SkillId == 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "skillId 0 es el ataque básico; use EncodeAttack.");
+            }
+
+            var buffer = new byte[UseSkillSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.UseSkill);
+            writer.WriteUInt16(message.SkillId);
+            writer.WriteInt32(message.TargetId);
+            return buffer;
+        }
+
+        /// <summary>Lee UseSkill; exige 7 bytes exactos y skillId != 0.</summary>
+        public static bool TryReadUseSkill(byte[] buffer, int offset, int length, out UseSkillMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.UseSkill, UseSkillSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                ushort skillId = reader.ReadUInt16();
+                int targetId = reader.ReadInt32();
+                if (skillId == 0 || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new UseSkillMessage(skillId, targetId);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica SkillCatalog: tipo, resourceName (string), count (u8), por entrada: id (u16), requiredLevel (u8), damageType (u8), resourceCost (u16), cooldownTicks (u16), range (f32), damage (u16), name (string).</summary>
+        public static byte[] EncodeSkillCatalog(in SkillCatalogMessage message)
+        {
+            SkillCatalogEntry[] skills = message.Skills ?? Array.Empty<SkillCatalogEntry>();
+
+            if (skills.Length > ProtocolConstants.MaxSkillsPerClass)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "SkillCatalog supera el máximo de habilidades por clase.");
+            }
+
+            if (string.IsNullOrEmpty(message.ResourceName))
+            {
+                throw new ArgumentException("El nombre del recurso no puede estar vacío.", nameof(message));
+            }
+
+            int resourceNameBytes = GetStrictUtf8ByteCount(message.ResourceName);
+            if (resourceNameBytes > ProtocolConstants.MaxSkillNameBytes)
+            {
+                throw new ArgumentException("El nombre del recurso supera " + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
+            }
+
+            int size = 1 + 2 + resourceNameBytes + 1;
+            for (int i = 0; i < skills.Length; i++)
+            {
+                SkillCatalogEntry skill = skills[i];
+                if (skill.Id == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "El id de la habilidad no puede ser 0.");
+                }
+                if (skill.RequiredLevel == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "requiredLevel no puede ser 0.");
+                }
+                if (skill.DamageType > 1)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "damageType debe ser 0 (physical) o 1 (magical).");
+                }
+                if (skill.CooldownTicks == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "cooldownTicks no puede ser 0.");
+                }
+                if (float.IsNaN(skill.Range) || float.IsInfinity(skill.Range) || skill.Range <= 0f)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "range debe ser finito y > 0.");
+                }
+
+                int nameBytes = GetStrictUtf8ByteCount(skill.Name);
+                if (nameBytes == 0 || nameBytes > ProtocolConstants.MaxSkillNameBytes)
+                {
+                    throw new ArgumentException("El nombre de la habilidad debe ocupar 1.." + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
+                }
+
+                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 2 + nameBytes;
+            }
+
+            if (size > ProtocolConstants.MaxMessageSize)
+            {
+                throw new ArgumentException("SkillCatalog ocupa " + size + " bytes y supera el tope del protocolo.", nameof(message));
+            }
+
+            var buffer = new byte[size];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.SkillCatalog);
+            writer.WriteString(message.ResourceName, ProtocolConstants.MaxSkillNameBytes);
+            writer.WriteByte((byte)skills.Length);
+
+            for (int i = 0; i < skills.Length; i++)
+            {
+                SkillCatalogEntry skill = skills[i];
+                writer.WriteUInt16(skill.Id);
+                writer.WriteByte(skill.RequiredLevel);
+                writer.WriteByte(skill.DamageType);
+                writer.WriteUInt16(skill.ResourceCost);
+                writer.WriteUInt16(skill.CooldownTicks);
+                writer.WriteSingle(skill.Range);
+                writer.WriteUInt16(skill.Damage);
+                writer.WriteString(skill.Name, ProtocolConstants.MaxSkillNameBytes);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee SkillCatalog y valida todos los campos.</summary>
+        public static bool TryReadSkillCatalog(byte[] buffer, int offset, int length, out SkillCatalogMessage message)
+        {
+            message = default;
+
+            if (!HasHeader(buffer, offset, length, MessageType.SkillCatalog) || length < 4)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                string resourceName = reader.ReadString(ProtocolConstants.MaxSkillNameBytes);
+                if (string.IsNullOrEmpty(resourceName))
+                {
+                    return false;
+                }
+
+                int count = reader.ReadByte();
+                if (count > ProtocolConstants.MaxSkillsPerClass)
+                {
+                    return false;
+                }
+
+                var skills = count == 0 ? Array.Empty<SkillCatalogEntry>() : new SkillCatalogEntry[count];
+                for (int i = 0; i < count; i++)
+                {
+                    ushort id = reader.ReadUInt16();
+                    byte requiredLevel = reader.ReadByte();
+                    byte damageType = reader.ReadByte();
+                    ushort resourceCost = reader.ReadUInt16();
+                    ushort cooldownTicks = reader.ReadUInt16();
+                    float range = reader.ReadSingle();
+                    ushort damage = reader.ReadUInt16();
+                    string name = reader.ReadString(ProtocolConstants.MaxSkillNameBytes);
+
+                    if (id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
+                        float.IsNaN(range) || float.IsInfinity(range) || range <= 0f ||
+                        string.IsNullOrEmpty(name))
+                    {
+                        return false;
+                    }
+
+                    skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks, range, damage, name);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new SkillCatalogMessage(resourceName, skills);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+            catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica SkillUsed: tipo, skillId (u16) = 3 bytes.</summary>
+        public static byte[] EncodeSkillUsed(in SkillUsedMessage message)
+        {
+            if (message.SkillId == 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "skillId no puede ser 0.");
+            }
+
+            var buffer = new byte[SkillUsedSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.SkillUsed);
+            writer.WriteUInt16(message.SkillId);
+            return buffer;
+        }
+
+        /// <summary>Lee SkillUsed; exige 3 bytes exactos y skillId != 0.</summary>
+        public static bool TryReadSkillUsed(byte[] buffer, int offset, int length, out SkillUsedMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.SkillUsed, SkillUsedSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                ushort skillId = reader.ReadUInt16();
+                if (skillId == 0 || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new SkillUsedMessage(skillId);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica SkillRejected: tipo, skillId (u16), reason (u8) = 4 bytes.</summary>
+        public static byte[] EncodeSkillRejected(in SkillRejectedMessage message)
+        {
+            if (message.Reason < SkillRejectReason.UnknownSkill || message.Reason > SkillRejectReason.NotEnoughResource)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "reason fuera de rango.");
+            }
+
+            var buffer = new byte[SkillRejectedSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.SkillRejected);
+            writer.WriteUInt16(message.SkillId);
+            writer.WriteByte((byte)message.Reason);
+            return buffer;
+        }
+
+        /// <summary>Lee SkillRejected; valida tipo, tamaño y reason en 1..11 (skillId 0 vale: lo mandó el cliente).</summary>
+        public static bool TryReadSkillRejected(byte[] buffer, int offset, int length, out SkillRejectedMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.SkillRejected, SkillRejectedSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                ushort skillId = reader.ReadUInt16();
+                byte reasonByte = reader.ReadByte();
+                if (reasonByte < (byte)SkillRejectReason.UnknownSkill || reasonByte > (byte)SkillRejectReason.NotEnoughResource || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new SkillRejectedMessage(skillId, (SkillRejectReason)reasonByte);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica ResourceStatus: tipo, current (u16), max (u16) = 5 bytes.</summary>
+        public static byte[] EncodeResourceStatus(in ResourceStatusMessage message)
+        {
+            if (message.Current > message.Max)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "current no puede ser mayor que max.");
+            }
+
+            var buffer = new byte[ResourceStatusSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.ResourceStatus);
+            writer.WriteUInt16(message.Current);
+            writer.WriteUInt16(message.Max);
+            return buffer;
+        }
+
+        /// <summary>Lee ResourceStatus; exige 5 bytes exactos y current <= max.</summary>
+        public static bool TryReadResourceStatus(byte[] buffer, int offset, int length, out ResourceStatusMessage message)
+        {
+            message = default;
+
+            if (!HasExactHeader(buffer, offset, length, MessageType.ResourceStatus, ResourceStatusSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                ushort current = reader.ReadUInt16();
+                ushort max = reader.ReadUInt16();
+                if (current > max || reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ResourceStatusMessage(current, max);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
         // ---------------------------------------------------------------- ayudas
 
         private static bool HasExactHeader(

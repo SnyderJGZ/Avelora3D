@@ -357,6 +357,7 @@ recarga      = la del arma (sin cambios), en ticks
 
 El ataque básico **no cuesta recurso** (así nadie se queda sin poder atacar). El recurso solo se
 gasta en habilidades (§3.4); hasta entonces solo se muestra y se regenera.
+Regeneración: `resource.regenPerSecond` por clase, entera, una vez por segundo (I-16).
 
 ### 2.4 Encaje con `levels.json`
 
@@ -777,14 +778,15 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
 - **Fuera:** facciones, grupos, gremios, reputación y pérdida de objetos (tras el MVP).
 - **Verificación:** pruebas de reglas, protocolo, red, persistencia y bots; dos pasadas de carga.
 
-### I-16 — Habilidades: base y daño de objetivo único (protocolo v17)
+### I-16 — Habilidades: base y daño de objetivo único (protocolo v21)
 
 - **Alcance:** `skills.json`; `SkillCatalog`; `UseSkill(skillId, targetId)`; coste de recurso, recarga
   en ticks, requisito de nivel y de clase; **una** habilidad de daño de objetivo único por clase para
   validar el sistema.
+- **Implementado:** recurso con regeneración por clase; `UseSkill`, `SkillCatalog`, `SkillUsed`, `SkillRejected` y `ResourceStatus`; recargas sin guardar.
 - **Fuera:** áreas, curas, estados, habilidades finales.
 
-### I-17 — Áreas y curación (protocolo v18)
+### I-17 — Áreas y curación (protocolo v22)
 
 - **Alcance:** efecto de área centrado en el objetivo con radio; curación de aliado (ver §0.6: quién es
   aliado); sanador funcional; mago con área.

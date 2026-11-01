@@ -1098,4 +1098,112 @@ namespace Avelora.Shared.Protocol
         public PvpModeRejectedMessage(PvpModeRejectReason reason) => Reason = reason;
         public PvpModeRejectReason Reason { get; }
     }
+
+    /// <summary>Motivo de rechazo de una habilidad (I-16).</summary>
+    public enum SkillRejectReason : byte
+    {
+        UnknownSkill = 1,
+        WrongClass = 2,
+        LevelTooLow = 3,
+        Dead = 4,
+        InvalidTarget = 5,
+        SafeZone = 6,
+        PvpNotAllowed = 7,
+        OutOfRange = 8,
+        NoLineOfSight = 9,
+        Cooldown = 10,
+        NotEnoughResource = 11
+    }
+
+    /// <summary>Petición del cliente para usar una habilidad (I-16). 0 = ataque básico.</summary>
+    public readonly struct UseSkillMessage
+    {
+        public UseSkillMessage(ushort skillId, int targetId)
+        {
+            SkillId = skillId;
+            TargetId = targetId;
+        }
+
+        public ushort SkillId { get; }
+        public int TargetId { get; }
+    }
+
+    /// <summary>Una entrada del catálogo de habilidades enviada al cliente (I-16).</summary>
+    public readonly struct SkillCatalogEntry
+    {
+        public SkillCatalogEntry(
+            ushort id,
+            byte requiredLevel,
+            byte damageType, // 0 = physical, 1 = magical
+            ushort resourceCost,
+            ushort cooldownTicks,
+            float range,
+            ushort damage,
+            string name)
+        {
+            Id = id;
+            RequiredLevel = requiredLevel;
+            DamageType = damageType;
+            ResourceCost = resourceCost;
+            CooldownTicks = cooldownTicks;
+            Range = range;
+            Damage = damage;
+            Name = name ?? string.Empty;
+        }
+
+        public ushort Id { get; }
+        public byte RequiredLevel { get; }
+        public byte DamageType { get; }
+        public ushort ResourceCost { get; }
+        public ushort CooldownTicks { get; }
+        public float Range { get; }
+        public ushort Damage { get; }
+        public string Name { get; }
+    }
+
+    /// <summary>Catálogo de habilidades enviado al entrar (I-16). Solo incluye las de la clase del personaje.</summary>
+    public readonly struct SkillCatalogMessage
+    {
+        public SkillCatalogMessage(string resourceName, SkillCatalogEntry[] skills)
+        {
+            ResourceName = resourceName ?? string.Empty;
+            Skills = skills ?? Array.Empty<SkillCatalogEntry>();
+        }
+
+        public string ResourceName { get; }
+        public SkillCatalogEntry[] Skills { get; }
+    }
+
+    /// <summary>Confirmación de que el servidor aceptó el uso de la habilidad (I-16).</summary>
+    public readonly struct SkillUsedMessage
+    {
+        public SkillUsedMessage(ushort skillId) => SkillId = skillId;
+        public ushort SkillId { get; }
+    }
+
+    /// <summary>Rechazo del uso de una habilidad (I-16).</summary>
+    public readonly struct SkillRejectedMessage
+    {
+        public SkillRejectedMessage(ushort skillId, SkillRejectReason reason)
+        {
+            SkillId = skillId;
+            Reason = reason;
+        }
+
+        public ushort SkillId { get; }
+        public SkillRejectReason Reason { get; }
+    }
+
+    /// <summary>Estado del recurso (actual y máximo) enviado solo al dueño cuando cambia (I-16).</summary>
+    public readonly struct ResourceStatusMessage
+    {
+        public ResourceStatusMessage(ushort current, ushort max)
+        {
+            Current = current;
+            Max = max;
+        }
+
+        public ushort Current { get; }
+        public ushort Max { get; }
+    }
 }

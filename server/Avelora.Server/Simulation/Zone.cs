@@ -92,7 +92,8 @@ namespace Avelora.Server.Simulation
             ZoneMap? zones = null,
             int pvpModeChangeTicks = 600,
             int pvpModeChangeFromPvpTicks = 1200,
-            int pvpForcedTicks = 6000)
+            int pvpForcedTicks = 6000,
+            SkillCatalog? skills = null)
         {
             if (map is null)
             {
@@ -142,6 +143,7 @@ namespace Avelora.Server.Simulation
             Inputs = inputs;
             Attacks = attacks;
             ItemActions = itemActions;
+            Skills = skills;
             _npcCatalog = npcs;
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
@@ -155,7 +157,9 @@ namespace Avelora.Server.Simulation
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value, items, _classes, map, CombatEvents, Zones);
+                _combat = new CombatSystem(combat.Value, items, _classes, map, CombatEvents, Zones, skills);
+                _combat.SkillUsed += OnSkillUsed;
+                _combat.SkillRejected += OnSkillRejected;
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -231,6 +235,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Cola de acciones de objeto de la red, o null en zonas sin objetos.</summary>
         public ItemActionQueue? ItemActions { get; }
 
+        /// <summary>Catálogo de habilidades de la zona, o null si están desactivadas (I-16).</summary>
+        public SkillCatalog? Skills { get; }
+
         /// <summary>Número configurado de huecos del inventario.</summary>
         public int InventorySlots { get; }
 
@@ -269,6 +276,15 @@ namespace Avelora.Server.Simulation
         public event Action<PlayerEntity, PvpStatusMessage>? PvpStatusChanged;
 
         public event Action<PlayerEntity, PvpModeRejectReason>? PvpModeRejected;
+
+        /// <summary>El servidor aceptó una habilidad del jugador (I-16).</summary>
+        public event Action<PlayerEntity, ushort>? SkillUsed;
+
+        /// <summary>El servidor rechazó una habilidad del jugador (I-16).</summary>
+        public event Action<PlayerEntity, ushort, SkillRejectReason>? SkillRejected;
+
+        /// <summary>El recurso de un jugador cambió y hay que avisar solo a él (I-16).</summary>
+        public event Action<PlayerEntity>? ResourceChanged;
 
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
@@ -332,6 +348,12 @@ namespace Avelora.Server.Simulation
         public long RejectedPvpTargetPve => _combat?.RejectedPvpTargetPve ?? 0;
         public long RejectedPvpTargetDead => _combat?.RejectedPvpTargetDead ?? 0;
         public long RejectedPvpSelf => _combat?.RejectedPvpSelf ?? 0;
+
+        /// <summary>Habilidades válidas (I-16).</summary>
+        public long SkillsUsed => _combat?.SkillsUsed ?? 0;
+
+        /// <summary>Rechazos de habilidad por motivo (I-16).</summary>
+        public long SkillsRejected(SkillRejectReason reason) => _combat?.SkillsRejected(reason) ?? 0;
         public long PvpModeChanges => _pvp.ModeChanges;
         public long PvpModeUnchanged => _pvp.ModeUnchanged;
         public long PvpRejectedNotInSafeZone => _pvp.RejectedNotInSafeZone;
@@ -638,6 +660,26 @@ namespace Avelora.Server.Simulation
             UpdatePlayerZones();
             _pvp.Tick(Entities, _itemInbox, !ReferenceEquals(Zones, ZoneMap.Empty));
 
+            // Recurso (I-16): al final del tick, porque StatsSystem puede haber cambiado MaxMana
+            // después del combate. Solo se avisa cuando cambia lo que vio el cliente.
+            if (Skills != null)
+            {
+                for (int i = 0; i < Entities.Count; i++)
+                {
+                    if (!(Entities[i] is PlayerEntity player))
+                    {
+                        continue;
+                    }
+
+                    long key = ((long)player.Mana << 32) | (uint)player.MaxMana;
+                    if (key != player.ResourceSentKey)
+                    {
+                        player.ResourceSentKey = key;
+                        ResourceChanged?.Invoke(player);
+                    }
+                }
+            }
+
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
             // O(n) con n = entidades vivas y deja la grilla lista para los snapshots de AfterTick.
             for (int i = 0; i < Entities.Count; i++)
@@ -722,6 +764,12 @@ namespace Avelora.Server.Simulation
 
         private void OnPvpModeRejected(PlayerEntity player, PvpModeRejectReason reason) =>
             PvpModeRejected?.Invoke(player, reason);
+
+        private void OnSkillUsed(PlayerEntity player, ushort skillId) =>
+            SkillUsed?.Invoke(player, skillId);
+
+        private void OnSkillRejected(PlayerEntity player, ushort skillId, SkillRejectReason reason) =>
+            SkillRejected?.Invoke(player, skillId, reason);
 
         private PlayerEntity? ResolveLootOwner(NpcEntity npc)
         {

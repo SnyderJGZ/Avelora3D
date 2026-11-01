@@ -43,6 +43,9 @@
     <!-- Clases y atributos junto al ejecutable (I-08). -->
     <None Update="classes.json" CopyToOutputDirectory="PreserveNewest" />
 
+    <!-- Habilidades junto al ejecutable (I-16). -->
+    <None Update="skills.json" CopyToOutputDirectory="PreserveNewest" />
+
     <!-- El mapa vive en maps/ (contenido compartido cliente/servidor) y viaja junto al ejecutable. -->
     <None Include="..\..\maps\*.avmap" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

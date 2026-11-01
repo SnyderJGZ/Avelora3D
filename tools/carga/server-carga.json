@@ -18,6 +18,7 @@
   "itemsPath": "items-carga.json",
   "levelsPath": "levels-carga.json",
   "classesPath": "classes-carga.json",
+  "skillsPath": "skills-carga.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "lootReserveSeconds": 30,

@@ -111,5 +111,20 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: motivo de rechazo del cambio de modo PvP (I-15p).</summary>
         PvpModeRejected = 34,
+
+        /// <summary>Cliente → servidor: usar una habilidad (I-16).</summary>
+        UseSkill = 35,
+
+        /// <summary>Servidor → cliente: catálogo de habilidades de la clase del personaje (I-16).</summary>
+        SkillCatalog = 36,
+
+        /// <summary>Servidor → cliente: confirmación de uso de habilidad (I-16).</summary>
+        SkillUsed = 37,
+
+        /// <summary>Servidor → cliente: rechazo de uso de habilidad (I-16).</summary>
+        SkillRejected = 38,
+
+        /// <summary>Servidor → cliente: estado del recurso (actual y máximo) (I-16).</summary>
+        ResourceStatus = 39,
     }
 }

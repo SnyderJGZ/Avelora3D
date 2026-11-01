@@ -27,7 +27,7 @@ namespace Avelora.Server.Progression
         public List<CharacterClass>? Classes { get; set; }
 
         /// <summary>Carga y valida el catálogo de clases.</summary>
-        public static ClassCatalog Load(string path)
+        public static ClassCatalog Load(string path, LevelTable? levels = null)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -41,12 +41,12 @@ namespace Avelora.Server.Progression
 
             ClassCatalog catalog = JsonSerializer.Deserialize<ClassCatalog>(File.ReadAllText(path), JsonOptions)
                 ?? throw new InvalidOperationException("classes.json está vacío o no contiene un objeto.");
-            catalog.Validate();
+            catalog.Validate(levels);
             return catalog;
         }
 
         /// <summary>Valida las reglas comunes y cada definición de clase.</summary>
-        public void Validate()
+        public void Validate(LevelTable? levels = null)
         {
             if (BaseHealth < 1 || BaseHealth > 100_000)
             {
@@ -63,6 +63,7 @@ namespace Avelora.Server.Progression
                 throw new InvalidOperationException("classes.json: classes debe contener al menos una clase.");
             }
 
+            levels ??= LevelTable.Default;
             bool hasWarrior = false;
             for (int i = 0; i < Classes.Count; i++)
             {
@@ -112,6 +113,14 @@ namespace Avelora.Server.Progression
                 ValidateDefense(characterClass.Defense, where + ".defense");
                 ValidateDefense(characterClass.MagicResist, where + ".magicResist");
                 ValidateResource(characterClass.Resource, where + ".resource");
+                // Todos los puntos ganados (incluido nivel 1) pueden asignarse a inteligencia.
+                long maxInt = characterClass.Base!.Int + (long)levels.PointsPerLevel * levels.MaxLevel;
+                long maxResource = characterClass.Resource!.Base + maxInt * characterClass.Resource.PerInt;
+                if (maxResource > ushort.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + ".resource puede alcanzar " + maxResource + " al nivel máximo y el tope es 65535.");
+                }
                 ValidateUnarmed(characterClass.Unarmed, where + ".unarmed");
                 ValidateWeaponTypes(characterClass.WeaponTypes, where + ".weaponTypes");
             }
@@ -217,10 +226,11 @@ namespace Avelora.Server.Progression
         private static void ValidateResource(CharacterResource? resource, string where)
         {
             if (resource == null || !InRange(resource.Base, 0, 100_000) ||
-                !InRange(resource.PerInt, 0, 1000))
+                !InRange(resource.PerInt, 0, 1000) ||
+                !InRange(resource.RegenPerSecond, 0, 1000))
             {
                 throw new InvalidOperationException(
-                    "classes.json: " + where + ".base debe estar entre 0 y 100000 y perInt entre 0 y 1000.");
+                    "classes.json: " + where + ".base debe estar entre 0 y 100000, perInt entre 0 y 1000 y regenPerSecond entre 0 y 1000.");
             }
         }
 
@@ -314,6 +324,7 @@ namespace Avelora.Server.Progression
         public string Name { get; set; } = string.Empty;
         public int Base { get; set; } = -1;
         public int PerInt { get; set; } = -1;
+        public int RegenPerSecond { get; set; } = 0;
     }
 
     public sealed class UnarmedAttack

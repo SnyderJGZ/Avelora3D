@@ -10,7 +10,7 @@
       "healthPerVit": 5,
       "defense": 0,
       "magicResist": 0,
-      "resource": { "name": "Furia", "base": 100, "perInt": 0 },
+      "resource": { "name": "Furia", "base": 100, "perInt": 0, "regenPerSecond": 4 },
       "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
       "weaponTypes": ["Espada", "Hacha"]
     },
@@ -22,7 +22,7 @@
       "healthPerVit": 5,
       "defense": 0,
       "magicResist": 0,
-      "resource": { "name": "Maná", "base": 60, "perInt": 4 },
+      "resource": { "name": "Maná", "base": 60, "perInt": 4, "regenPerSecond": 3 },
       "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
       "weaponTypes": ["Bastón"]
     },
@@ -34,7 +34,7 @@
       "healthPerVit": 5,
       "defense": 0,
       "magicResist": 0,
-      "resource": { "name": "Energía", "base": 100, "perInt": 0 },
+      "resource": { "name": "Energía", "base": 100, "perInt": 0, "regenPerSecond": 6 },
       "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
       "weaponTypes": ["Arco"]
     },
@@ -46,7 +46,7 @@
       "healthPerVit": 5,
       "defense": 0,
       "magicResist": 0,
-      "resource": { "name": "Maná", "base": 60, "perInt": 4 },
+      "resource": { "name": "Maná", "base": 60, "perInt": 4, "regenPerSecond": 3 },
       "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
       "weaponTypes": ["Maza"]
     }

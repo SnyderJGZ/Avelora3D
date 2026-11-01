@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 using Xunit;
@@ -185,7 +186,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)20, ProtocolConstants.Version);
+            Assert.Equal((ushort)21, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -683,7 +684,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_Pvp_Usa_La_Version_20()
         {
-            Assert.Equal((ushort)20, ProtocolConstants.Version);
+            Assert.Equal((ushort)21, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -1677,6 +1678,195 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 30, 1, 0, 1 }, 0, 4, out _));
             Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 0, 0, 1 }, 0, 4, out _));
             Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 1, 0, 0 }, 0, 4, out _));
+        }
+
+        // ---------------------------------------------------------------- I-16: habilidades
+
+        [Fact]
+        public void UseSkill_Va_Y_Vuelve_En_7_Bytes_Y_Rechaza_Id_Cero()
+        {
+            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(4001, 1002));
+            Assert.Equal(7, bytes.Length);
+            Assert.True(MessageCodec.TryReadUseSkill(bytes, 0, bytes.Length, out UseSkillMessage decoded));
+            Assert.Equal(4001, decoded.SkillId);
+            Assert.Equal(1002, decoded.TargetId);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeUseSkill(
+                new UseSkillMessage(0, 1002)));
+            Assert.False(MessageCodec.TryReadUseSkill(
+                new byte[] { (byte)MessageType.Attack, 0, 0 }, 0, 3, out _));
+            Assert.False(MessageCodec.TryReadUseSkill(bytes, 0, bytes.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadUseSkill(
+                new byte[] { bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], 0 },
+                0, 8, out _));
+        }
+
+        [Fact]
+        public void SkillUsed_Va_Y_Vuelve_En_3_Bytes_Y_Rechaza_Id_Cero()
+        {
+            byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4002));
+            Assert.Equal(3, bytes.Length);
+            Assert.True(MessageCodec.TryReadSkillUsed(bytes, 0, bytes.Length, out SkillUsedMessage decoded));
+            Assert.Equal(4002, decoded.SkillId);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillUsed(
+                new SkillUsedMessage(0)));
+            Assert.False(MessageCodec.TryReadSkillUsed(new byte[] { (byte)MessageType.SkillUsed, 0, 0 }, 0, 3, out _));
+            Assert.False(MessageCodec.TryReadSkillUsed(bytes, 0, 2, out _));
+        }
+
+        [Fact]
+        public void SkillRejected_Va_Y_Vuelve_En_4_Bytes_Y_Rechaza_Motivo_Fuera_De_Rango()
+        {
+            byte[] bytes = MessageCodec.EncodeSkillRejected(
+                new SkillRejectedMessage(4003, SkillRejectReason.Cooldown));
+            Assert.Equal(4, bytes.Length);
+            Assert.True(MessageCodec.TryReadSkillRejected(
+                bytes, 0, bytes.Length, out SkillRejectedMessage decoded));
+            Assert.Equal(4003, decoded.SkillId);
+            Assert.Equal(SkillRejectReason.Cooldown, decoded.Reason);
+
+            // skillId 0 sí vale: el servidor rechaza lo que mandó el cliente.
+            Assert.True(MessageCodec.TryReadSkillRejected(
+                new byte[] { (byte)MessageType.SkillRejected, 0, 0, 1 }, 0, 4, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillRejected(
+                new SkillRejectedMessage(4003, (SkillRejectReason)0)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillRejected(
+                new SkillRejectedMessage(4003, (SkillRejectReason)12)));
+            Assert.False(MessageCodec.TryReadSkillRejected(
+                new byte[] { (byte)MessageType.SkillRejected, 1, 0, 12 }, 0, 4, out _));
+            Assert.False(MessageCodec.TryReadSkillRejected(bytes, 0, 3, out _));
+        }
+
+        [Fact]
+        public void ResourceStatus_Va_Y_Vuelve_En_5_Bytes_Y_Rechaza_Actual_Mayor_Que_Maximo()
+        {
+            byte[] bytes = MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(40, 100));
+            Assert.Equal(5, bytes.Length);
+            Assert.True(MessageCodec.TryReadResourceStatus(
+                bytes, 0, bytes.Length, out ResourceStatusMessage decoded));
+            Assert.Equal(40, decoded.Current);
+            Assert.Equal(100, decoded.Max);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeResourceStatus(
+                new ResourceStatusMessage(101, 100)));
+            Assert.False(MessageCodec.TryReadResourceStatus(
+                new byte[] { (byte)MessageType.ResourceStatus, 101, 0, 100, 0 }, 0, 5, out _));
+            Assert.False(MessageCodec.TryReadResourceStatus(bytes, 0, 4, out _));
+            Assert.False(MessageCodec.TryReadResourceStatus(
+                new byte[] { (byte)MessageType.ResourceStatus, 40, 0, 100, 0, 0 }, 0, 6, out _));
+        }
+
+        [Fact]
+        public void SkillCatalog_Va_Y_Vuelve_Vacio_Y_Con_Dos_Entradas_Con_Tildes()
+        {
+            byte[] empty = MessageCodec.EncodeSkillCatalog(
+                new SkillCatalogMessage("Maná", Array.Empty<SkillCatalogEntry>()));
+            Assert.True(MessageCodec.TryReadSkillCatalog(empty, 0, empty.Length, out SkillCatalogMessage emptyDecoded));
+            Assert.Equal("Maná", emptyDecoded.ResourceName);
+            Assert.Empty(emptyDecoded.Skills);
+
+            var original = new SkillCatalogMessage("Energía", new[]
+            {
+                new SkillCatalogEntry(4002, 1, 1, 20, 80, 6f, 18, "Proyectil arcano"),
+                new SkillCatalogEntry(4003, 2, 0, 25, 100, 7f, 18, "Cañón certero"),
+            });
+            byte[] bytes = MessageCodec.EncodeSkillCatalog(original);
+            Assert.True(MessageCodec.TryReadSkillCatalog(bytes, 0, bytes.Length, out SkillCatalogMessage decoded));
+            Assert.Equal("Energía", decoded.ResourceName);
+            Assert.Equal(2, decoded.Skills.Length);
+            Assert.Equal(4002, decoded.Skills[0].Id);
+            Assert.Equal((byte)1, decoded.Skills[0].DamageType);
+            Assert.Equal((ushort)80, decoded.Skills[0].CooldownTicks);
+            Assert.Equal(6f, decoded.Skills[0].Range);
+            Assert.Equal("Proyectil arcano", decoded.Skills[0].Name);
+            Assert.Equal("Cañón certero", decoded.Skills[1].Name);
+
+            Assert.False(MessageCodec.TryReadSkillCatalog(bytes, 0, bytes.Length - 1, out _));
+            byte[] longer = new byte[bytes.Length + 1];
+            Buffer.BlockCopy(bytes, 0, longer, 0, bytes.Length);
+            Assert.False(MessageCodec.TryReadSkillCatalog(longer, 0, longer.Length, out _));
+            byte[] wrongType = (byte[])bytes.Clone();
+            wrongType[0] = (byte)MessageType.SkillUsed;
+            Assert.False(MessageCodec.TryReadSkillCatalog(wrongType, 0, wrongType.Length, out _));
+            Assert.False(MessageCodec.TryReadSkillCatalog(
+                new byte[] { (byte)MessageType.SkillCatalog, 0, 0, 0 }, 0, 4, out _));
+        }
+
+        [Fact]
+        public void SkillCatalog_Encode_Rechaza_Cada_Caso_Invalido()
+        {
+            SkillCatalogEntry valid = new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe");
+
+            Assert.ThrowsAny<ArgumentException>(() => MessageCodec.EncodeSkillCatalog(
+                new SkillCatalogMessage(string.Empty, new[] { valid })));
+            Assert.ThrowsAny<ArgumentException>(() => MessageCodec.EncodeSkillCatalog(
+                new SkillCatalogMessage(new string('a', ProtocolConstants.MaxSkillNameBytes + 1), new[] { valid })));
+            Assert.ThrowsAny<ArgumentException>(() => MessageCodec.EncodeSkillCatalog(
+                new SkillCatalogMessage("Furia", Enumerable.Repeat(valid, ProtocolConstants.MaxSkillsPerClass + 1).ToArray())));
+
+            SkillCatalogEntry[] invalid =
+            {
+                new SkillCatalogEntry(0, 1, 0, 30, 120, 1.2f, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 0, 0, 30, 120, 1.2f, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 1, 2, 30, 120, 1.2f, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 1, 0, 30, 0, 1.2f, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 0f, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, float.NaN, 22, "Golpe"),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, string.Empty),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, new string('a', ProtocolConstants.MaxSkillNameBytes + 1)),
+            };
+
+            foreach (SkillCatalogEntry entry in invalid)
+            {
+                Assert.ThrowsAny<ArgumentException>(() => MessageCodec.EncodeSkillCatalog(
+                    new SkillCatalogMessage("Furia", new[] { entry })));
+    }
+}
+
+        [Fact]
+        public void SkillCatalog_TryRead_Rechaza_Campos_Invalidos()
+        {
+            var message = new SkillCatalogMessage("Furia", new[]
+            {
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe"),
+            });
+            byte[] bytes = MessageCodec.EncodeSkillCatalog(message);
+            int entryStart = 1 + 2 + 5 + 1; // tipo + longitud/nombre + count
+
+            byte[] zeroId = (byte[])bytes.Clone();
+            zeroId[entryStart] = 0;
+            zeroId[entryStart + 1] = 0;
+            Assert.False(MessageCodec.TryReadSkillCatalog(zeroId, 0, zeroId.Length, out _));
+
+            byte[] zeroLevel = (byte[])bytes.Clone();
+            zeroLevel[entryStart + 2] = 0;
+            Assert.False(MessageCodec.TryReadSkillCatalog(zeroLevel, 0, zeroLevel.Length, out _));
+
+            byte[] badType = (byte[])bytes.Clone();
+            badType[entryStart + 3] = 2;
+            Assert.False(MessageCodec.TryReadSkillCatalog(badType, 0, badType.Length, out _));
+
+            byte[] zeroCooldown = (byte[])bytes.Clone();
+            zeroCooldown[entryStart + 6] = 0;
+            zeroCooldown[entryStart + 7] = 0;
+            Assert.False(MessageCodec.TryReadSkillCatalog(zeroCooldown, 0, zeroCooldown.Length, out _));
+
+            byte[] emptyName = (byte[])bytes.Clone();
+            emptyName[entryStart + 14] = 0;
+            emptyName[entryStart + 15] = 0;
+            Assert.False(MessageCodec.TryReadSkillCatalog(emptyName, 0, emptyName.Length, out _));
+        }
+
+        [Fact]
+        public void El_Protocolo_De_Habilidades_Usa_La_Version_21()
+        {
+            Assert.Equal((ushort)21, ProtocolConstants.Version);
+            Assert.Equal((byte)35, (byte)MessageType.UseSkill);
+            Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
+            Assert.Equal((byte)37, (byte)MessageType.SkillUsed);
+            Assert.Equal((byte)38, (byte)MessageType.SkillRejected);
+            Assert.Equal((byte)39, (byte)MessageType.ResourceStatus);
         }
     }
 }

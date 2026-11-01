@@ -152,6 +152,11 @@ namespace Avelora.Server.Net
         private long _pvpStatusMessages;
         private long _pvpStatusBytes;
         private long _pvpRejectedMessages;
+        private long _skillCatalogBytes;
+        private long _skillUsedMessages;
+        private long _skillRejectedMessages;
+        private long _resourceMessages;
+        private long _resourceBytes;
 
         public NetworkServer(
             Zone zone,
@@ -240,6 +245,9 @@ namespace Avelora.Server.Net
             _zone.ZoneChanged += OnZoneChanged;
             _zone.PvpStatusChanged += OnPvpStatusChanged;
             _zone.PvpModeRejected += OnPvpModeRejected;
+            _zone.SkillUsed += OnSkillUsed;
+            _zone.SkillRejected += OnSkillRejected;
+            _zone.ResourceChanged += OnResourceChanged;
             _zone.StatsChanged += OnStatsChanged;
             if (_zone.Zones.Zones.Length > 0)
             {
@@ -422,7 +430,12 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _zoneChangedBytes),
             Interlocked.Read(ref _pvpStatusMessages),
             Interlocked.Read(ref _pvpStatusBytes),
-            Interlocked.Read(ref _pvpRejectedMessages));
+            Interlocked.Read(ref _pvpRejectedMessages),
+            Interlocked.Read(ref _skillCatalogBytes),
+            Interlocked.Read(ref _skillUsedMessages),
+            Interlocked.Read(ref _skillRejectedMessages),
+            Interlocked.Read(ref _resourceMessages),
+            Interlocked.Read(ref _resourceBytes));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -576,6 +589,22 @@ namespace Avelora.Server.Net
                 if (_zone.Attacks != null)
                 {
                     _zone.Attacks.TryEnqueue(new AttackIntent(entityId, attack.TargetId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadUseSkill(buffer, offset, length, out UseSkillMessage useSkill))
+            {
+                // Las habilidades van por la misma cola que el ataque básico (I-16), con el mismo
+                // límite de ritmo y de cola.
+                if (_zone.Attacks != null)
+                {
+                    _zone.Attacks.TryEnqueue(new AttackIntent(entityId, useSkill.TargetId, useSkill.SkillId));
                 }
                 else
                 {
@@ -1658,6 +1687,13 @@ namespace Avelora.Server.Net
                 Enqueue(connectionId, itemCatalogChunks[i], DeliveryMode.ReliableOrdered, disconnectAfter: false);
             }
 
+            if (_zone.Skills != null)
+            {
+                byte[] skillCatalog = EncodeSkillCatalog(_zone, player);
+                Enqueue(connectionId, skillCatalog, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Add(ref _skillCatalogBytes, skillCatalog.Length);
+            }
+
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
@@ -1874,6 +1910,39 @@ namespace Avelora.Server.Net
             }
         }
 
+        private void OnSkillUsed(PlayerEntity player, ushort skillId)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodeSkillUsed(new SkillUsedMessage(skillId));
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _skillUsedMessages);
+            }
+        }
+
+        private void OnSkillRejected(PlayerEntity player, ushort skillId, SkillRejectReason reason)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodeSkillRejected(new SkillRejectedMessage(skillId, reason));
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _skillRejectedMessages);
+            }
+        }
+
+        private void OnResourceChanged(PlayerEntity player)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(
+                    checked((ushort)player.Mana),
+                    checked((ushort)player.MaxMana)));
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _resourceMessages);
+                Interlocked.Add(ref _resourceBytes, bytes.Length);
+            }
+        }
+
         private void OnStatsChanged(PlayerEntity player)
         {
             if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
@@ -1952,6 +2021,42 @@ namespace Avelora.Server.Net
                 checked((ushort)player.Mana),
                 checked((ushort)player.MaxMana),
                 player.Level <= _zone.Levels.FreeResetMaxLevel ? (byte)1 : (byte)0));
+        }
+
+        /// <summary>
+        /// Catálogo de habilidades de la clase del personaje (I-16), en el orden del JSON. Una
+        /// clase sin habilidades recibe la lista vacía.
+        /// </summary>
+        private static byte[] EncodeSkillCatalog(Zone zone, PlayerEntity player)
+        {
+            SkillCatalog catalog = zone.Skills!;
+            CharacterClass? characterClass = zone.Classes.Find(player.ClassId);
+            string resourceName = characterClass?.Resource?.Name ?? string.Empty;
+            List<SkillCatalogEntry> entries = new List<SkillCatalogEntry>(ProtocolConstants.MaxSkillsPerClass);
+
+            if (catalog.Skills != null)
+            {
+                for (int i = 0; i < catalog.Skills.Count; i++)
+                {
+                    SkillDefinition skill = catalog.Skills[i];
+                    if (skill.ClassId != player.ClassId)
+                    {
+                        continue;
+                    }
+
+                    entries.Add(new SkillCatalogEntry(
+                        (ushort)skill.Id,
+                        checked((byte)skill.RequiredLevel),
+                        skill.DamageType == "magical" ? (byte)1 : (byte)0,
+                        checked((ushort)skill.ResourceCost),
+                        checked((ushort)skill.CooldownTicks),
+                        skill.Range,
+                        checked((ushort)skill.Damage),
+                        skill.Name.Trim()));
+                }
+            }
+
+            return MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage(resourceName, entries.ToArray()));
         }
 
         private void HandleChatSend(int connectionId, int senderEntityId, byte[] buffer, int offset, int length)
@@ -2547,7 +2652,12 @@ namespace Avelora.Server.Net
             long zoneChangedBytes = 0,
             long pvpStatusMessages = 0,
             long pvpStatusBytes = 0,
-            long pvpRejectedMessages = 0)
+            long pvpRejectedMessages = 0,
+            long skillCatalogBytes = 0,
+            long skillUsedMessages = 0,
+            long skillRejectedMessages = 0,
+            long resourceMessages = 0,
+            long resourceBytes = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2584,6 +2694,11 @@ namespace Avelora.Server.Net
             PvpStatusMessages = pvpStatusMessages;
             PvpStatusBytes = pvpStatusBytes;
             PvpRejectedMessages = pvpRejectedMessages;
+            SkillCatalogBytes = skillCatalogBytes;
+            SkillUsedMessages = skillUsedMessages;
+            SkillRejectedMessages = skillRejectedMessages;
+            ResourceMessages = resourceMessages;
+            ResourceBytes = resourceBytes;
             SaveLastError = saveLastError;
         }
 
@@ -2654,6 +2769,21 @@ namespace Avelora.Server.Net
         public long PvpStatusMessages { get; }
         public long PvpStatusBytes { get; }
         public long PvpRejectedMessages { get; }
+
+        /// <summary>Bytes del catálogo de habilidades enviados al entrar (I-16).</summary>
+        public long SkillCatalogBytes { get; }
+
+        /// <summary>Confirmaciones de habilidad enviadas (I-16).</summary>
+        public long SkillUsedMessages { get; }
+
+        /// <summary>Rechazos de habilidad enviados (I-16).</summary>
+        public long SkillRejectedMessages { get; }
+
+        /// <summary>Mensajes de estado del recurso enviados (I-16).</summary>
+        public long ResourceMessages { get; }
+
+        /// <summary>Bytes de los mensajes de estado del recurso (I-16).</summary>
+        public long ResourceBytes { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

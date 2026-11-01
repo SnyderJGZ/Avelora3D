@@ -16,6 +16,7 @@ param(
     [int]$Bots = 50,
     [ValidateRange(0, 100)]
     [int]$PvpBots = 0,
+    [int]$SkillBots = 0,
     [int]$Seconds = 120,
     [ValidateSet('random', 'crowd', 'fight', 'chat', 'inventory')]
     [string]$Behavior = 'random',
@@ -74,7 +75,7 @@ $serverSeconds = $Seconds + $rampTotal + 30
 Write-Host "Compilando en Release…"
 Push-Location $root
 try {
-    & $dotnet build Avelora.slnx -c Release -v q --nologo
+    & $dotnet build Avelora.slnx -c Release -v q --nologo -m:1 -nodeReuse:false
     if ($LASTEXITCODE -ne 0) {
         throw "La compilación falló (código $LASTEXITCODE)."
     }
@@ -155,12 +156,16 @@ $pvpBotsArgument = ''
 if ($PvpBots -gt 0) {
     $pvpBotsArgument = ' --pvp-bots ' + $PvpBots
 }
+$skillBotsArgument = ''
+if ($SkillBots -gt 0) {
+    $skillBotsArgument = ' --skill-bots ' + $SkillBots
+}
 
 $botsCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Bots + $commonArguments +
-    ' --behavior ' + $Behavior + ' --input-redundancy ' + $InputRedundancy + $pvpBotsArgument + $correctionsArgument +
+    ' --behavior ' + $Behavior + ' --input-redundancy ' + $InputRedundancy + $pvpBotsArgument + $skillBotsArgument + $correctionsArgument +
     ' > "' + $botsOut + '" 2>&1'
 
-Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior, PvP $PvpBots, redundancia $InputRedundancy"
+Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior, PvP $PvpBots, habilidad $SkillBots, redundancia $InputRedundancy"
 $botsProcess = Start-LoggedCommand $botsCommand
 
 $abuseProcess = $null

@@ -176,7 +176,8 @@ namespace Avelora.Bots
                         tracePositionsPath: options.TracePositionsPath,
                         reportWelcomePath: options.ReportWelcomePath,
                         serverKeyFingerprint: options.ServerKeyFingerprint,
-                        pvp: i <= options.PvpBots);
+                        pvp: i <= options.PvpBots,
+                        useSkills: i <= options.SkillBots);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -267,6 +268,10 @@ namespace Avelora.Bots
             long pvpStatuses = 0;
             long pvpRejects = 0;
             long pvpModeRequests = 0;
+            long skillsSent = 0;
+            long skillsOk = 0;
+            long skillsRejected = 0;
+            long resourceMessages = 0;
             var responses = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
             bool abusive = BotClient.IsAbusive(options.Behavior);
@@ -305,6 +310,10 @@ namespace Avelora.Bots
                 pvpStatuses += bot.PvpStatuses;
                 pvpRejects += bot.PvpRejects;
                 pvpModeRequests += bot.PvpModeRequests;
+                skillsSent += bot.SkillsSent;
+                skillsOk += bot.SkillsOk;
+                skillsRejected += bot.SkillsRejected;
+                resourceMessages += bot.ResourceMessages;
                 finalGold += bot.Gold;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
@@ -375,7 +384,11 @@ namespace Avelora.Bots
                       " snapshots=" + bot.Snapshots +
                       " pvp_estados=" + bot.PvpStatuses +
                       " pvp_rechazos=" + bot.PvpRejects +
-                      " pvp_modo_pedidos=" + bot.PvpModeRequests);
+                      " pvp_modo_pedidos=" + bot.PvpModeRequests +
+                      " hab_enviadas=" + bot.SkillsSent +
+                      " hab_ok=" + bot.SkillsOk +
+                      " hab_rechazadas=" + bot.SkillsRejected +
+                      " recurso_msgs=" + bot.ResourceMessages);
 
                 if (options.Behavior == BotBehavior.Fight)
                 {
@@ -461,6 +474,11 @@ namespace Avelora.Bots
             Console.WriteLine(
                 "  PvP Bots   : pvp_estados=" + pvpStatuses +
                 ", pvp_rechazos=" + pvpRejects + ", pvp_modo_pedidos=" + pvpModeRequests);
+            Console.WriteLine(
+                "  Habilidades: hab_enviadas=" + skillsSent +
+                ", hab_ok=" + skillsOk +
+                ", hab_rechazadas=" + skillsRejected +
+                ", recurso_msgs=" + resourceMessages);
 
             if (options.Behavior == BotBehavior.Fight)
             {
@@ -914,6 +932,17 @@ namespace Avelora.Bots
                         options.PvpBots = pvpBots;
                         break;
 
+                    case "--skill-bots":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int skillBots) ||
+                            skillBots < 0 || skillBots > MaxBots)
+                        {
+                            error = "Número de bots con habilidad inválido: " + value + " (0.." + MaxBots + ")";
+                            return false;
+                        }
+
+                        options.SkillBots = skillBots;
+                        break;
+
                     case "--seed":
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seed))
                         {
@@ -1112,6 +1141,9 @@ namespace Avelora.Bots
             public int AttackCooldownMs { get; set; } = 800;
 
             public int PvpBots { get; set; }
+
+            /// <summary>Primeros N bots que intentan usar su habilidad (I-16).</summary>
+            public int SkillBots { get; set; }
 
             public int Seed { get; set; } = 20261019;
 

@@ -41,7 +41,8 @@ namespace Avelora.Server.Diagnostics
             Avelora.Server.Npcs.NpcCatalog? npcs = null,
             LevelTable? levels = null,
             ClassCatalog? classes = null,
-            ZoneMap? zones = null)
+            ZoneMap? zones = null,
+            SkillCatalog? skills = null)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -101,6 +102,10 @@ namespace Avelora.Server.Diagnostics
             Console.WriteLine(
                 "  Niveles       : máximo " + levelTable.MaxLevel + ", puntos/nivel " + levelTable.PointsPerLevel +
                 ", clases " + (classes?.Classes?.Count ?? ClassCatalog.Default.Classes?.Count ?? 0));
+            Console.WriteLine(
+                "  Habilidades   : " + (skills == null
+                    ? "desactivadas"
+                    : (skills.Skills?.Count ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)));
             Console.WriteLine(
                 "  Chat          : zona, máx " + config.ChatMaxBytes + " B UTF-8, ráfaga " +
                 config.ChatBurst + ", reposición " + Invariant(config.ChatPerSecond, "0.##") + "/s");
@@ -298,6 +303,12 @@ namespace Avelora.Server.Diagnostics
                 "            pvp: pvp_estado_msgs=" + network.PvpStatusMessages +
                 " pvp_estado_bytes=" + network.PvpStatusBytes +
                 " pvp_rech_msgs=" + network.PvpRejectedMessages);
+            Console.WriteLine(
+                "            habilidades: hab_usadas=" + zone.SkillsUsed +
+                " hab_rechazadas=" + TotalSkillRejections(zone) +
+                " recurso_msgs=" + network.ResourceMessages +
+                " recurso_bytes=" + network.ResourceBytes +
+                " hab_catalogo_bytes=" + network.SkillCatalogBytes);
 
             if (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError))
             {
@@ -310,6 +321,18 @@ namespace Avelora.Server.Diagnostics
 
             // Ver a los jugadores moverse es la forma más rápida de saber que el tick hace algo.
             Console.WriteLine("            jugadores: " + DescribePlayers(zone));
+        }
+
+        /// <summary>Suma de rechazos de habilidad de todos los motivos (I-16).</summary>
+        private static long TotalSkillRejections(Zone zone)
+        {
+            long total = 0;
+            for (int reason = (int)SkillRejectReason.UnknownSkill; reason <= (int)SkillRejectReason.NotEnoughResource; reason++)
+            {
+                total += zone.SkillsRejected((SkillRejectReason)reason);
+            }
+
+            return total;
         }
 
         /// <summary>Posición y último input aplicado de los jugadores de la zona.</summary>
@@ -438,6 +461,23 @@ namespace Avelora.Server.Diagnostics
                 "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
                 zone.PlayerRespawns + " reapariciones, muertes_penalizadas=" + zone.PenalizedDeaths +
                 ", xp_perdida_muerte=" + zone.ExperienceLost);
+            Console.WriteLine(
+                "  Habilidades     : hab_usadas=" + zone.SkillsUsed +
+                ", hab_rechazadas=" + TotalSkillRejections(zone) +
+                ", recurso_msgs=" + network.ResourceMessages +
+                ", recurso_bytes=" + network.ResourceBytes +
+                ", hab_catalogo_bytes=" + network.SkillCatalogBytes +
+                ", hab_rech_desconocida=" + zone.SkillsRejected(SkillRejectReason.UnknownSkill) +
+                ", hab_rech_clase=" + zone.SkillsRejected(SkillRejectReason.WrongClass) +
+                ", hab_rech_nivel=" + zone.SkillsRejected(SkillRejectReason.LevelTooLow) +
+                ", hab_rech_muerto=" + zone.SkillsRejected(SkillRejectReason.Dead) +
+                ", hab_rech_objetivo=" + zone.SkillsRejected(SkillRejectReason.InvalidTarget) +
+                ", hab_rech_segura=" + zone.SkillsRejected(SkillRejectReason.SafeZone) +
+                ", hab_rech_pvp=" + zone.SkillsRejected(SkillRejectReason.PvpNotAllowed) +
+                ", hab_rech_distancia=" + zone.SkillsRejected(SkillRejectReason.OutOfRange) +
+                ", hab_rech_vision=" + zone.SkillsRejected(SkillRejectReason.NoLineOfSight) +
+                ", hab_rech_recarga=" + zone.SkillsRejected(SkillRejectReason.Cooldown) +
+                ", hab_rech_recurso=" + zone.SkillsRejected(SkillRejectReason.NotEnoughResource));
             Console.WriteLine(
                 "  Objetos         : objetos_soltados=" + zone.ItemsDropped +
                 ", objetos_recogidos=" + zone.ItemsPickedUp +

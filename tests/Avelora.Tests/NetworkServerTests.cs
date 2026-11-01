@@ -39,7 +39,7 @@ namespace Avelora.Tests
             return Convert.ToInt32(command.ExecuteScalar());
         }
 
-        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null, ItemCatalog? customItems = null, ClassCatalog? classes = null, ZoneMap? zones = null)
+        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null, ItemCatalog? customItems = null, ClassCatalog? classes = null, ZoneMap? zones = null, SkillCatalog? skills = null)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
             var items = withItems
@@ -84,7 +84,8 @@ namespace Avelora.Tests
                 pvpModeChangeTicks: (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
                 pvpModeChangeFromPvpTicks: (int)Math.Ceiling(
                     config.PvpModeChangeFromPvpSeconds * SimulationConstants.TickRate),
-                pvpForcedTicks: (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
+                pvpForcedTicks: (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate),
+                skills: skills);
         }
 
         [Fact]
@@ -405,6 +406,147 @@ namespace Avelora.Tests
             Assert.Equal(417, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
         }
 
+
+        private static SkillCatalog CargarHabilidades() => SkillCatalog.Load(
+            Path.Combine(AppContext.BaseDirectory, "skills.json"), ClassCatalog.Default);
+
+        [Fact]
+        public void Habilidades_Entrada_Filtra_Clase_Y_Recurso_Solo_Al_Dueno()
+        {
+            using var harness = new Harness(classes: ClassCatalog.Default, skills: CargarHabilidades());
+            harness.Connect(1);
+            harness.Handshake(1, classId: 2);
+            harness.Pump();
+            SentMessage sent = Assert.Single(harness.Transport.Sent,
+                s => s.Data[0] == (byte)MessageType.SkillCatalog);
+            Assert.Equal(1, sent.ConnectionId);
+            Assert.Equal(DeliveryMode.ReliableOrdered, sent.Mode);
+            Assert.True(MessageCodec.TryReadSkillCatalog(sent.Data, 0, sent.Data.Length, out var catalog));
+            Assert.Equal(Assert.IsType<CharacterResource>(ClassCatalog.Default.Find(2)!.Resource).Name, catalog.ResourceName);
+            Assert.Equal((ushort)4002, Assert.Single(catalog.Skills).Id);
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            SentMessage resource = Assert.Single(harness.Transport.Sent,
+                s => s.Data[0] == (byte)MessageType.ResourceStatus);
+            Assert.Equal(1, resource.ConnectionId);
+            Assert.Equal(DeliveryMode.ReliableOrdered, resource.Mode);
+            Assert.True(MessageCodec.TryReadResourceStatus(resource.Data, 0, resource.Data.Length, out var status));
+            var player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            Assert.Equal(player.Mana, status.Current);
+            Assert.Equal(player.MaxMana, status.Max);
+        }
+
+        [Fact]
+        public void Habilidad_Desconocida_En_Red_Devuelve_Rechazo_Al_Dueno()
+        {
+            using var harness = new Harness(classes: ClassCatalog.Default, skills: CargarHabilidades());
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUseSkill(new UseSkillMessage(65000, 100)));
+            harness.Server.PollOnce();
+            Assert.Equal(0, harness.Zone.SkillsRejected(SkillRejectReason.UnknownSkill));
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            SentMessage sent = Assert.Single(harness.Transport.Sent,
+                s => s.Data[0] == (byte)MessageType.SkillRejected);
+            Assert.Equal(1, sent.ConnectionId);
+            Assert.Equal(DeliveryMode.ReliableOrdered, sent.Mode);
+            Assert.True(MessageCodec.TryReadSkillRejected(sent.Data, 0, sent.Data.Length, out var rejected));
+            Assert.Equal((ushort)65000, rejected.SkillId);
+            Assert.Equal(SkillRejectReason.UnknownSkill, rejected.Reason);
+        }
+
+        [Fact]
+        public void Habilidad_En_Red_Dana_Pnj_Y_Envia_Aceptacion_Y_Recurso_Gastado()
+        {
+            using var harness = new Harness(classes: ClassCatalog.Default, skills: CargarHabilidades());
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            var player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            var npc = new NpcEntity(100, 2001, 0f, player.Position, 0f,
+                long.MaxValue, 1000, 200, spawnerIndex: -1) { Position = player.Position };
+            harness.Zone.AddEntity(npc);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            int mana = player.Mana;
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUseSkill(new UseSkillMessage(4001, npc.Id)));
+            harness.Server.PollOnce();
+            Assert.Equal(1000, npc.Health);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.True(npc.Health < 1000);
+            SentMessage used = Assert.Single(harness.Transport.Sent, s => s.Data[0] == (byte)MessageType.SkillUsed);
+            Assert.Equal(1, used.ConnectionId);
+            Assert.Equal(DeliveryMode.ReliableOrdered, used.Mode);
+            Assert.True(MessageCodec.TryReadSkillUsed(used.Data, 0, used.Data.Length, out var accepted));
+            Assert.Equal((ushort)4001, accepted.SkillId);
+            SentMessage resource = Assert.Single(harness.Transport.Sent, s => s.Data[0] == (byte)MessageType.ResourceStatus);
+            Assert.Equal(1, resource.ConnectionId);
+            Assert.Equal(DeliveryMode.ReliableOrdered, resource.Mode);
+            Assert.True(MessageCodec.TryReadResourceStatus(resource.Data, 0, resource.Data.Length, out var status));
+            Assert.Equal(mana - CargarHabilidades().Find(4001)!.ResourceCost, status.Current);
+        }
+
+        [Fact]
+        public void Sin_Catalogo_No_Se_Envian_Habilidades_Ni_Recurso_En_Red()
+        {
+            using var harness = new Harness(classes: ClassCatalog.Default);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            for (int i = 0; i < 50; i++) harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.DoesNotContain(harness.Transport.Sent, s =>
+                s.Data[0] == (byte)MessageType.SkillCatalog || s.Data[0] == (byte)MessageType.ResourceStatus);
+        }
+
+        [Fact]
+        public void Recurso_Gastado_Se_Persiste_Y_La_Recarga_No_Sobrevive_A_Reconexion()
+        {
+            using var repository = new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves,
+                classes: ClassCatalog.Default, skills: CargarHabilidades());
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            var first = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            var npc = new NpcEntity(100, 2001, 0f, first.Position, 0f,
+                long.MaxValue, 1000, 200, spawnerIndex: -1) { Position = first.Position };
+            harness.Zone.AddEntity(npc);
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUseSkill(new UseSkillMessage(4001, npc.Id)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal(1, harness.Zone.SkillsUsed);
+            int mana = first.Mana;
+            long ready = first.SkillReadyTicks[4001];
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(2)));
+            Assert.Equal(mana, Assert.Single(repository.ListCharacters(1)).Mana);
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+            var reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            Assert.Equal(mana, reconnected.Mana);
+            Assert.Empty(reconnected.SkillReadyTicks);
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeUseSkill(new UseSkillMessage(4001, npc.Id)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            Assert.Equal(2, harness.Zone.SkillsUsed);
+            Assert.True(reconnected.SkillReadyTicks[4001] < ready + 120);
+            Assert.Equal(0, harness.Zone.SkillsRejected(SkillRejectReason.Cooldown));
+        }
+
         private sealed class Harness : IDisposable
         {
             private readonly Dictionary<int, byte[]> _challengeNonces = new Dictionary<int, byte[]>();
@@ -422,12 +564,12 @@ namespace Avelora.Tests
                 NpcCatalog? npcs = null,
                 IPlayerRepository? repository = null,
                 CharacterSaveService? saves = null, ItemCatalog? customItems = null, ClassCatalog? classes = null,
-                ZoneMap? zones = null)
+                ZoneMap? zones = null, SkillCatalog? skills = null)
             {
                 _persistent = repository != null;
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
-                Zone = NewZone(Config, withItems, npcs, customItems, classes, zones);
+                Zone = NewZone(Config, withItems, npcs, customItems, classes, zones, skills);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
                 Server = new NetworkServer(
@@ -1349,7 +1491,7 @@ namespace Avelora.Tests
                 Thread.Sleep(5);
             }
 
-            PlayerEntity firstPlayer = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
+            PlayerEntity firstPlayer = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
             Assert.Equal(ZoneKind.Normal, firstPlayer.ZoneKind);
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeAllocatePoints(
                 new AllocatePointsMessage(2, 0, 0, 1)));
@@ -1377,7 +1519,7 @@ namespace Avelora.Tests
                 Thread.Sleep(5);
             }
 
-            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
             Assert.Equal(2, reconnected.AllocStr);
             Assert.Equal(1, reconnected.AllocVit);
             Assert.Equal(PvpMode.Pvp, reconnected.PvpMode);

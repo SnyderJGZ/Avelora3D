@@ -95,6 +95,9 @@ namespace Avelora.Server.Configuration
         /// <summary>Archivo de clases y fórmulas de atributos (I-08).</summary>
         public string ClassesPath { get; set; } = "classes.json";
 
+        /// <summary>Archivo de habilidades (I-16). Vacío = sin habilidades.</summary>
+        public string SkillsPath { get; set; } = "skills.json";
+
         /// <summary>Número de huecos del inventario (I-04).</summary>
         public int InventorySlots { get; set; } = 20;
 
@@ -710,6 +713,26 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ZonesPath));
+        }
+
+        /// <summary>
+        /// Resuelve skills.json junto a server.json; una ruta vacía desactiva las habilidades
+        /// (I-16).
+        /// </summary>
+        public string ResolveSkillsPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(SkillsPath))
+            {
+                return string.Empty;
+            }
+
+            if (Path.IsPathRooted(SkillsPath))
+            {
+                return SkillsPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", SkillsPath));
         }
 
         /// <summary>

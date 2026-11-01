@@ -226,6 +226,15 @@ namespace Avelora.Bots
         private long _pvpStatuses;
         private long _pvpRejects;
         private long _pvpModeRequests;
+        private readonly bool _useSkills;
+        private SkillCatalogEntry _skill;
+        private bool _hasSkill;
+        private ushort _resource;
+        private long _nextSkillAt;
+        private long _skillsSent;
+        private long _skillsOk;
+        private long _skillsRejected;
+        private long _resourceMessages;
         private bool _pvpModeRequested;
         private PvpStatusMessage _lastPvpStatus;
         private long _sentChat;
@@ -306,7 +315,8 @@ namespace Avelora.Bots
             string? reportWelcomePath = null,
             string? serverKeyFingerprint = null,
             float pickupRange = 1.5f,
-            bool pvp = false)
+            bool pvp = false,
+            bool useSkills = false)
         {
             if (startDelayMs < 0)
             {
@@ -341,6 +351,7 @@ namespace Avelora.Bots
             Index = index;
             _map = map;
             _inputRedundancy = inputRedundancy;
+            _useSkills = useSkills;
             _host = host;
             _port = port;
             _mapHash = mapHash;
@@ -464,6 +475,10 @@ namespace Avelora.Bots
         public long PvpStatuses => Interlocked.Read(ref _pvpStatuses);
         public long PvpRejects => Interlocked.Read(ref _pvpRejects);
         public long PvpModeRequests => Interlocked.Read(ref _pvpModeRequests);
+        public long SkillsSent => Interlocked.Read(ref _skillsSent);
+        public long SkillsOk => Interlocked.Read(ref _skillsOk);
+        public long SkillsRejected => Interlocked.Read(ref _skillsRejected);
+        public long ResourceMessages => Interlocked.Read(ref _resourceMessages);
         public PvpStatusMessage LastPvpStatus => _lastPvpStatus;
         public uint Gold => _gold;
 
@@ -1038,6 +1053,8 @@ namespace Avelora.Bots
             _hasProgress = false;
             _hasStats = false;
             _classId = 0;
+            _hasSkill = false;
+            _resource = 0;
             _lastFreePoints = 0;
             _pendingAllocationPoints = 0;
             _primaryAttribute = -1;
@@ -1492,6 +1509,37 @@ namespace Avelora.Bots
             if (MessageCodec.TryReadPvpModeRejected(buffer, offset, length, out _))
             {
                 Interlocked.Increment(ref _pvpRejects);
+                return;
+            }
+
+            if (MessageCodec.TryReadSkillCatalog(buffer, offset, length, out SkillCatalogMessage skillCatalog))
+            {
+                // Solo hay una habilidad por clase en este catálogo de pruebas (I-16).
+                if (skillCatalog.Skills.Length > 0)
+                {
+                    _skill = skillCatalog.Skills[0];
+                    _hasSkill = true;
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadResourceStatus(buffer, offset, length, out ResourceStatusMessage resource))
+            {
+                _resource = resource.Current;
+                Interlocked.Increment(ref _resourceMessages);
+                return;
+            }
+
+            if (MessageCodec.TryReadSkillUsed(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _skillsOk);
+                return;
+            }
+
+            if (MessageCodec.TryReadSkillRejected(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _skillsRejected);
                 return;
             }
 
@@ -2201,6 +2249,17 @@ namespace Avelora.Bots
                 Interlocked.Increment(ref _sentRangedAttacks);
             }
             _lastAttackTick = _lastSnapshotTick;
+
+            // Habilidad (I-16): misma cola que el ataque, con su propia recarga y su recurso. Solo
+            // se manda si el servidor ya anunció catálogo y recurso suficiente.
+            if (_useSkills && _hasSkill && _resource >= _skill.ResourceCost && now >= _nextSkillAt &&
+                distanceSq <= _skill.Range * _skill.Range)
+            {
+                byte[] useSkill = MessageCodec.EncodeUseSkill(new UseSkillMessage(_skill.Id, target));
+                _transport!.Send(useSkill, useSkill.Length, DeliveryMode.ReliableOrdered);
+                Interlocked.Increment(ref _skillsSent);
+                _nextSkillAt = now + (_skill.CooldownTicks * 1000 / SimulationConstants.TickRate) + AttackSlackMs;
+            }
 
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
             // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.

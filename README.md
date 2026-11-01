@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -29,6 +29,7 @@ calcular igual (movimiento y colisión).
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
 > a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**;
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
+> I-16 añade habilidades y regeneración: **protocolo v21, esquema v8**.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -380,13 +381,18 @@ pueden discrepar** del formato.
 | `SetPvpMode` | 32 | C → S | 2 B | modo elegido: PvE (0) o PvP (1) |
 | `PvpStatus` | 33 | S → C | 8 B | modo, forzado, fase de cambio y segundos restantes |
 | `PvpModeRejected` | 34 | S → C | 2 B | `NotInSafeZone` o `TooSoon` |
+| `UseSkill` | 35 | C → S | 7 B | habilidad y objetivo |
+| `SkillCatalog` | 36 | S → C | variable | habilidades de la clase y recurso |
+| `SkillUsed` | 37 | S → C | 3 B | uso aceptado |
+| `SkillRejected` | 38 | S → C | 4 B | habilidad y motivo |
+| `ResourceStatus` | 39 | S → C | 5 B | recurso actual y máximo |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
   `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList`,
-  `CharacterRejected`, `LootGained`, `ZoneList`, `ZoneChanged`, `SetPvpMode`, `PvpStatus` y `PvpModeRejected`.
+  `CharacterRejected`, `LootGained`, `ZoneList`, `ZoneChanged`, `SetPvpMode`, `PvpStatus`, `PvpModeRejected`, `SkillCatalog`, `SkillUsed`, `SkillRejected` y `ResourceStatus`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 - **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
@@ -402,6 +408,7 @@ Canales:
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
+> I-16 sube a **v21** por los cinco mensajes de habilidades y recurso; esquema v8 sin cambios.
 > I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
@@ -863,7 +870,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v20** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v21** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1117,6 +1124,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
 | **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor, bots y cliente I-15b |
 | **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor, bots y cliente I-15pb |
+| **I-16** | Habilidades, regeneración y bots (protocolo v21, esquema v8) | ✅ servidor; cliente I-16b por hacer |
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
@@ -1954,6 +1962,41 @@ Las cifras y comparación con I-15 están en [el informe I-15p](docs/agentes/inf
 El cliente Unity I-15pb usa protocolo v20; I-15q también ajusta en él los rótulos y la cuenta atrás; I-15r
 cancela el forzado al entrar en zona segura.
 
+### Habilidades (I-16, protocolo v21)
+
+El servidor carga `skills.json`: una habilidad de daño de objetivo único por clase, con id, nombre,
+clase, nivel mínimo, coste, recarga, alcance, daño y tipo físico o mágico. El daño usa la fórmula del
+ataque básico sustituyendo el arma por la habilidad, sin sumar el arma equipada; aplica la misma
+mitigación, alcance con tolerancia, visión, zonas seguras y reglas PvP. Marca aggro, dueño del botín,
+asesino, experiencia y `CombatEvent` como un ataque. El servidor decide todos los resultados.
+
+`resource.regenPerSecond` en `classes.json` es opcional (0 por defecto, 0..1000): regenera enteros
+una vez por segundo, solo vivo y hasta el máximo. Furia 4, Maná 3 y Energía 6; reaparecer no rellena.
+El recurso se guarda en `mana` (esquema v8); las recargas por jugador y habilidad no se guardan y
+son independientes de `LastAttackTick`. Un rechazo no consume recurso, recarga ni vida del objetivo.
+
+El primer fallo determina el rechazo: habilidad desconocida, clase, nivel, lanzador muerto,
+objetivo inválido, zona segura, PvP no permitido, distancia, visión, recarga o recurso insuficiente.
+Ataques y habilidades comparten `AttackQueue`, orden de llegada y límites.
+
+`SkillCatalog` se envía una vez al entrar, tras `ItemCatalog`, filtrado por clase y con el nombre
+del recurso. `UseSkill` pide usarla; `SkillUsed` confirma al dueño, que cuenta la recarga con el
+catálogo; `SkillRejected` devuelve el motivo. `ResourceStatus` solo va al dueño, al primer tick
+y cuando cambia el recurso actual o máximo; regenerar no reenvía `Stats` ni añade datos al snapshot.
+`skillsPath` por defecto es `skills.json`, relativo al archivo de configuración. Vacío desactiva
+catálogo, regeneración y `ResourceStatus`; las peticiones se rechazan como `UnknownSkill`.
+
+Métricas: `hab_usadas`, `hab_rechazadas`, `hab_catalogo_bytes`, `recurso_msgs`, `recurso_bytes`;
+el resumen desglosa `hab_rech_desconocida`, `hab_rech_clase`, `hab_rech_nivel`, `hab_rech_muerto`,
+`hab_rech_objetivo`, `hab_rech_segura`, `hab_rech_pvp`, `hab_rech_distancia`, `hab_rech_vision`,
+`hab_rech_recarga` y `hab_rech_recurso`. Bots: `--skill-bots N` (0 por defecto), primeras N
+instancias; esperan recurso y recarga con margen. Resumen: `hab_enviadas`, `hab_ok`,
+`hab_rechazadas`, `recurso_msgs`.
+
+Carga: `.\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior fight -SkillBots 25 -PvpBots 10 -LogCorrections -NuevaBase`.
+Verificación I-16: **849/849** pruebas, build con 0 advertencias. Cifras: [informe I-16](docs/agentes/informes/I-16.md). Cliente Unity I-16b sin actualizar:
+usa v20 y no conecta al servidor v21 hasta implementar esa tarea.
+
 ### Chat (I-07, protocolo v10)
 
 Hay un único canal de chat por zona. Un `ChatSend` válido se devuelve como `Chat` a **todos los
@@ -2043,6 +2086,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v20, incluido I-15p/I-15q.
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v21, incluidos I-15p/I-15q e I-16.
+El siguiente cliente es I-16b (habilidades y recurso; el cliente actual usa v20).
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

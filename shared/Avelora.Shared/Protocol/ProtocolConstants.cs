@@ -29,9 +29,10 @@ namespace Avelora.Shared.Protocol
         /// trocear <c>ItemCatalog</c> y retirar <c>DropItem</c>; I-10 a 15 por el saludo sin
         /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel;
         /// I-13 a 17 por CombatEvent, I-25 a 18 por el oro del inventario y LootGained, I-15 a 19
-        /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP.
+        /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP;
+        /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus.
         /// </summary>
-        public const ushort Version = 20;
+        public const ushort Version = 21;
 
         /// <summary>Máximo de zonas de mapa anunciadas al entrar (I-15).</summary>
         public const int MaxZones = 32;
@@ -93,8 +94,14 @@ namespace Avelora.Shared.Protocol
         /// <summary>Tope de bytes UTF-8 de la contraseña que viaja en el saludo.</summary>
         public const int MaxPasswordBytes = 128;
 
-        /// <summary>Tope de bytes UTF-8 del nombre de personaje (I-10).</summary>
+        /// <summary>Máximo de bytes UTF-8 del nombre de personaje (I-10).</summary>
         public const int MaxCharacterNameBytes = 32;
+
+        /// <summary>Máximo de habilidades por clase (I-16).</summary>
+        public const int MaxSkillsPerClass = 16;
+
+        /// <summary>Máximo de bytes UTF-8 del nombre de habilidad (I-16).</summary>
+        public const int MaxSkillNameBytes = 32;
 
         /// <summary>Tope de bytes UTF-8 del código de invitación que viaja en el saludo.</summary>
         public const int MaxInvitationCodeBytes = 64;

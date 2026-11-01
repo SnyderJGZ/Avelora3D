@@ -133,7 +133,7 @@ namespace Avelora.Server
             ClassCatalog classes;
             try
             {
-                classes = ClassCatalog.Load(config.ResolveClassesPath(configPath));
+                classes = ClassCatalog.Load(config.ResolveClassesPath(configPath), levels);
                 if (!string.IsNullOrWhiteSpace(config.ItemsPath))
                 {
                     classes.ValidateWeaponTypes(items);
@@ -147,6 +147,27 @@ namespace Avelora.Server
             {
                 ConsoleReporter.WriteError("No se pudieron cargar las clases: " + ex.Message);
                 return 2;
+            }
+
+            // Habilidades (I-16). Con skillsPath vacío la zona no las tiene: ni catálogo ni
+            // regeneración, y UseSkill se rechaza como desconocida.
+            SkillCatalog? skills = null;
+
+            if (!string.IsNullOrWhiteSpace(config.SkillsPath))
+            {
+                try
+                {
+                    skills = SkillCatalog.Load(config.ResolveSkillsPath(configPath), classes);
+                }
+                catch (Exception ex) when (
+                    ex is IOException ||
+                    ex is System.Text.Json.JsonException ||
+                    ex is InvalidOperationException ||
+                    ex is ArgumentException)
+                {
+                    ConsoleReporter.WriteError("No se pudieron cargar las habilidades: " + ex.Message);
+                    return 2;
+                }
             }
 
             // Enemigos (I-01). Con npcsPath vacío la zona se queda sin PNJ. Con ruta, el archivo
@@ -284,7 +305,8 @@ namespace Avelora.Server
                 zones,
                 (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
                 (int)Math.Ceiling(config.PvpModeChangeFromPvpSeconds * SimulationConstants.TickRate),
-                (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
+                (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate),
+                skills);
 
             try
             {
@@ -339,7 +361,8 @@ namespace Avelora.Server
                 npcs,
                 levels,
                 classes,
-                zones);
+                zones,
+                skills);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>

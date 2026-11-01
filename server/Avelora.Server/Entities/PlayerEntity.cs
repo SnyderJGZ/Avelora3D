@@ -113,6 +113,12 @@ namespace Avelora.Server.Entities
         /// <summary>Máximo del recurso definido por la clase.</summary>
         public int MaxMana { get; set; } = 100;
 
+        /// <summary>Tick en que cada habilidad vuelve a estar lista (I-16). No se guarda.</summary>
+        internal Dictionary<ushort, long> SkillReadyTicks { get; } = new Dictionary<ushort, long>();
+
+        /// <summary>Último recurso enviado al cliente (actual &lt;&lt; 32 | máximo); -1 = ninguno.</summary>
+        internal long ResourceSentKey { get; set; } = -1;
+
         /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
         internal bool ProgressChanged { get; set; }
 

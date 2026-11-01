@@ -1,0 +1,12 @@
+{
+  "skills": [
+    { "id": 4001, "name": "Golpe poderoso", "classId": 1, "requiredLevel": 1, "resourceCost": 30,
+      "cooldownSeconds": 6, "range": 1.2, "damage": 22, "damageType": "physical" },
+    { "id": 4002, "name": "Proyectil arcano", "classId": 2, "requiredLevel": 1, "resourceCost": 20,
+      "cooldownSeconds": 4, "range": 6, "damage": 18, "damageType": "magical" },
+    { "id": 4003, "name": "Disparo certero", "classId": 3, "requiredLevel": 1, "resourceCost": 25,
+      "cooldownSeconds": 5, "range": 7, "damage": 18, "damageType": "physical" },
+    { "id": 4004, "name": "Castigo", "classId": 4, "requiredLevel": 1, "resourceCost": 20,
+      "cooldownSeconds": 5, "range": 5, "damage": 14, "damageType": "magical" }
+  ]
+}

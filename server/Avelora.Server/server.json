@@ -16,6 +16,7 @@
   "itemsPath": "items.json",
   "levelsPath": "levels.json",
   "classesPath": "classes.json",
+  "skillsPath": "skills.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "lootReserveSeconds": 30,

@@ -11,13 +11,16 @@ using Avelora.Shared.Protocol;
 namespace Avelora.Server.Simulation
 {
     /// <summary>
-    /// Resuelve los ataques de los jugadores (I-02): el cliente pide y el servidor decide.
+    /// Resuelve los ataques de los jugadores (I-02) y el uso de habilidades (I-16): el cliente pide
+    /// y el servidor decide.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Un ataque solo vale si el atacante es un jugador de la zona, el objetivo existe, es un PNJ
     /// vivo, está dentro del alcance efectivo y el jugador ha respetado su recarga. La recarga se
-    /// cuenta en ticks de la zona, nunca con el reloj del cliente ni con el del servidor.
+    /// cuenta en ticks de la zona, nunca con el reloj del cliente ni con el del servidor. Las
+    /// habilidades comparten las mismas reglas de objetivo y alcance, pero tienen su propia recarga
+    /// y gastan el recurso de la clase.
     /// </para>
     /// <para>
     /// Corre en el hilo de simulación, dentro de <see cref="Zone.Tick"/>, después de mover a los
@@ -39,6 +42,8 @@ namespace Avelora.Server.Simulation
         private readonly MapCollisionGrid? _map;
         private readonly CombatEventBuffer? _events;
         private readonly ZoneMap _zones;
+        private readonly SkillCatalog? _skills;
+        private readonly long[] _skillRejected = new long[12];
 
         public CombatSystem(
             CombatSettings settings,
@@ -46,7 +51,8 @@ namespace Avelora.Server.Simulation
             ClassCatalog? classes = null,
             MapCollisionGrid? map = null,
             CombatEventBuffer? events = null,
-            ZoneMap? zones = null)
+            ZoneMap? zones = null,
+            SkillCatalog? skills = null)
         {
             _settings = settings;
             _catalog = catalog;
@@ -54,6 +60,7 @@ namespace Avelora.Server.Simulation
             _map = map;
             _events = events;
             _zones = zones ?? ZoneMap.Empty;
+            _skills = skills;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -97,6 +104,22 @@ namespace Avelora.Server.Simulation
         /// <summary>Cambios de una marca de botín ya asignada a otro jugador.</summary>
         public long LootOwnerChanges { get; private set; }
 
+        /// <summary>Habilidades que han resultado válidas (I-16).</summary>
+        public long SkillsUsed { get; private set; }
+
+        /// <summary>Contador de rechazos de una habilidad por motivo (I-16).</summary>
+        public long SkillsRejected(SkillRejectReason reason)
+        {
+            int index = (int)reason;
+            return index >= 0 && index < _skillRejected.Length ? _skillRejected[index] : 0;
+        }
+
+        /// <summary>El servidor aceptó una habilidad; el cliente cuenta la recarga (I-16).</summary>
+        public event Action<PlayerEntity, ushort>? SkillUsed;
+
+        /// <summary>El servidor rechazó una habilidad; el cliente recibe el motivo (I-16).</summary>
+        public event Action<PlayerEntity, ushort, SkillRejectReason>? SkillRejected;
+
         /// <summary>Aplica las intenciones del tick y limpia las acciones que ya han caducado.</summary>
         /// <param name="entities">Entidades vivas de la zona.</param>
         /// <param name="intents">Ataques que la red dejó en la cola, en orden de llegada.</param>
@@ -115,9 +138,22 @@ namespace Avelora.Server.Simulation
 
             ClearFinishedAttacks(entities, tick);
 
+            // Regeneración del recurso (I-16): entera, una vez por segundo y solo con catálogo.
+            if (_skills != null && tick % SimulationConstants.TickRate == 0)
+            {
+                RegenerateResources(entities);
+            }
+
             for (int i = 0; i < intents.Count; i++)
             {
-                Resolve(entities, intents[i], tick);
+                if (intents[i].SkillId == 0)
+                {
+                    Resolve(entities, intents[i], tick);
+                }
+                else
+                {
+                    ResolveSkill(entities, intents[i], tick);
+                }
             }
         }
 
@@ -139,88 +175,59 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            if (!entities.TryGet(intent.TargetId, out Entity? targetEntity))
+            TargetCheck targetCheck = CheckTarget(entities, attacker, intent.TargetId, out Entity? target, out PlayerEntity? victim, out NpcEntity? npc);
+            switch (targetCheck)
             {
-                RejectedTarget++;
-                return;
-            }
-
-            Entity target = targetEntity;
-            PlayerEntity? victim = targetEntity as PlayerEntity;
-            NpcEntity? npc = targetEntity as NpcEntity;
-            if (victim != null)
-            {
-                if (victim.Id == attacker.Id)
-                {
+                case TargetCheck.Ok:
+                    break;
+                case TargetCheck.Missing:
+                case TargetCheck.NotNpc:
+                    RejectedTarget++;
+                    return;
+                case TargetCheck.Self:
                     RejectedPvpSelf++;
                     return;
-                }
-
-                if (victim.IsDead)
-                {
+                case TargetCheck.TargetDead:
                     RejectedPvpTargetDead++;
                     return;
-                }
-
-                ZoneKind attackerZone = _zones.KindAt(attacker.Position.X, attacker.Position.Y);
-                ZoneKind victimZone = _zones.KindAt(victim.Position.X, victim.Position.Y);
-                if (attackerZone == ZoneKind.Safe || victimZone == ZoneKind.Safe)
-                {
+                case TargetCheck.PvpSafeZone:
                     RejectedPvpSafeZone++;
                     return;
-                }
-
-                if (!attacker.IsPvpEffective(attackerZone))
-                {
+                case TargetCheck.AttackerPve:
                     RejectedPvpAttackerPve++;
                     return;
-                }
-
-                if (!victim.IsPvpEffective(victimZone))
-                {
+                case TargetCheck.TargetPve:
                     RejectedPvpTargetPve++;
                     return;
-                }
-            }
-            else if (npc == null || npc.Action == EntityAction.Dead)
-            {
-                RejectedTarget++;
-                return;
-            }
-
-            if (npc != null && npc.AiState == NpcAiState.Return)
-            {
-                RejectedEvading++;
-                return;
+                case TargetCheck.Evading:
+                    RejectedEvading++;
+                    return;
+                case TargetCheck.NpcSafeZone:
+                    RejectedSafeZone++;
+                    return;
+                default:
+                    return;
             }
 
-            if (victim == null &&
-                (_zones.KindAt(attacker.Position.X, attacker.Position.Y) == ZoneKind.Safe ||
-                 _zones.KindAt(target.Position.X, target.Position.Y) == ZoneKind.Safe))
-            {
-                RejectedSafeZone++;
-                return;
-            }
+            Entity hitTarget = target!;
 
-            // Regla 4: la distancia entre centros cabe en alcance + tolerancia.
-            float dx = target.Position.X - attacker.Position.X;
-            float dy = target.Position.Y - attacker.Position.Y;
             ItemType? weapon = attacker.EquippedWeaponId != 0
                 ? _catalog?.Find(attacker.EquippedWeaponId)
                 : null;
             bool hasWeapon = weapon?.IsWeapon == true;
             CharacterClass characterClass = _classes.Find(attacker.ClassId)
                 ?? throw new InvalidOperationException("No existe la clase " + attacker.ClassId + " en classes.json.");
-            float range = (hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range) + _settings.RangeTolerance;
             float baseRange = hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range;
 
-            if ((dx * dx) + (dy * dy) > range * range)
+            // Regla 4: la distancia entre centros cabe en alcance + tolerancia y hay línea de visión.
+            ReachCheck reach = CheckReach(attacker, hitTarget, baseRange);
+            if (reach == ReachCheck.Distance)
             {
                 RejectedDistance++;
                 return;
             }
 
-            if (_map != null && !_map.HasLineOfSight(attacker.Position, target.Position))
+            if (reach == ReachCheck.LineOfSight)
             {
                 RejectedLineOfSight++;
                 return;
@@ -251,6 +258,264 @@ namespace Avelora.Server.Simulation
                 _catalog,
                 attacker.Equipment,
                 hasWeapon ? weapon!.DamageType : null);
+
+            ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType, baseRange > RangedMinRange, tick);
+
+            attacker.LastAttackTick = tick;
+            AttacksOk++;
+            if (victim != null)
+            {
+                PvpAttacksOk++;
+            }
+            if (hasWeapon)
+            {
+                AttacksWithWeapon++;
+            }
+
+            if (baseRange > RangedMinRange)
+            {
+                AttacksRanged++;
+            }
+        }
+
+        private void ResolveSkill(EntityStore entities, in AttackIntent intent, long tick)
+        {
+            // Sin atacante no hay a quién contestar, igual que en Resolve.
+            if (!entities.TryGet(intent.AttackerEntityId, out Entity? attackerEntity) ||
+                !(attackerEntity is PlayerEntity caster))
+            {
+                return;
+            }
+
+            SkillDefinition? skill = _skills?.Find(intent.SkillId);
+            if (skill == null)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.UnknownSkill);
+                return;
+            }
+
+            if (skill.ClassId != caster.ClassId)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.WrongClass);
+                return;
+            }
+
+            if (caster.Level < skill.RequiredLevel)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.LevelTooLow);
+                return;
+            }
+
+            if (caster.IsDead)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Dead);
+                return;
+            }
+
+            TargetCheck targetCheck = CheckTarget(entities, caster, intent.TargetId, out Entity? target, out PlayerEntity? victim, out NpcEntity? npc);
+            switch (targetCheck)
+            {
+                case TargetCheck.Ok:
+                    break;
+                case TargetCheck.PvpSafeZone:
+                case TargetCheck.NpcSafeZone:
+                    Reject(caster, intent.SkillId, SkillRejectReason.SafeZone);
+                    return;
+                case TargetCheck.AttackerPve:
+                case TargetCheck.TargetPve:
+                    Reject(caster, intent.SkillId, SkillRejectReason.PvpNotAllowed);
+                    return;
+                default:
+                    Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
+                    return;
+            }
+
+            Entity hitTarget = target!;
+
+            ReachCheck reach = CheckReach(caster, hitTarget, skill.Range);
+            if (reach == ReachCheck.Distance)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.OutOfRange);
+                return;
+            }
+
+            if (reach == ReachCheck.LineOfSight)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NoLineOfSight);
+                return;
+            }
+
+            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
+                return;
+            }
+
+            if (caster.Mana < skill.ResourceCost)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NotEnoughResource);
+                return;
+            }
+
+            caster.Mana -= skill.ResourceCost;
+            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+
+            int damage = CharacterStats.GetAttackDamage(
+                _classes,
+                caster.ClassId,
+                caster.Level,
+                caster.AllocStr,
+                caster.AllocDex,
+                caster.AllocInt,
+                caster.AllocVit,
+                skill.Damage,
+                out string damageType,
+                _catalog,
+                caster.Equipment,
+                skill.DamageType);
+
+            ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
+
+            SkillsUsed++;
+            SkillUsed?.Invoke(caster, (ushort)skill.Id);
+        }
+
+        private void Reject(PlayerEntity caster, ushort skillId, SkillRejectReason reason)
+        {
+            _skillRejected[(int)reason]++;
+            SkillRejected?.Invoke(caster, skillId, reason);
+        }
+
+        private enum TargetCheck
+        {
+            Ok,
+            Missing,
+            Self,
+            TargetDead,
+            PvpSafeZone,
+            AttackerPve,
+            TargetPve,
+            NotNpc,
+            Evading,
+            NpcSafeZone,
+        }
+
+        /// <summary>
+        /// Reglas de objetivo compartidas por el ataque básico y las habilidades: existencia, PvP
+        /// efectivo, zonas seguras y estados del PNJ.
+        /// </summary>
+        private TargetCheck CheckTarget(
+            EntityStore entities,
+            PlayerEntity attacker,
+            int targetId,
+            out Entity? target,
+            out PlayerEntity? victim,
+            out NpcEntity? npc)
+        {
+            target = null;
+            victim = null;
+            npc = null;
+
+            if (!entities.TryGet(targetId, out Entity? targetEntity))
+            {
+                return TargetCheck.Missing;
+            }
+
+            target = targetEntity;
+            victim = targetEntity as PlayerEntity;
+            npc = targetEntity as NpcEntity;
+            if (victim != null)
+            {
+                if (victim.Id == attacker.Id)
+                {
+                    return TargetCheck.Self;
+                }
+
+                if (victim.IsDead)
+                {
+                    return TargetCheck.TargetDead;
+                }
+
+                ZoneKind attackerZone = _zones.KindAt(attacker.Position.X, attacker.Position.Y);
+                ZoneKind victimZone = _zones.KindAt(victim.Position.X, victim.Position.Y);
+                if (attackerZone == ZoneKind.Safe || victimZone == ZoneKind.Safe)
+                {
+                    return TargetCheck.PvpSafeZone;
+                }
+
+                if (!attacker.IsPvpEffective(attackerZone))
+                {
+                    return TargetCheck.AttackerPve;
+                }
+
+                if (!victim.IsPvpEffective(victimZone))
+                {
+                    return TargetCheck.TargetPve;
+                }
+            }
+            else if (npc == null || npc.Action == EntityAction.Dead)
+            {
+                return TargetCheck.NotNpc;
+            }
+
+            if (npc != null && npc.AiState == NpcAiState.Return)
+            {
+                return TargetCheck.Evading;
+            }
+
+            if (victim == null &&
+                (_zones.KindAt(attacker.Position.X, attacker.Position.Y) == ZoneKind.Safe ||
+                 _zones.KindAt(target.Position.X, target.Position.Y) == ZoneKind.Safe))
+            {
+                return TargetCheck.NpcSafeZone;
+            }
+
+            return TargetCheck.Ok;
+        }
+
+        private enum ReachCheck
+        {
+            Ok,
+            Distance,
+            LineOfSight,
+        }
+
+        /// <summary>Distancia efectiva (alcance base + tolerancia) y línea de visión, compartidas.</summary>
+        private ReachCheck CheckReach(Entity attacker, Entity target, float baseRange)
+        {
+            float dx = target.Position.X - attacker.Position.X;
+            float dy = target.Position.Y - attacker.Position.Y;
+            float range = baseRange + _settings.RangeTolerance;
+
+            if ((dx * dx) + (dy * dy) > range * range)
+            {
+                return ReachCheck.Distance;
+            }
+
+            if (_map != null && !_map.HasLineOfSight(attacker.Position, target.Position))
+            {
+                return ReachCheck.LineOfSight;
+            }
+
+            return ReachCheck.Ok;
+        }
+
+        /// <summary>
+        /// Mitigación, vida, muerte, botín, aggro y evento de combate, compartidos por el ataque
+        /// básico y las habilidades. El daño ya viene calculado y sin mitigar.
+        /// </summary>
+        private void ApplyDamage(
+            EntityStore entities,
+            PlayerEntity attacker,
+            Entity target,
+            PlayerEntity? victim,
+            NpcEntity? npc,
+            int rawDamage,
+            string damageType,
+            bool ranged,
+            long tick)
+        {
+            int damage = rawDamage;
             int defense;
             if (victim != null)
             {
@@ -326,24 +591,8 @@ namespace Avelora.Server.Simulation
                 }
             }
 
-            attacker.LastAttackTick = tick;
             attacker.Action = EntityAction.Attacking;
             attacker.ActionUntilTick = tick + AttackingTicks;
-            AttacksOk++;
-            if (victim != null)
-            {
-                PvpAttacksOk++;
-            }
-            if (hasWeapon)
-            {
-                AttacksWithWeapon++;
-            }
-
-            bool ranged = baseRange > RangedMinRange;
-            if (ranged)
-            {
-                AttacksRanged++;
-            }
 
             if (_events != null)
             {
@@ -363,6 +612,32 @@ namespace Avelora.Server.Simulation
                     target.Id,
                     (ushort)Math.Min(damage, ushort.MaxValue),
                     flags));
+            }
+        }
+
+        /// <summary>Suma el recurso de la clase una vez por segundo a los jugadores vivos (I-16).</summary>
+        private void RegenerateResources(EntityStore entities)
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                if (!(entities[i] is PlayerEntity player) || player.IsDead)
+                {
+                    continue;
+                }
+
+                CharacterClass? characterClass = _classes.Find(player.ClassId);
+                if (characterClass?.Resource == null)
+                {
+                    continue;
+                }
+
+                int regen = characterClass.Resource.RegenPerSecond;
+                if (regen <= 0 || player.Mana >= player.MaxMana)
+                {
+                    continue;
+                }
+
+                player.Mana = Math.Min(player.MaxMana, player.Mana + regen);
             }
         }
 

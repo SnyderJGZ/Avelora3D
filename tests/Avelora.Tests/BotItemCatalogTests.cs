@@ -251,6 +251,19 @@ namespace Avelora.Tests
             accountPrefix: "bot-sight", password: "clave", invitationCode: "invitacion",
             behavior: BotBehavior.Fight, transportFactory: () => transport, map: map);
 
+        [Fact]
+        public void Bot_Cuenta_Mensajes_De_Habilidades_Y_Recurso_Codificados()
+        {
+            var transport = new SightTransport(sendSkillTelemetry: true);
+            using var bot = new BotClient(1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 300, accountPrefix: "bot", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Random, transportFactory: () => transport);
+            bot.Run(CancellationToken.None);
+            Assert.Equal(2, bot.SkillsOk);
+            Assert.Equal(1, bot.SkillsRejected);
+            Assert.Equal(2, bot.ResourceMessages);
+        }
+
         private sealed class SightTransport : IClientTransport
         {
             private readonly Queue<byte[]> _incoming = new Queue<byte[]>();
@@ -259,6 +272,7 @@ namespace Avelora.Tests
             private bool _connectPending;
             private bool _connected;
             private readonly bool _sendZoneTelemetry;
+            private readonly bool _sendSkillTelemetry;
             private readonly bool _sendPvpTelemetry;
             private readonly bool _sendPvpPlayer;
             private readonly bool _sendPvpWaiting;
@@ -267,12 +281,13 @@ namespace Avelora.Tests
                 bool sendZoneTelemetry = false,
                 bool sendPvpTelemetry = false,
                 bool sendPvpPlayer = false,
-                bool sendPvpWaiting = false)
+                bool sendPvpWaiting = false, bool sendSkillTelemetry = false)
             {
                 _sendZoneTelemetry = sendZoneTelemetry;
                 _sendPvpTelemetry = sendPvpTelemetry;
                 _sendPvpPlayer = sendPvpPlayer;
                 _sendPvpWaiting = sendPvpWaiting;
+                _sendSkillTelemetry = sendSkillTelemetry;
                 using RSA rsa = RSA.Create(2048);
                 _publicKey = rsa.ExportParameters(includePrivateParameters: false);
             }
@@ -335,6 +350,14 @@ namespace Avelora.Tests
                         _incoming.Enqueue(MessageCodec.EncodeZoneChanged(new ZoneChangedMessage(0, ZoneKind.Normal)));
                     }
 
+                    if (_sendSkillTelemetry)
+                    {
+                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001)));
+                        _incoming.Enqueue(MessageCodec.EncodeSkillUsed(new SkillUsedMessage(4001)));
+                        _incoming.Enqueue(MessageCodec.EncodeSkillRejected(new SkillRejectedMessage(4001, SkillRejectReason.Cooldown)));
+                        _incoming.Enqueue(MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(30, 100)));
+                        _incoming.Enqueue(MessageCodec.EncodeResourceStatus(new ResourceStatusMessage(34, 100)));
+                    }
                     if (_sendPvpTelemetry)
                     {
                         _incoming.Enqueue(MessageCodec.EncodePvpStatus(new PvpStatusMessage(
