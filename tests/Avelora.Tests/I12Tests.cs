@@ -267,15 +267,15 @@ namespace Avelora.Tests
 
             Assert.Equal((ushort)4101, player.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)4102, player.Inventory[0].ItemId);
-            Assert.Equal((ushort)4201, player.Inventory[10].ItemId);
+            Assert.Equal((ushort)4201, player.Inventory[1].ItemId);
             Assert.Equal((ushort)0, player.Equipment[(int)EquipSlot.Offhand]);
 
             EnqueueEquip(zone, player, 0);
             Assert.Equal((ushort)4102, player.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)4101, player.Inventory[0].ItemId);
-            EnqueueEquip(zone, player, 10);
+            EnqueueEquip(zone, player, 1);
             Assert.Equal((ushort)4201, player.Equipment[(int)EquipSlot.Offhand]);
-            Assert.Equal((ushort)0, player.Inventory[10].ItemId);
+            Assert.Equal((ushort)0, player.Inventory[1].ItemId);
         }
 
         [Fact]
@@ -287,7 +287,7 @@ namespace Avelora.Tests
             player.Equipment[(int)EquipSlot.Weapon] = 4101;
 
             Assert.Equal(1, zone.EnforceEquipment(player));
-            Assert.Equal((ushort)4101, player.Inventory[10].ItemId);
+            Assert.Equal((ushort)4101, player.Inventory[0].ItemId);
             Assert.Equal((ushort)0, player.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal(1, zone.EquipmentCorrectedOnLoad);
         }
@@ -300,7 +300,7 @@ namespace Avelora.Tests
             classPlayer.CharacterName = "PersonajePrueba";
             classPlayer.Equipment[(int)EquipSlot.Weapon] = 4101;
             Assert.Equal(1, classZone.EnforceEquipment(classPlayer));
-            Assert.Equal((ushort)4101, classPlayer.Inventory[10].ItemId);
+            Assert.Equal((ushort)4101, classPlayer.Inventory[0].ItemId);
             Assert.Equal((ushort)0, classPlayer.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal(1, classZone.EquipmentCorrectedOnLoad);
 
@@ -310,14 +310,14 @@ namespace Avelora.Tests
             PlayerEntity levelPlayer = SpawnWithItems(levelZone, new InventorySlot(0, 0));
             levelPlayer.Equipment[(int)EquipSlot.Head] = 4201;
             Assert.Equal(1, levelZone.EnforceEquipment(levelPlayer));
-            Assert.Equal((ushort)4201, levelPlayer.Inventory[10].ItemId);
+            Assert.Equal((ushort)4201, levelPlayer.Inventory[0].ItemId);
 
             Zone handsZone = NewZone(new[] { Weapon(4102, "TipoA", twoHanded: true), Armor(4202, "offhand") });
             PlayerEntity handsPlayer = SpawnWithItems(handsZone, new InventorySlot(0, 0));
             handsPlayer.Equipment[(int)EquipSlot.Weapon] = 4102;
             handsPlayer.Equipment[(int)EquipSlot.Offhand] = 4202;
             Assert.Equal(1, handsZone.EnforceEquipment(handsPlayer));
-            Assert.Equal((ushort)4202, handsPlayer.Inventory[10].ItemId);
+            Assert.Equal((ushort)4202, handsPlayer.Inventory[0].ItemId);
             Assert.Equal((ushort)0, handsPlayer.Equipment[(int)EquipSlot.Offhand]);
 
             Zone fullZone = NewZone(new[] { Weapon(4103, "OtroTipo") }, slots: 1);
@@ -526,7 +526,7 @@ namespace Avelora.Tests
             Id = id, Name = "Protección de prueba", Kind = "armor", Slot = slot, MaxStack = 1,
         };
 
-        private static Zone NewZone(ItemType[] items, int slots = 13) => new Zone(
+        private static Zone NewZone(ItemType[] items, int slots = 3) => new Zone(
             1, MapCollisionGrid.AllWalkable(10, 10), new EntityStore(), new EntityIdAllocator(),
             new InputQueue(16), new MovementSystem(4, SimulationConstants.FixedDt), 16, 4,
             items: new ItemCatalog { Items = new List<ItemType>(items) },

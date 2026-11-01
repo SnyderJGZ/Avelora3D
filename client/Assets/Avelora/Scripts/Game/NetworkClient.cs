@@ -182,11 +182,14 @@ namespace Avelora.Client
         private ResourceStatusMessage _resource;
         private bool _resourceReceived;
         private readonly Dictionary<ushort, float> _skillReadyAt = new Dictionary<ushort, float>();
-        private readonly ushort[] _hotbarSkills = new ushort[10];
-        private int _pendingSkillSlot = -1;
-        private int _pendingSkillFrom = -1;
-        private ushort _pendingSkillId;
-        private float _pendingSkillExpiresAt;
+        private enum ShortcutKind { Empty, Item, Skill }
+        private struct HotbarShortcut
+        {
+            public ShortcutKind Kind;
+            public ushort Id;
+            public HotbarShortcut(ShortcutKind kind, ushort id) { Kind = kind; Id = id; }
+        }
+        private readonly HotbarShortcut[] _hotbar = new HotbarShortcut[10];
         private bool _showSkills;
         private PvpStatusMessage _pvpStatus;
         private bool _pvpStatusReceived;
@@ -386,12 +389,11 @@ namespace Avelora.Client
             _resource = default;
             _resourceReceived = false;
             _skillReadyAt.Clear();
-            _pendingSkillSlot = -1;
-            Array.Clear(_hotbarSkills, 0, _hotbarSkills.Length);
+            Array.Clear(_hotbar, 0, _hotbar.Length);
+            _shortcutDrag = default;
+            _shortcutDragging = false;
+            _shortcutDragFrom = -1;
             _showSkills = false;
-            _skillDragId = 0;
-            _skillDragFrom = -1;
-            _skillDragging = false;
             _pvpStatus = default;
             _pvpStatusReceived = false;
             _minimapDirty = true;
@@ -439,9 +441,6 @@ namespace Avelora.Client
 
         private void Update()
         {
-            if (_pendingSkillSlot >= 0 && Time.unscaledTime >= _pendingSkillExpiresAt)
-                _pendingSkillSlot = -1;
-
             if (_transport != null)
             {
                 _transport.Poll();
@@ -777,7 +776,7 @@ namespace Avelora.Client
             }
 
             // El 0 es el décimo hueco de la barra rápida.
-            if (keyboard.digit0Key.wasPressedThisFrame && _inventoryIds.Length > 9)
+            if (keyboard.digit0Key.wasPressedThisFrame)
             {
                 PressHotbar(9);
             }
@@ -816,45 +815,12 @@ namespace Avelora.Client
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
-        // No se superpone la habilidad hasta que el servidor confirma que sali? el objeto.
-        private void PlaceHotbarSkill(int slot, int from, ushort id)
+        private void PlaceHotbarShortcut(int slot, int from, HotbarShortcut shortcut)
         {
-            if (_transport == null) return;
-            // Una nueva asignaci?n sustituye cualquier intento pendiente sin confirmaci?n.
-            _pendingSkillSlot = -1;
-            if (_inventoryIds[slot] != 0)
-            {
-                int destination = -1;
-                for (int i = 10; i < _inventoryIds.Length; i++)
-                {
-                    if (_inventoryIds[i] == 0) { destination = i; break; }
-                }
-                if (destination < 0)
-                {
-                    for (int i = 0; i < _hotbarSkills.Length && i < _inventoryIds.Length; i++)
-                    {
-                        if (i != slot && _inventoryIds[i] == 0 && _hotbarSkills[i] == 0)
-                        { destination = i; break; }
-                    }
-                }
-                if (destination < 0) { ShowHint("Inventario lleno"); return; }
-                _pendingSkillSlot = slot;
-                _pendingSkillFrom = from;
-                _pendingSkillId = id;
-                _pendingSkillExpiresAt = Time.unscaledTime + 2f;
-                SendMoveItem(slot, destination, _inventoryCounts[slot]);
-                return;
-            }
-            AssignHotbarSkill(slot, from, id);
-        }
-
-        private void AssignHotbarSkill(int slot, int from, ushort id)
-        {
-            if (from >= 0 && _hotbarSkills[from] != id) return;
-            ushort previous = _hotbarSkills[slot];
-            _hotbarSkills[slot] = id;
-            if (from >= 0) _hotbarSkills[from] = previous;
-            SaveHotbarSkills();
+            HotbarShortcut previous = _hotbar[slot];
+            _hotbar[slot] = shortcut;
+            if (from >= 0) _hotbar[from] = previous;
+            SaveHotbar();
         }
 
         private bool TryGetSkill(ushort id, out SkillCatalogEntry skill)
@@ -882,22 +848,37 @@ namespace Avelora.Client
                 ? Mathf.Max(0f, readyAt - Time.unscaledTime) : 0f;
         }
 
-        private void LoadHotbarSkills()
+        private void LoadHotbar()
         {
             if (_selectedCharacterId == 0) return;
-            for (int i = 0; i < _hotbarSkills.Length; i++)
+            for (int i = 0; i < _hotbar.Length; i++)
             {
-                int id = PlayerPrefs.GetInt("avelora.skillbar." + _selectedCharacterId + "." + i, 0);
-                _hotbarSkills[i] = id > 0 && id <= ushort.MaxValue ? (ushort)id : (ushort)0;
+                string key = "avelora.hotbar." + _selectedCharacterId + "." + i;
+                // El cero guardado evita volver a importar una habilidad retirada.
+                if (!PlayerPrefs.HasKey(key))
+                {
+                    int oldId = PlayerPrefs.GetInt("avelora.skillbar." + _selectedCharacterId + "." + i, 0);
+                    if (oldId > 0 && oldId <= ushort.MaxValue)
+                        _hotbar[i] = new HotbarShortcut(ShortcutKind.Skill, (ushort)oldId);
+                    continue;
+                }
+                int value = PlayerPrefs.GetInt(key, 0);
+                int kind = value >> 16;
+                ushort id = (ushort)(value & 0xffff);
+                _hotbar[i] = id != 0 && (kind == (int)ShortcutKind.Item || kind == (int)ShortcutKind.Skill)
+                    ? new HotbarShortcut((ShortcutKind)kind, id) : default;
             }
+            SaveHotbar();
         }
 
-        private void SaveHotbarSkills()
+        private void SaveHotbar()
         {
             if (_selectedCharacterId == 0) return;
-            for (int i = 0; i < _hotbarSkills.Length; i++)
+            for (int i = 0; i < _hotbar.Length; i++)
             {
-                PlayerPrefs.SetInt("avelora.skillbar." + _selectedCharacterId + "." + i, _hotbarSkills[i]);
+                PlayerPrefs.SetInt("avelora.hotbar." + _selectedCharacterId + "." + i,
+                    ((int)_hotbar[i].Kind << 16) | _hotbar[i].Id);
+                PlayerPrefs.DeleteKey("avelora.skillbar." + _selectedCharacterId + "." + i);
             }
             PlayerPrefs.Save();
         }
@@ -905,20 +886,29 @@ namespace Avelora.Client
         private int ResourceCurrent => _resourceReceived ? _resource.Current : _stats.Resource;
         private int ResourceMax => _resourceReceived ? _resource.Max : _stats.MaxResource;
 
-        private bool HotbarSkillAt(int slot, out SkillCatalogEntry skill)
-        {
-            skill = default;
-            return slot >= 0 && slot < _hotbarSkills.Length && slot < _inventoryIds.Length &&
-                _inventoryIds[slot] == 0 && _hotbarSkills[slot] != 0 &&
-                TryGetSkill(_hotbarSkills[slot], out skill);
-        }
-
         private void PressHotbar(int n)
         {
-            if (HotbarSkillAt(n, out SkillCatalogEntry skill))
+            HotbarShortcut shortcut = _hotbar[n];
+            if (shortcut.Kind == ShortcutKind.Skill && TryGetSkill(shortcut.Id, out SkillCatalogEntry skill))
                 TryUseSkill(skill, SelectedTarget());
-            else
-                UseSlot(n);
+            else if (shortcut.Kind == ShortcutKind.Item)
+            {
+                for (int i = 0; i < _inventoryIds.Length; i++)
+                {
+                    if (_inventoryIds[i] != shortcut.Id || _inventoryCounts[i] == 0) continue;
+                    UseSlot(i);
+                    return;
+                }
+                ShowHint("No te quedan");
+            }
+        }
+
+        private int HotbarItemCount(ushort id)
+        {
+            int count = 0;
+            for (int i = 0; i < _inventoryIds.Length; i++)
+                if (_inventoryIds[i] == id) count += _inventoryCounts[i];
+            return count;
         }
 
         private void TryUseSkill(SkillCatalogEntry skill, RemotePlayerView target)
@@ -1288,7 +1278,6 @@ namespace Avelora.Client
 
         private void OnTransportDisconnected(DisconnectReason reason)
         {
-            _pendingSkillSlot = -1;
             _connecting = false;
             _welcomeReceived = false;
             _selectionActive = false;
@@ -1374,17 +1363,6 @@ namespace Avelora.Client
                         _inventoryCounts = inventory.Counts;
                         _equipment = inventory.Equipment;
                         _gold = inventory.Gold;
-                        if (_pendingSkillSlot >= 0)
-                        {
-                            int slot = _pendingSkillSlot;
-                            if (Time.unscaledTime >= _pendingSkillExpiresAt)
-                                _pendingSkillSlot = -1;
-                            else if (slot < _inventoryIds.Length && _inventoryIds[slot] == 0)
-                            {
-                                _pendingSkillSlot = -1;
-                                AssignHotbarSkill(slot, _pendingSkillFrom, _pendingSkillId);
-                            }
-                        }
                     }
 
                     break;
@@ -1758,13 +1736,12 @@ namespace Avelora.Client
             _resource = default;
             _resourceReceived = false;
             _skillReadyAt.Clear();
-            _pendingSkillSlot = -1;
-            Array.Clear(_hotbarSkills, 0, _hotbarSkills.Length);
+            Array.Clear(_hotbar, 0, _hotbar.Length);
+            _shortcutDrag = default;
+            _shortcutDragging = false;
+            _shortcutDragFrom = -1;
             _showSkills = false;
-            LoadHotbarSkills();
-            _skillDragId = 0;
-            _skillDragFrom = -1;
-            _skillDragging = false;
+            LoadHotbar();
             _pvpStatus = default;
             _pvpStatusReceived = false;
             _minimapDirty = true;
@@ -2044,7 +2021,6 @@ namespace Avelora.Client
 
         private void CleanupTransport()
         {
-            _pendingSkillSlot = -1;
             IClientTransport transport = _transport;
             _transport = null;
 

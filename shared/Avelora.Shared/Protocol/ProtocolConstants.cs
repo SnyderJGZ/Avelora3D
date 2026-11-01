@@ -64,9 +64,6 @@ namespace Avelora.Shared.Protocol
         /// <summary>Máximo de huecos de inventario que admite el protocolo.</summary>
         public const int MaxInventorySlots = 60;
 
-        /// <summary>Huecos iniciales reservados para la barra rápida.</summary>
-        public const int QuickBarSlotCount = 10;
-
         /// <summary>Destino de desequipar que selecciona el primer hueco libre.</summary>
         public const byte FirstFreeInventorySlot = byte.MaxValue;
 

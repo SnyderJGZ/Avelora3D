@@ -19,10 +19,10 @@ namespace Avelora.Client
         private Rect _hotbarPanel;
         private Rect _skillsPanel;
         private Vector2? _skillsPosition;
-        private ushort _skillDragId;
-        private int _skillDragFrom = -1;
-        private bool _skillDragging;
-        private Vector2 _skillPressAt;
+        private HotbarShortcut _shortcutDrag;
+        private int _shortcutDragFrom = -1;
+        private bool _shortcutDragging;
+        private Vector2 _shortcutPressAt;
         private int _hotbarHover = -1;
 
         // Arte oscuro de la interfaz (Resources/GUI/Dark) y sus estilos de texto.
@@ -898,19 +898,10 @@ namespace Avelora.Client
         }
 
         /// <summary>
-        /// Barra rápida abajo al centro: los 10 primeros huecos del inventario con las teclas 1–0.
+        /// Barra rápida abajo al centro: diez accesos independientes con las teclas 1–0.
         /// </summary>
         private void DrawHotbar()
         {
-            // Defensa ?nica: los objetos del servidor prevalecen incluso con PlayerPrefs antiguos.
-            bool changed = false;
-            for (int i = 0; i < _hotbarSkills.Length && i < _inventoryIds.Length; i++)
-            {
-                if (_inventoryIds[i] == 0 || _hotbarSkills[i] == 0) continue;
-                _hotbarSkills[i] = 0;
-                changed = true;
-            }
-            if (changed) SaveHotbarSkills();
             _hotbarHover = -1;
             EnsureGuiArt();
 
@@ -920,22 +911,27 @@ namespace Avelora.Client
 
             ushort hovered = 0;
             Vector2 mouse = Event.current.mousePosition;
-            int count = Mathf.Min(10, _inventoryIds.Length);
+            int count = _hotbar.Length;
             for (int i = 0; i < count; i++)
             {
                 // Huecos de 123×120 cada 132 px desde x = 77, y = 16 en la imagen original.
                 Rect slot = Part(_hotbarPanel, scale, 77f + (i * 132f) + 13.5f, 16f + 12f, 96f, 96f);
                 if (slot.Contains(mouse)) _hotbarHover = i;
-                if (HotbarSkillAt(i, out SkillCatalogEntry skill))
+                HotbarShortcut shortcut = _hotbar[i];
+                ShortcutInput(slot, i);
+                if (shortcut.Kind == ShortcutKind.Skill && TryGetSkill(shortcut.Id, out SkillCatalogEntry skill))
                 {
-                    if (slot.Contains(mouse)) _dropTarget = i;
                     DrawSkillOnSlot(slot, i, skill);
-                    continue;
                 }
-                SlotInput(slot, i, _inventoryIds[i]);
-                if (DrawItemSlot(slot, _inventoryIds[i], _inventoryCounts[i], drawFrame: false) && slot.Contains(mouse))
+                else if (shortcut.Kind == ShortcutKind.Item)
                 {
-                    hovered = _inventoryIds[i];
+                    int total = HotbarItemCount(shortcut.Id);
+                    Color previous = GUI.color;
+                    if (total == 0) GUI.color = new Color(0.4f, 0.4f, 0.4f, 1f);
+                    DrawItemSlot(slot, shortcut.Id, 1, drawFrame: false);
+                    GUI.Label(new Rect(slot.x, slot.yMax - 20f, slot.width - 6f, 18f), total.ToString(), _darkRightStyle);
+                    GUI.color = previous;
+                    if (slot.Contains(mouse)) hovered = shortcut.Id;
                 }
             }
 
@@ -981,9 +977,9 @@ namespace Avelora.Client
                 GUI.color = previous;
                 if (!locked && e.type == EventType.MouseDown && e.button == 0 && row.Contains(e.mousePosition))
                 {
-                    _skillDragId = skill.Id;
-                    _skillDragFrom = -1;
-                    _skillPressAt = e.mousePosition;
+                    _shortcutDrag = new HotbarShortcut(ShortcutKind.Skill, skill.Id);
+                    _shortcutDragFrom = -1;
+                    _shortcutPressAt = e.mousePosition;
                     e.Use();
                 }
             }
@@ -1011,60 +1007,71 @@ namespace Avelora.Client
                 GUI.Label(slot, Mathf.CeilToInt(seconds).ToString(), _damageNumberStyle);
             }
             GUI.color = previous;
+        }
 
+        private void ShortcutInput(Rect slot, int index)
+        {
             Event e = Event.current;
             if (e.type != EventType.MouseDown || !slot.Contains(e.mousePosition)) return;
-            if (e.button == 0)
+            if ((_showStats && _statsReceived && _statsPanel.Contains(e.mousePosition)) ||
+                (_showInventory && _inventoryPanel.Contains(e.mousePosition)) ||
+                (_showSkills && _skillCatalogReceived && _skillsPanel.Contains(e.mousePosition))) return;
+            if (e.button == 0 && _hotbar[index].Kind != ShortcutKind.Empty)
             {
-                _skillDragId = skill.Id;
-                _skillDragFrom = index;
-                _skillPressAt = e.mousePosition;
+                _shortcutDrag = _hotbar[index];
+                _shortcutDragFrom = index;
+                _shortcutPressAt = e.mousePosition;
                 e.Use();
             }
             else if (e.button == 1)
             {
-                _hotbarSkills[index] = 0;
-                SaveHotbarSkills();
+                _hotbar[index] = default;
+                SaveHotbar();
                 e.Use();
             }
         }
 
-        private void HandleSkillDrag()
+        private void HandleShortcutDrag()
         {
-            if (_skillDragId == 0) return;
+            if (_shortcutDrag.Kind == ShortcutKind.Empty) return;
             Event e = Event.current;
-            if (!_skillDragging && e.type == EventType.MouseDrag && (e.mousePosition - _skillPressAt).sqrMagnitude > 36f)
+            if (!_shortcutDragging && e.type == EventType.MouseDrag && (e.mousePosition - _shortcutPressAt).sqrMagnitude > 36f)
             {
-                _skillDragging = true;
+                _shortcutDragging = true;
             }
-            if (_skillDragging && e.type == EventType.Repaint && TryGetSkill(_skillDragId, out SkillCatalogEntry skill))
+            if (_shortcutDragging && e.type == EventType.Repaint)
             {
                 var rect = new Rect(e.mousePosition.x - 22f, e.mousePosition.y - 22f, 44f, 44f);
-                Color previous = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, 0.55f);
-                GUI.DrawTexture(rect, Texture2D.whiteTexture);
-                GUI.color = previous;
-                GUI.Label(rect, skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name, _overlayStyle);
+                if (_shortcutDrag.Kind == ShortcutKind.Item)
+                    DrawItemSlot(rect, _shortcutDrag.Id, 1, drawFrame: false);
+                else if (TryGetSkill(_shortcutDrag.Id, out SkillCatalogEntry skill))
+                {
+                    Color previous = GUI.color;
+                    GUI.color = new Color(0f, 0f, 0f, 0.55f);
+                    GUI.DrawTexture(rect, Texture2D.whiteTexture);
+                    GUI.color = previous;
+                    GUI.Label(rect, skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name, _overlayStyle);
+                }
             }
             if (e.rawType != EventType.MouseUp || e.button != 0) return;
             bool overPanel = (_showStats && _statsReceived && _statsPanel.Contains(e.mousePosition)) ||
                 (_showInventory && _inventoryPanel.Contains(e.mousePosition)) ||
                 (_showSkills && _skillCatalogReceived && _skillsPanel.Contains(e.mousePosition));
-            if (_skillDragging && !overPanel)
+            if (_shortcutDragging && !overPanel)
             {
                 if (_hotbarHover >= 0)
                 {
-                    PlaceHotbarSkill(_hotbarHover, _skillDragFrom, _skillDragId);
+                    PlaceHotbarShortcut(_hotbarHover, _shortcutDragFrom, _shortcutDrag);
                 }
-                else if (_skillDragFrom >= 0)
+                else if (_shortcutDragFrom >= 0 && !_hotbarPanel.Contains(e.mousePosition))
                 {
-                    _hotbarSkills[_skillDragFrom] = 0;
-                    SaveHotbarSkills();
+                    _hotbar[_shortcutDragFrom] = default;
+                    SaveHotbar();
                 }
             }
-            _skillDragId = 0;
-            _skillDragFrom = -1;
-            _skillDragging = false;
+            _shortcutDrag = default;
+            _shortcutDragFrom = -1;
+            _shortcutDragging = false;
         }
 
         // Inventario interactivo (I-14b). Un «origen» es un hueco del inventario (0…) o del equipo
@@ -1184,6 +1191,13 @@ namespace Avelora.Client
             _dragging = false;
             if (_transport == null)
             {
+                return;
+            }
+
+            if (_hotbarHover >= 0)
+            {
+                if (from < EquipSource && id != 0)
+                    PlaceHotbarShortcut(_hotbarHover, -1, new HotbarShortcut(ShortcutKind.Item, id));
                 return;
             }
 
@@ -1777,7 +1791,7 @@ namespace Avelora.Client
             }
 
             HandleDrag();
-            HandleSkillDrag();
+            HandleShortcutDrag();
             if (_discardSlot >= 0)
             {
                 DrawDiscardDialog();

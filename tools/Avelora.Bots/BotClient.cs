@@ -2454,7 +2454,7 @@ namespace Avelora.Bots
         private bool HasFreeInventorySlot()
         {
             int slots = Math.Min(_inventoryItemIds.Length, _inventoryCounts.Length);
-            for (int i = ProtocolConstants.QuickBarSlotCount; i < slots; i++)
+            for (int i = 0; i < slots; i++)
             {
                 if (_inventoryItemIds[i] == 0 && _inventoryCounts[i] == 0)
                 {

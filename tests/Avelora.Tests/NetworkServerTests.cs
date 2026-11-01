@@ -288,7 +288,7 @@ namespace Avelora.Tests
                     Assert.True(MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage decoded));
                     return decoded;
                 }));
-            Assert.Equal((ushort)3101, inventory.ItemIds[10]);
+            Assert.Equal((ushort)3101, inventory.ItemIds[0]);
             Assert.Equal((ushort)0, inventory.Equipment[(int)EquipSlot.Weapon]);
         }
 
@@ -383,8 +383,8 @@ namespace Avelora.Tests
             }
             else
             {
-                Assert.Equal(caso == "nivel" ? (ushort)4101 : (ushort)4201, inventory.ItemIds[10]);
-                Assert.Equal((ushort)1, inventory.Counts[10]);
+                Assert.Equal(caso == "nivel" ? (ushort)4101 : (ushort)4201, inventory.ItemIds[0]);
+                Assert.Equal((ushort)1, inventory.Counts[0]);
             }
         }
 
@@ -1764,14 +1764,14 @@ namespace Avelora.Tests
             harness.Zone.AddEntity(ground);
             harness.Transport.RaiseReceived(1, MessageCodec.EncodePickUp(new PickUpMessage(ground.Id)));
             harness.Zone.Tick();
-            Assert.Equal((ushort)2, player.Inventory[10].Count);
+            Assert.Equal((ushort)2, player.Inventory[0].Count);
             Assert.False(harness.Zone.Entities.TryGet(ground.Id, out _));
 
             harness.Transport.Sent.Clear();
             harness.Server.PollOnce();
             Assert.Contains(harness.Transport.Sent, sent =>
                 MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
-                inventory.SlotCount == 20 && inventory.ItemIds[10] == 3001 && inventory.Counts[10] == 2);
+                inventory.SlotCount == 20 && inventory.ItemIds[0] == 3001 && inventory.Counts[0] == 2);
 
             player.Health = 50;
             player.Inventory[0] = new InventorySlot(3002, 1);

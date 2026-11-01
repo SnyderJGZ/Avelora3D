@@ -1124,7 +1124,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
 | **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor, bots y cliente I-15b |
 | **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor, bots y cliente I-15pb |
-| **I-16** | Habilidades, regeneración y bots (protocolo v21, esquema v8) | ✅ servidor; cliente I-16b por hacer |
+| **I-16** | Habilidades, regeneración y bots (protocolo v21, esquema v8) | ✅ servidor; cliente I-16b/I-16c implementado, Play pendiente |
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
@@ -1563,7 +1563,7 @@ Métricas: `intercambios_equipo`, `movidos`, `divididos`, `juntados`, `intercamb
 vacío (`armaduras_equipadas`); el comportamiento nuevo **`inventory`** (9) recoge botín y cada 0,5 s manda
 una acción de inventario al azar.
 
-Cliente (I-14b): arrastrar entre huecos del inventario o la barra rápida mueve, intercambia o junta
+Cliente (I-14b, actualizado en I-16c): arrastrar entre huecos del inventario mueve, intercambia o junta
 (con Shift, media pila); arrastrar al panel de personaje (C) equipa y del panel al inventario quita;
 doble clic usa o quita; clic derecho equipa o quita. Desde I-21 tirar destruye el objeto: los objetos
 del suelo quedan reservados al botín de PNJ, porque permitir soltar unidades llenaba el tope global
@@ -1834,7 +1834,7 @@ sin migración SQLite. La hoja de ruta mantiene pendiente el cliente I-13b.
 
 ### Botín directo, dueño del botín y oro (I-25, protocolo v18, esquema v7)
 
-Los objetos nuevos ocupan huecos libres desde el 10, fuera de la barra rápida (0-9). Se permite apilar en pilas existentes de la barra. Sin espacio en la mochila, el botín directo cae reservado para su dueño y recoger con E se rechaza. Desequipar automáticamente sigue esta regla; los destinos explícitos y MoveItem conservan su comportamiento.
+El botín directo, recoger con E y desequipar automáticamente usan todos los huecos del inventario desde el 0. Se completan primero las pilas existentes. Ningún hueco está reservado para la barra rápida. Sin espacio, el botín directo cae reservado para su dueño y recoger con E se rechaza.
 
 **Dueño.** El primer jugador que acierta marca al PNJ durante 10 s; sus siguientes golpes renuevan
 la marca. Si no vuelve a acertar en ese plazo, otro golpe aceptado puede cambiarla. Si el dueño ya no
@@ -1996,8 +1996,18 @@ instancias; esperan recurso y recarga con margen. Resumen: `hab_enviadas`, `hab_
 `hab_rechazadas`, `recurso_msgs`.
 
 Carga: `.\tools\carga\carga.ps1 -Bots 50 -Seconds 120 -Behavior fight -SkillBots 25 -PvpBots 10 -LogCorrections -NuevaBase`.
-Verificación I-16: **849/849** pruebas, build con 0 advertencias. Cifras: [informe I-16](docs/agentes/informes/I-16.md). Cliente Unity I-16b sin actualizar:
-usa v20 y no conecta al servidor v21 hasta implementar esa tarea.
+Verificación histórica del servidor I-16: **849/849** pruebas, build con 0 advertencias. Cifras: [informe I-16](docs/agentes/informes/I-16.md).
+
+Cliente I-16b/I-16c (v21): K abre las habilidades y la barra rápida tiene diez accesos propios,
+independientes del inventario (I muestra todos sus huecos). Arrastrar un objeto desde I crea un
+acceso a su tipo sin moverlo ni enviar MoveItem; desde K crea un acceso de habilidad. Dentro de
+la barra los accesos se mueven o intercambian. Clic derecho o arrastrar fuera de la barra retira
+solo el acceso, sin tirar ni destruir objetos; soltar sobre un panel que tapa el destino cancela.
+El acceso de objeto muestra la cantidad total en el inventario; al agotarse queda apagado con 0.
+Las teclas 1–0 usan el primer hueco con ese tipo de objeto (sin existencias: «No te quedan») o la
+habilidad sobre el objetivo, con recarga, coste y bloqueo por nivel. Los accesos se guardan en
+PlayerPrefs por personaje, solo en este ordenador; las antiguas claves de habilidades se migran.
+Verificación y comprobaciones pendientes en Play: [informe I-16c](docs/agentes/informes/I-16c.md).
 
 ### Chat (I-07, protocolo v10)
 
@@ -2089,6 +2099,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 ## Próximo paso
 
 El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v21, incluidos I-15p/I-15q e I-16.
-El siguiente cliente es I-16b (habilidades y recurso; el cliente actual usa v20).
+El cliente usa v21 e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.
