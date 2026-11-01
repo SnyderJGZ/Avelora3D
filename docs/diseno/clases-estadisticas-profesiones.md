@@ -751,7 +751,7 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
 - **Verificación:** migración con arma equipada; equipar/desequipar por hueco; mitigación; reconexión.
 - **I-14b (Claude):** panel de equipo.
 
-### I-15 — Zonas del mapa: seguras y PvP (protocolo v16)
+### I-15 - Zonas del mapa: seguras y PvP (protocolo v19)
 
 - **Alcance:** `zones.json` (A de §0.12) con validación, `ZoneMap.KindAt(x, y)` precalculada, reglas de
   zona `safe` (sin daño entre jugadores, sin mobs ni ataques a mobs dentro, IA que se detiene en el
@@ -762,7 +762,7 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
   entran y salen de la ciudad.
 - **I-15b (Claude):** rótulo «Zona segura / Zona PvP» y zonas en el minimapa.
 
-### I-15p — Combate entre jugadores (PvP) (protocolo v17)
+### I-15p - Combate entre jugadores (PvP) (protocolo v20)
 
 - **Alcance:** sobre las zonas de I-15 y la marca personal (§0.10): `SetPvpMark(on)`;
   `Attack` admite jugadores como objetivo solo si ambos están en zona PvP y marcados; la marca solo se quita en zona segura (§0.11); sin XP ni penalización de XP por muerte entre jugadores; la reaparición de

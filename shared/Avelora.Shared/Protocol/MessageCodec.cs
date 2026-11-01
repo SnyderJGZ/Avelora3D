@@ -44,6 +44,10 @@ namespace Avelora.Shared.Protocol
         private const int CombatEventEntrySize = 4 + 4 + 2 + 1;
         private const int LootGainedHeaderSize = 1 + 4 + 4 + 1;
         private const int LootGainedEntrySize = 2 + 2 + 1;
+        private const int ZoneListHeaderSize = 1 + 1;
+        private const int ZoneListEntrySize = 2 + 1 + 1;
+        private const int ZoneRectSize = 2 + 2 + 2 + 2;
+        private const int ZoneChangedSize = 1 + 2 + 1;
         private const int StatsSize = 37;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
@@ -1809,6 +1813,181 @@ namespace Avelora.Shared.Protocol
                 return false;
             }
         }
+
+        /// <summary>Codifica las zonas y sus rectángulos de casillas.</summary>
+        public static byte[] EncodeZoneList(in ZoneListMessage message)
+        {
+            ZoneInfo[] zones = message.Zones ?? Array.Empty<ZoneInfo>();
+            if (zones.Length > ProtocolConstants.MaxZones)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "ZoneList excede el máximo de zonas.");
+            }
+
+            int rectCount = 0;
+            int length = ZoneListHeaderSize;
+            for (int i = 0; i < zones.Length; i++)
+            {
+                ZoneInfo zone = zones[i];
+                ZoneRect[] rects = zone.Rects ?? Array.Empty<ZoneRect>();
+                if (zone.Id == 0 || !IsPlayableZoneKind(zone.Kind) ||
+                    rects.Length == 0 || rects.Length > ProtocolConstants.MaxZoneRectsPerZone)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "ZoneList contiene una zona inválida.");
+                }
+
+                rectCount += rects.Length;
+                if (rectCount > ProtocolConstants.MaxZoneRects)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "ZoneList excede el máximo de rectángulos.");
+                }
+
+                length += ZoneListEntrySize + ZoneRectSize * rects.Length;
+                for (int r = 0; r < rects.Length; r++)
+                {
+                    if (rects[r].Width <= 0 || rects[r].Height <= 0)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(message), "ZoneList contiene un rectángulo inválido.");
+                    }
+                }
+            }
+
+            var buffer = new byte[length];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.ZoneList);
+            writer.WriteByte((byte)zones.Length);
+            for (int i = 0; i < zones.Length; i++)
+            {
+                ZoneInfo zone = zones[i];
+                ZoneRect[] rects = zone.Rects ?? Array.Empty<ZoneRect>();
+                writer.WriteUInt16(zone.Id);
+                writer.WriteByte((byte)zone.Kind);
+                writer.WriteByte((byte)rects.Length);
+                for (int r = 0; r < rects.Length; r++)
+                {
+                    writer.WriteUInt16(unchecked((ushort)rects[r].X));
+                    writer.WriteUInt16(unchecked((ushort)rects[r].Y));
+                    writer.WriteUInt16(unchecked((ushort)rects[r].Width));
+                    writer.WriteUInt16(unchecked((ushort)rects[r].Height));
+                }
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee ZoneList y rechaza valores inválidos o bytes sobrantes.</summary>
+        public static bool TryReadZoneList(byte[] buffer, int offset, int length, out ZoneListMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.ZoneList) || length < ZoneListHeaderSize)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                int zoneCount = reader.ReadByte();
+                if (zoneCount > ProtocolConstants.MaxZones)
+                {
+                    return false;
+                }
+
+                var zones = new ZoneInfo[zoneCount];
+                int rectCount = 0;
+                for (int i = 0; i < zoneCount; i++)
+                {
+                    ushort id = reader.ReadUInt16();
+                    ZoneKind kind = (ZoneKind)reader.ReadByte();
+                    int count = reader.ReadByte();
+                    rectCount += count;
+                    if (id == 0 || !IsPlayableZoneKind(kind) || count == 0 ||
+                        count > ProtocolConstants.MaxZoneRectsPerZone || rectCount > ProtocolConstants.MaxZoneRects)
+                    {
+                        return false;
+                    }
+
+                    var rects = new ZoneRect[count];
+                    for (int r = 0; r < count; r++)
+                    {
+                        short x = unchecked((short)reader.ReadUInt16());
+                        short y = unchecked((short)reader.ReadUInt16());
+                        short width = unchecked((short)reader.ReadUInt16());
+                        short height = unchecked((short)reader.ReadUInt16());
+                        if (width <= 0 || height <= 0)
+                        {
+                            return false;
+                        }
+
+                        rects[r] = new ZoneRect(x, y, width, height);
+                    }
+
+                    zones[i] = new ZoneInfo(id, kind, rects);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new ZoneListMessage(zones);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica el cambio de zona en cuatro bytes.</summary>
+        public static byte[] EncodeZoneChanged(in ZoneChangedMessage message)
+        {
+            if (!IsValidZoneChanged(message.ZoneId, message.Kind))
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "ZoneChanged contiene una zona inválida.");
+            }
+
+            var buffer = new byte[ZoneChangedSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.ZoneChanged);
+            writer.WriteUInt16(message.ZoneId);
+            writer.WriteByte((byte)message.Kind);
+            return buffer;
+        }
+
+        /// <summary>Lee ZoneChanged y exige tipo, longitud y combinación de id/tipo válidos.</summary>
+        public static bool TryReadZoneChanged(
+            byte[] buffer, int offset, int length, out ZoneChangedMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.ZoneChanged, ZoneChangedSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                ushort zoneId = reader.ReadUInt16();
+                ZoneKind kind = (ZoneKind)reader.ReadByte();
+                if (reader.Remaining != 0 || !IsValidZoneChanged(zoneId, kind))
+                {
+                    return false;
+                }
+
+                message = new ZoneChangedMessage(zoneId, kind);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsPlayableZoneKind(ZoneKind kind) =>
+            kind == ZoneKind.Safe || kind == ZoneKind.Pvp;
+
+        private static bool IsValidZoneChanged(ushort zoneId, ZoneKind kind) =>
+            zoneId == 0 ? kind == ZoneKind.Normal : IsPlayableZoneKind(kind);
 
         /// <summary>Codifica el progreso: tipo, nivel y tres enteros uint32 (14 bytes).</summary>
         public static byte[] EncodeProgress(in ProgressMessage message)

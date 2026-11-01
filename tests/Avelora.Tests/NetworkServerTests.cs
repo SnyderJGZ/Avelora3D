@@ -12,6 +12,7 @@ using Avelora.Server.Npcs;
 using Avelora.Server.Persistence;
 using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
 using Avelora.Shared.Protocol;
@@ -38,7 +39,7 @@ namespace Avelora.Tests
             return Convert.ToInt32(command.ExecuteScalar());
         }
 
-        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null, ItemCatalog? customItems = null, ClassCatalog? classes = null)
+        private static Zone NewZone(ServerConfig config, bool withItems = false, NpcCatalog? npcs = null, ItemCatalog? customItems = null, ClassCatalog? classes = null, ZoneMap? zones = null)
         {
             MapCollisionGrid map = MapFile.Load(MapPath);
             var items = withItems
@@ -78,7 +79,78 @@ namespace Avelora.Tests
                 groundItemTicks: (long)Math.Ceiling(config.GroundItemSeconds * SimulationConstants.TickRate),
                 pickupRange: config.PickupRange,
                 pickupRangeTolerance: config.AttackRangeTolerance,
-                potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate));
+                potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
+                zones: zones);
+        }
+
+        [Fact]
+        public void Network_Envia_ZoneList_Tras_Welcome_Y_ZoneChanged_Solo_Al_Jugador_Que_Cruza()
+        {
+            var config = new ServerConfig();
+            int spawnTileX = (int)Math.Floor(config.SpawnX);
+            int spawnTileY = (int)Math.Floor(config.SpawnY);
+            MapCollisionGrid map = MapFile.Load(MapPath);
+            ZoneMap zones = ZoneMap.FromDefinitions(new[]
+            {
+                new ZoneDefinition
+                {
+                    Id = 1,
+                    Name = "Zona de red",
+                    Kind = "safe",
+                    Rects = new List<ZoneRectDefinition>
+                    {
+                        new ZoneRectDefinition { X = spawnTileX, Y = spawnTileY, W = 1, H = 1 },
+                    },
+                },
+            }, map);
+
+            using var harness = new Harness(zones: zones);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+
+            foreach (int connectionId in new[] { 1, 2 })
+            {
+                int welcomeIndex = harness.Transport.Sent.FindIndex(sent => sent.ConnectionId == connectionId &&
+                    MessageCodec.TryReadWelcome(sent.Data, 0, sent.Data.Length, out _));
+                int listIndex = harness.Transport.Sent.FindIndex(sent => sent.ConnectionId == connectionId &&
+                    MessageCodec.TryReadZoneList(sent.Data, 0, sent.Data.Length, out ZoneListMessage list) && list.Zones.Length == 1);
+                Assert.True(welcomeIndex >= 0);
+                Assert.Equal(welcomeIndex + 1, listIndex);
+            }
+
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.Equal(2, harness.Server.Snapshot().ZoneChangedMessages);
+
+            harness.Transport.Sent.Clear();
+            Assert.True(harness.Zone.Entities.TryGet(1, out Entity? firstEntity));
+            PlayerEntity first = Assert.IsType<PlayerEntity>(firstEntity);
+            first.Position = new Vec2(config.SpawnX + 2, config.SpawnY);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage change = Assert.Single(harness.Transport.Sent.FindAll(sent =>
+                MessageCodec.TryReadZoneChanged(sent.Data, 0, sent.Data.Length, out _)));
+            Assert.Equal(1, change.ConnectionId);
+            Assert.True(MessageCodec.TryReadZoneChanged(change.Data, 0, change.Data.Length, out ZoneChangedMessage changed));
+            Assert.Equal((ushort)0, changed.ZoneId);
+            Assert.Equal(3, harness.Server.Snapshot().ZoneChangedMessages);
+        }
+
+        [Fact]
+        public void Network_Sin_Zonas_No_Envia_ZoneList()
+        {
+            using var harness = new Harness();
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            Assert.DoesNotContain(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadZoneList(sent.Data, 0, sent.Data.Length, out _));
         }
 
         [Fact]
@@ -274,12 +346,13 @@ namespace Avelora.Tests
                 bool withItems = false,
                 NpcCatalog? npcs = null,
                 IPlayerRepository? repository = null,
-                CharacterSaveService? saves = null, ItemCatalog? customItems = null, ClassCatalog? classes = null)
+                CharacterSaveService? saves = null, ItemCatalog? customItems = null, ClassCatalog? classes = null,
+                ZoneMap? zones = null)
             {
                 _persistent = repository != null;
                 Config = new ServerConfig { HandshakeTimeoutSeconds = 60d };
                 configure?.Invoke(Config);
-                Zone = NewZone(Config, withItems, npcs, customItems, classes);
+                Zone = NewZone(Config, withItems, npcs, customItems, classes, zones);
                 MapHash = MapFile.ComputeContentHashBytes(Zone.Map);
                 Transport = new FakeServerTransport();
                 Server = new NetworkServer(

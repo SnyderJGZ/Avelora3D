@@ -5,6 +5,7 @@ using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 
@@ -86,7 +87,8 @@ namespace Avelora.Server.Simulation
             long potionCooldownTicks = 20,
             LevelTable? levels = null,
             ClassCatalog? classes = null,
-            long lootReserveTicks = 600)
+            long lootReserveTicks = 600,
+            ZoneMap? zones = null)
         {
             if (map is null)
             {
@@ -130,6 +132,7 @@ namespace Avelora.Server.Simulation
 
             Id = id;
             Map = map;
+            Zones = zones ?? ZoneMap.Empty;
             Entities = entities;
             Ids = ids;
             Inputs = inputs;
@@ -145,7 +148,7 @@ namespace Avelora.Server.Simulation
 
             if (attacks != null && combat.HasValue)
             {
-                _combat = new CombatSystem(combat.Value, items, _classes, map, CombatEvents);
+                _combat = new CombatSystem(combat.Value, items, _classes, map, CombatEvents, Zones);
             }
 
             InterestSettings settings = interest ?? InterestSettings.Default;
@@ -183,7 +186,7 @@ namespace Avelora.Server.Simulation
             // o no hay spawners, la zona se queda sin PNJ y el tick no gana ni una rama.
             if (npcs != null && npcs.Spawners != null && npcs.Spawners.Count > 0)
             {
-                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes, _itemCatalog, CombatEvents);
+                _npcs = new NpcSystem(map, _random, _interest.Grid, _classes, _itemCatalog, CombatEvents, Zones);
                 _npcs.NpcDied += OnNpcDied;
                 _npcs.Spawn(npcs, Id, Entities, Ids);
 
@@ -199,6 +202,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Rejilla de colisión compartida con el cliente.</summary>
         public MapCollisionGrid Map { get; }
+
+        /// <summary>Zonas configuradas para este mapa.</summary>
+        public ZoneMap Zones { get; }
 
         /// <summary>Entidades vivas.</summary>
         public EntityStore Entities { get; }
@@ -249,6 +255,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Botín de una muerte, enviado solo al dueño.</summary>
         public event Action<PlayerEntity, LootGainedMessage>? LootGained;
+
+        /// <summary>Se invoca solo cuando un jugador cruza el límite de una zona.</summary>
+        public event Action<PlayerEntity, ZoneChangedMessage>? ZoneChanged;
 
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
@@ -302,6 +311,14 @@ namespace Avelora.Server.Simulation
         public long RejectedAttackLineOfSight => _combat?.RejectedLineOfSight ?? 0;
 
         public long RejectedAttackEvading => _combat?.RejectedEvading ?? 0;
+
+        public long RejectedAttackSafeZone => _combat?.RejectedSafeZone ?? 0;
+
+        public long NpcAggroCancelledSafeZone => _npcs?.AggroCancelledSafeZone ?? 0;
+
+        public long ZoneChanges { get; private set; }
+
+        public long SafeZoneEntries { get; private set; }
 
         public long AttacksRanged => _combat?.AttacksRanged ?? 0;
 
@@ -594,6 +611,8 @@ namespace Avelora.Server.Simulation
                 _vitals.Tick(Entities, _tickCount);
             }
 
+            UpdatePlayerZones();
+
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
             // O(n) con n = entidades vivas y deja la grilla lista para los snapshots de AfterTick.
             for (int i = 0; i < Entities.Count; i++)
@@ -637,6 +656,39 @@ namespace Avelora.Server.Simulation
                 }
 
                 LootGained?.Invoke(owner, new LootGainedMessage((uint)experience, (uint)gold, items));
+            }
+        }
+
+        private void UpdatePlayerZones()
+        {
+            if (ReferenceEquals(Zones, ZoneMap.Empty))
+            {
+                return;
+            }
+
+            for (int i = 0; i < Entities.Count; i++)
+            {
+                if (!(Entities[i] is PlayerEntity player))
+                {
+                    continue;
+                }
+
+                ushort id = Zones.ZoneIdAt(player.Position.X, player.Position.Y);
+                if (id == player.ZoneId)
+                {
+                    continue;
+                }
+
+                ZoneKind kind = Zones.KindAt(player.Position.X, player.Position.Y);
+                player.ZoneId = id;
+                player.ZoneKind = kind;
+                ZoneChanges++;
+                if (kind == ZoneKind.Safe)
+                {
+                    SafeZoneEntries++;
+                }
+
+                ZoneChanged?.Invoke(player, new ZoneChangedMessage(id, kind));
             }
         }
 

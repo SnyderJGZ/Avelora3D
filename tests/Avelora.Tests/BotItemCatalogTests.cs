@@ -13,6 +13,24 @@ namespace Avelora.Tests
     public sealed class BotItemCatalogTests
     {
         [Fact]
+        public void Bot_Contabiliza_Listas_Y_Cambios_De_Zona_Recibidos()
+        {
+            var transport = new SightTransport(sendZoneTelemetry: true);
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 500, accountPrefix: "bot-zone", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Random,
+                transportFactory: () => transport);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(1, bot.ZoneLists);
+            Assert.Equal(3, bot.ZoneChanges);
+            Assert.Equal(1, bot.SafeZoneEntries);
+            Assert.Equal(1, bot.PvpZoneEntries);
+        }
+
+        [Fact]
         public void Fight_Equipa_Arma_Aunque_FistDamage_Con_Bono_Supere_Su_Daño_Base()
         {
             var transport = new ArmaConBonoTransport();
@@ -176,9 +194,11 @@ namespace Avelora.Tests
             private readonly RSAParameters _publicKey;
             private bool _connectPending;
             private bool _connected;
+            private readonly bool _sendZoneTelemetry;
 
-            public SightTransport()
+            public SightTransport(bool sendZoneTelemetry = false)
             {
+                _sendZoneTelemetry = sendZoneTelemetry;
                 using RSA rsa = RSA.Create(2048);
                 _publicKey = rsa.ExportParameters(includePrivateParameters: false);
             }
@@ -222,6 +242,18 @@ namespace Avelora.Tests
                     _incoming.Enqueue(MessageCodec.EncodeWelcome(new WelcomeMessage(
                         ProtocolConstants.Version, (ushort)SimulationConstants.TickRate, 42, 0, 0,
                         1.5f, 2.5f, 4f, 0.4f, 0.4f, new byte[ProtocolConstants.MapHashSize])));
+                    if (_sendZoneTelemetry)
+                    {
+                        _incoming.Enqueue(MessageCodec.EncodeZoneList(new ZoneListMessage(new[]
+                        {
+                            new ZoneInfo(1, ZoneKind.Safe, new[] { new ZoneRect(0, 0, 1, 1) }),
+                            new ZoneInfo(2, ZoneKind.Pvp, new[] { new ZoneRect(2, 0, 1, 1) }),
+                        })));
+                        _incoming.Enqueue(MessageCodec.EncodeZoneChanged(new ZoneChangedMessage(1, ZoneKind.Safe)));
+                        _incoming.Enqueue(MessageCodec.EncodeZoneChanged(new ZoneChangedMessage(2, ZoneKind.Pvp)));
+                        _incoming.Enqueue(MessageCodec.EncodeZoneChanged(new ZoneChangedMessage(0, ZoneKind.Normal)));
+                    }
+
                     _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                         1.5f, 10, 6f, 0.8f, Array.Empty<ItemCatalogEntry>())));
                     _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(

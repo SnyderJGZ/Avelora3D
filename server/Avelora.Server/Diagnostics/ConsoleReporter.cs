@@ -9,6 +9,7 @@ using Avelora.Server.Net;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 
@@ -39,7 +40,8 @@ namespace Avelora.Server.Diagnostics
             string serverKeyFingerprint,
             Avelora.Server.Npcs.NpcCatalog? npcs = null,
             LevelTable? levels = null,
-            ClassCatalog? classes = null)
+            ClassCatalog? classes = null,
+            ZoneMap? zones = null)
         {
             Console.WriteLine("Avelora · servidor autoritativo (Etapa F: persistencia)");
             Console.WriteLine("  Configuración : " + configPath);
@@ -81,6 +83,7 @@ namespace Avelora.Server.Diagnostics
                     ? "ninguno"
                     : (npcs.Types?.Count ?? 0) + " tipo(s), " + (npcs.Spawners?.Count ?? 0) +
                       " spawner(s), " + npcs.TotalEnemies + " enemigo(s), rangos: " + DescribeRanks(npcs)));
+            Console.WriteLine("  Zonas         : " + DescribeZones(zones));
             Console.WriteLine(
                 "  Combate       : daño, alcance y recarga por clase o arma, tolerancia +" +
                 Invariant(config.AttackRangeTolerance, "0.##") + " tiles, cola de ataques " +
@@ -150,8 +153,10 @@ namespace Avelora.Server.Diagnostics
                  " combate_msgs=" + network.CombatEventMessages +
                  " combate_entradas=" + network.CombatEventEntries +
                  " combate_bytes=" + network.CombatEventBytes +
-                 " botin_msgs=" + network.LootGainedMessages +
-                 " botin_bytes=" + network.LootGainedBytes +
+                  " botin_msgs=" + network.LootGainedMessages +
+                  " botin_bytes=" + network.LootGainedBytes +
+                  " zona_msgs=" + network.ZoneChangedMessages +
+                  " zona_bytes=" + network.ZoneChangedBytes +
                  " combate_recortados=" + network.CombatEventsTrimmed +
                  " combate_descartados=" + zone.CombatEventsDropped +
                  " recibidos=" + network.BytesReceived +
@@ -170,6 +175,10 @@ namespace Avelora.Server.Diagnostics
                  " ataque_rech_distancia=" + zone.RejectedAttackDistance +
                  " ataque_rech_vision=" + zone.RejectedAttackLineOfSight +
                  " ataque_rech_regreso=" + zone.RejectedAttackEvading +
+                 " ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone +
+                 " aggro_cancelado_zona=" + zone.NpcAggroCancelledSafeZone +
+                 " cambios_zona=" + zone.ZoneChanges +
+                 " entradas_zona_segura=" + zone.SafeZoneEntries +
                  " ataques_distancia=" + zone.AttacksRanged +
                  " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
                  " ataque_rech_muerto=" + zone.RejectedAttackDead +
@@ -356,8 +365,10 @@ namespace Avelora.Server.Diagnostics
                   ", combate_entradas=" + network.CombatEventEntries +
                   ", combate_bytes=" + network.CombatEventBytes +
                   ", combate_recortados=" + network.CombatEventsTrimmed +
-                  ", botin_msgs=" + network.LootGainedMessages +
-                  ", botin_bytes=" + network.LootGainedBytes +
+                   ", botin_msgs=" + network.LootGainedMessages +
+                   ", botin_bytes=" + network.LootGainedBytes +
+                   ", zona_msgs=" + network.ZoneChangedMessages +
+                   ", zona_bytes=" + network.ZoneChangedBytes +
                  ", combate_descartados=" + zone.CombatEventsDropped + ", " + network.BytesReceived +
                 " bytes recibidos, " + network.DroppedOutbound + " descartados en cola");
             Console.WriteLine(
@@ -370,8 +381,12 @@ namespace Avelora.Server.Diagnostics
                 zone.AttacksWithWeapon + " ataques con arma, " +
                 zone.RejectedAttackTarget + " rechazados por objetivo, " +
                  zone.RejectedAttackDistance + " por distancia, " +
-                 "ataque_rech_vision=" + zone.RejectedAttackLineOfSight + ", " +
-                 "ataque_rech_regreso=" + zone.RejectedAttackEvading + ", " +
+                  "ataque_rech_vision=" + zone.RejectedAttackLineOfSight + ", " +
+                  "ataque_rech_regreso=" + zone.RejectedAttackEvading + ", " +
+                  "ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone + ", " +
+                  "aggro_cancelado_zona=" + zone.NpcAggroCancelledSafeZone + ", " +
+                  "cambios_zona=" + zone.ZoneChanges + ", " +
+                  "entradas_zona_segura=" + zone.SafeZoneEntries + ", " +
                  "ataques_distancia=" + zone.AttacksRanged + ", " +
                  zone.RejectedAttackCooldown + " por recarga, " +
                  zone.RejectedAttackDead + " por jugador muerto, " +
@@ -483,6 +498,25 @@ namespace Avelora.Server.Diagnostics
         /// <summary>Primeros 16 caracteres de la huella, que bastan para comparar visualmente.</summary>
         public static string ShortHash(string hash) =>
             hash.Length <= 16 ? hash : hash.Substring(0, 16) + "…";
+
+        private static string DescribeZones(ZoneMap? zones)
+        {
+            if (zones == null || zones.Zones.Length == 0)
+            {
+                return "ninguna";
+            }
+
+            int safe = 0;
+            int pvp = 0;
+            for (int i = 0; i < zones.Zones.Length; i++)
+            {
+                if (zones.Zones[i].Kind == ZoneKind.Safe) safe++;
+                else if (zones.Zones[i].Kind == ZoneKind.Pvp) pvp++;
+            }
+
+            return zones.Zones.Length + " (" + safe + " seguras, " + pvp + " PvP, " +
+                zones.RectCount + " rectángulos)";
+        }
 
         private static string DescribeRanks(NpcCatalog npcs)
         {

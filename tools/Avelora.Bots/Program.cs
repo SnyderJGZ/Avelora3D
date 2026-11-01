@@ -233,6 +233,10 @@ namespace Avelora.Bots
             long lootGold = 0;
             long lootItems = 0;
             long lootOnGround = 0;
+            long zoneLists = 0;
+            long zoneChanges = 0;
+            long safeZoneEntries = 0;
+            long pvpZoneEntries = 0;
             long finalGold = 0;
             long deathsSeen = 0;
             long elitesSeen = 0;
@@ -290,6 +294,10 @@ namespace Avelora.Bots
                 lootGold += bot.LootGold;
                 lootItems += bot.LootItems;
                 lootOnGround += bot.LootOnGround;
+                zoneLists += bot.ZoneLists;
+                zoneChanges += bot.ZoneChanges;
+                safeZoneEntries += bot.SafeZoneEntries;
+                pvpZoneEntries += bot.PvpZoneEntries;
                 finalGold += bot.Gold;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
@@ -371,6 +379,10 @@ namespace Avelora.Bots
                          " botin_oro=" + bot.LootGold +
                          " botin_objetos=" + bot.LootItems +
                          " botin_al_suelo=" + bot.LootOnGround +
+                         " zona_listas=" + bot.ZoneLists +
+                         " zona_cambios=" + bot.ZoneChanges +
+                         " zona_segura_entradas=" + bot.SafeZoneEntries +
+                         " zona_pvp_entradas=" + bot.PvpZoneEntries +
                          " oro_final=" + bot.Gold +
                         " muertes_vistas=" + bot.DeathsSeen +
                         " elites_vistos=" + bot.ElitesSeen +
@@ -433,6 +445,9 @@ namespace Avelora.Bots
             Console.WriteLine(
                 "  Jugador    : " + ownDeaths + " muertes propias, " +
                 ownRespawns + " reapariciones");
+            Console.WriteLine(
+                "  Zonas      : zona_listas=" + zoneLists + ", zona_cambios=" + zoneChanges +
+                ", zona_segura_entradas=" + safeZoneEntries + ", zona_pvp_entradas=" + pvpZoneEntries);
 
             if (options.Behavior == BotBehavior.Fight)
             {
@@ -444,6 +459,8 @@ namespace Avelora.Bots
                     "botin_recibidos=" + lootMessages + ", " +
                     "botin_exp=" + lootExperience + ", botin_oro=" + lootGold + ", " +
                     "botin_objetos=" + lootItems + ", botin_al_suelo=" + lootOnGround + ", " +
+                    "zona_listas=" + zoneLists + ", zona_cambios=" + zoneChanges + ", " +
+                    "zona_segura_entradas=" + safeZoneEntries + ", zona_pvp_entradas=" + pvpZoneEntries + ", " +
                     "oro_final=" + finalGold + ", " +
                     deathsSeen + " muertes vistas, elites_vistos=" + elitesSeen + ", " +
                     sentPickups + " recogidas, " +

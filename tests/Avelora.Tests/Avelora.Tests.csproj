@@ -20,6 +20,7 @@
     <None Include="..\..\server\Avelora.Server\classes.json" Link="classes.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\server\Avelora.Server\items.json" Link="items.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\server\Avelora.Server\npcs.json" Link="npcs.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\server\Avelora.Server\zones.json" Link="zones.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

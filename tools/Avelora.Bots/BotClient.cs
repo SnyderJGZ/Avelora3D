@@ -218,6 +218,10 @@ namespace Avelora.Bots
         private long _lootGold;
         private long _lootItems;
         private long _lootOnGround;
+        private long _zoneLists;
+        private long _zoneChanges;
+        private long _safeZoneEntries;
+        private long _pvpZoneEntries;
         private long _sentChat;
         private long _receivedChat;
         private long _deathsSeen;
@@ -445,6 +449,10 @@ namespace Avelora.Bots
         public long LootGold => Interlocked.Read(ref _lootGold);
         public long LootItems => Interlocked.Read(ref _lootItems);
         public long LootOnGround => Interlocked.Read(ref _lootOnGround);
+        public long ZoneLists => Interlocked.Read(ref _zoneLists);
+        public long ZoneChanges => Interlocked.Read(ref _zoneChanges);
+        public long SafeZoneEntries => Interlocked.Read(ref _safeZoneEntries);
+        public long PvpZoneEntries => Interlocked.Read(ref _pvpZoneEntries);
         public uint Gold => _gold;
 
         /// <summary>Mensajes de chat enviados por el comportamiento <c>chat</c> (I-07).</summary>
@@ -1446,6 +1454,27 @@ namespace Avelora.Bots
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
+            if (MessageCodec.TryReadZoneList(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _zoneLists);
+                return;
+            }
+
+            if (MessageCodec.TryReadZoneChanged(buffer, offset, length, out ZoneChangedMessage zone))
+            {
+                Interlocked.Increment(ref _zoneChanges);
+                if (zone.Kind == ZoneKind.Safe)
+                {
+                    Interlocked.Increment(ref _safeZoneEntries);
+                }
+                else if (zone.Kind == ZoneKind.Pvp)
+                {
+                    Interlocked.Increment(ref _pvpZoneEntries);
+                }
+
+                return;
+            }
+
             if (MessageCodec.TryReadLootGained(buffer, offset, length, out LootGainedMessage loot))
             {
                 Interlocked.Increment(ref _lootMessages);

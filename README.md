@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (cliente I-25b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (cliente I-15b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -27,7 +27,8 @@ calcular igual (movimiento y colisión).
 > esquema SQLite a **v6**: el saludo autentica la cuenta y, después, cada conexión lista, crea, borra o
 > selecciona uno de hasta 10 personajes con su clase. I-12 sube el protocolo a **v16** con restricciones
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
-> a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**.
+> a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**;
+> I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
@@ -36,7 +37,8 @@ calcular igual (movimiento y colisión).
 > [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13), [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14),
 > [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6), [I-11](#penalizacion-por-muerte-i-11),
 > [I-12](#armas-por-clase-y-requisitos-i-12-protocolo-v16),
-> [I-13](#ataque-a-distancia-y-combatevent-i-13-protocolo-v17) e
+> [I-13](#ataque-a-distancia-y-combatevent-i-13-protocolo-v17),
+> [I-15](#zonas-seguras-y-pvp-i-15-protocolo-v19) e
 > [I-25](#botín-directo-dueño-del-botín-y-oro-i-25-protocolo-v18-esquema-v7).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
@@ -372,13 +374,15 @@ pueden discrepar** del formato.
 | `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
 | `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed` (u8); máximo 64 |
 | `LootGained` | 29 | S → C | 10 B + 5 B/objeto | experiencia (u32), oro (u32), N (u8); itemId (u16), cantidad (u16), bandera `OnGround` (u8); máximo 32 |
+| `ZoneList` | 30 | S → C | 2 B + 4 B/zona + 8 B/rectángulo | N (u8); id (u16), tipo (u8), R (u8); x/y/w/h (i16); máximo 32 zonas y 128 rectángulos (1154 B) |
+| `ZoneChanged` | 31 | S → C | 4 B | id de zona (u16) y tipo (u8); id 0 solo con `Normal` |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
   `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList`,
-  `CharacterRejected` y `LootGained`.
+  `CharacterRejected`, `LootGained`, `ZoneList` y `ZoneChanged`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 - **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
@@ -393,7 +397,7 @@ Canales:
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
-> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`.
+> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
@@ -854,7 +858,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v18** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v19** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1091,7 +1095,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-25 de servidor hechas; pendiente cliente I-25b y los clientes anteriores de la hoja de ruta |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat, selección de personaje y zonas | ⏳ I-01 a I-25 de servidor hechas; pendientes I-15b y los clientes anteriores de la hoja de ruta |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1106,7 +1110,8 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-11** | Penalización de experiencia al morir por un PNJ (sin protocolo ni migración) | ✅ servidor |
 | **I-12** | Armas por clase, requisitos de nivel y dos manos (protocolo v16; esquema v6) | ✅ servidor y bots; cliente I-12b pendiente |
 | **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
-| **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor y bots; cliente I-25b pendiente |
+| **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor y bots; cliente I-15b pendiente |
+| **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1850,8 +1855,50 @@ los bots (el servidor siguió hasta 160 s); la carga es consistente salvo ese me
 por un bot. Sin `[corrección]` en los logs. Informe: `docs/agentes/informes/I-25.md`.
 
 **Trabajo futuro:** grupos con reparto estilo WoW (dueño = grupo, turnos o tiradas) y mostrar al
-cliente quién es el dueño de un PNJ. El cliente Unity no se actualizó: requiere I-25b para protocolo
-v18.
+cliente quién es el dueño de un PNJ. El cliente Unity incorpora I-25b para protocolo v18; queda pendiente I-15b para v19.
+
+### Zonas seguras y PvP (I-15, protocolo v19)
+
+`zones.json` declara zonas por `id`, nombre descriptivo, `kind` (`safe` o `pvp`) y uno o más
+rectángulos de casillas (`x`, `y`, `w`, `h`):
+
+```json
+{
+  "zones": [
+    { "id": 1, "name": "Villa del Valle", "kind": "safe", "rects": [ { "x": -10, "y": -3, "w": 8, "h": 7 } ] },
+    { "id": 2, "name": "Arena del Este", "kind": "pvp", "rects": [ { "x": 8, "y": -24, "w": 12, "h": 8 } ] }
+  ]
+}
+```
+
+`zonesPath` resuelve el archivo junto a `server.json`; vacío significa que
+todo el mapa es normal y conserva el arranque anterior. Se admiten hasta 32 zonas, 16 rectángulos por
+zona y 128 en total; cada rectángulo debe caber dentro del mapa y usar coordenadas i16. Los bordes son
+inferior/izquierdo inclusivos y superior/derecho exclusivos. En solapes, `safe` prevalece sobre `pvp`,
+y entre zonas del mismo tipo gana la primera declarada. Los nombres solo están en JSON para lectura y
+diagnóstico: la red transmite id, tipo y rectángulos.
+
+El servidor envía `ZoneList` fiable y ordenado inmediatamente después de `Welcome`, solo si hay zonas.
+Es un mensaje separado para mantener el `Welcome` de tamaño fijo (69 B); con cero zonas no se añade
+ningún mensaje. `ZoneChanged` se envía al jugador afectado, solo al cambiar de zona (incluye volver a
+id 0 / `Normal`); también detecta la zona del punto de aparición y la reaparición en el tick.
+
+En `safe` no se puede atacar desde dentro ni hacia dentro: el rechazo ocurre antes de distancia,
+visión y recarga, por lo que no consume el cooldown. Los PNJ ignoran jugadores seguros, cancelan la
+persecución y vuelven a casa; una segunda rejilla los detiene en el borde de la zona. Al iniciar,
+`ValidateSpawners` rechaza cualquier radio de aparición/deambulación que toque una casilla segura.
+El botín sigue perteneciendo al jugador marcado aunque entre en una zona segura. `pvp` solo identifica
+el área: el combate entre jugadores y la marca son trabajo futuro I-15p.
+No cambia el esquema SQLite, que sigue en v7.
+
+Las métricas del servidor incluyen `ataque_rech_zona_segura`, `aggro_cancelado_zona`, `cambios_zona`,
+`entradas_zona_segura`, `zona_msgs` y `zona_bytes`. Los bots informan `zona_listas`, `zona_cambios`,
+`zona_segura_entradas` y `zona_pvp_entradas`. La configuración de carga usa `zones-carga.json`, copia
+idéntica a `zones.json`; las dos pasadas de 50 bots (fight 120 s y random 60 s) dejaron estos resultados: en fight (120 s) tick p99 **0.061 ms** (I-25: 0.039), 0 correcciones, 265 muertes de PNJ y 265 `botin_msgs` (I-25: 311; los bots salen de la ciudad antes de luchar), `zona_msgs=243` = `zona_cambios` de los bots, `zona_listas=50/50`, `entradas_zona_segura=115`; en random (60 s) p99 **0.069 ms**, **0.24** correcciones por bot y minuto (14 muertes, inputs en vuelo), `zona_msgs=297` = `zona_cambios`, `aggro_cancelado_zona=8`. Logs en `tools/carga/resultados/20261031-222140-fight-50-redund4-corr/` y `20261031-222426-random-50-redund4-corr/`.
+La suite de I-15 añade pruebas de protocolo, límites/bordes/solapes, mapa real, IA, combate, red y bots. Build sin advertencias; **760/760** pruebas.
+
+**Fuera de alcance:** combate PvP y marca (I-15p), capa de zonas pintada en Unity, editor visual y
+servicios de ciudad. El cliente Unity no se actualizó; necesita I-15b para el protocolo v19.
 
 ### Chat (I-07, protocolo v10)
 
@@ -1942,6 +1989,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v7 y protocolo v18.
-Quedan pendientes el cliente **I-25b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v7 y protocolo v19.
+Quedan pendientes el cliente **I-15b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

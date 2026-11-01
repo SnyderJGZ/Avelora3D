@@ -5,6 +5,7 @@ using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 
@@ -55,6 +56,8 @@ namespace Avelora.Server.Simulation
         private static readonly sbyte[] DirectionY = { 1, 1, 0, -1, -1, -1, 0, 1 };
 
         private readonly MapCollisionGrid _map;
+        private readonly MapCollisionGrid _moveMap;
+        private readonly ZoneMap _zones;
         private readonly EntitySpatialGrid _grid;
         private readonly System.Random _random;
         private readonly ClassCatalog _classes;
@@ -77,6 +80,7 @@ namespace Avelora.Server.Simulation
         private long _eliteDeaths;
         private long _chaseGiveUps;
         private long _returnTeleports;
+        private long _aggroCancelledSafeZone;
 
         public NpcSystem(
             MapCollisionGrid map,
@@ -84,8 +88,9 @@ namespace Avelora.Server.Simulation
             EntitySpatialGrid grid,
             ClassCatalog? classes = null,
             ItemCatalog? items = null,
-            CombatEventBuffer? events = null)
-            : this(map, new System.Random(seed), grid, classes, items, events)
+            CombatEventBuffer? events = null,
+            ZoneMap? zones = null)
+            : this(map, new System.Random(seed), grid, classes, items, events, zones)
         {
         }
 
@@ -95,9 +100,12 @@ namespace Avelora.Server.Simulation
             EntitySpatialGrid grid,
             ClassCatalog? classes = null,
             ItemCatalog? items = null,
-            CombatEventBuffer? events = null)
+            CombatEventBuffer? events = null,
+            ZoneMap? zones = null)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
+            _zones = zones ?? ZoneMap.Empty;
+            _moveMap = _zones.BuildNpcCollision(_map);
             _grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _random = random ?? throw new ArgumentNullException(nameof(random));
             _classes = classes ?? ClassCatalog.Default;
@@ -131,6 +139,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Regresos forzados a casa por atasco.</summary>
         public long ReturnTeleports => _returnTeleports;
+
+        /// <summary>Persecuciones canceladas porque el objetivo entró en una zona segura.</summary>
+        public long AggroCancelledSafeZone => _aggroCancelledSafeZone;
 
         public long RankAppearances(int rank) =>
             rank > 0 && rank < _rankAppearances.Length ? _rankAppearances[rank] : 0;
@@ -475,6 +486,13 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (_zones.KindAt(target!.Position.X, target.Position.Y) == ZoneKind.Safe)
+            {
+                EnterReturn(npc);
+                _aggroCancelledSafeZone++;
+                return;
+            }
+
             if (IsOutsideLeash(npc, npc.LeashRadius))
             {
                 EnterReturn(npc);
@@ -510,6 +528,13 @@ namespace Avelora.Server.Simulation
             if (!TryGetLivingTarget(npc, entities, out PlayerEntity? target))
             {
                 EnterReturn(npc);
+                return;
+            }
+
+            if (_zones.KindAt(target!.Position.X, target.Position.Y) == ZoneKind.Safe)
+            {
+                EnterReturn(npc);
+                _aggroCancelledSafeZone++;
                 return;
             }
 
@@ -639,7 +664,8 @@ namespace Avelora.Server.Simulation
 
             for (int i = 0; i < _candidates.Count; i++)
             {
-                if (!(_candidates[i] is PlayerEntity player) || player.IsDead || player.Health <= 0)
+                if (!(_candidates[i] is PlayerEntity player) || player.IsDead || player.Health <= 0 ||
+                    _zones.KindAt(player.Position.X, player.Position.Y) == ZoneKind.Safe)
                 {
                     continue;
                 }
@@ -688,7 +714,7 @@ namespace Avelora.Server.Simulation
                 npc.Speed,
                 SimulationConstants.FixedDt,
                 npc.HalfSize,
-                _map);
+                _moveMap);
 
             if ((npc.DirectionX != 0 || npc.DirectionY != 0) &&
                 npc.Position.X == before.X && npc.Position.Y == before.Y)

@@ -31,6 +31,9 @@
     <!-- Enemigos junto al ejecutable, como server.json (I-01). -->
     <None Update="npcs.json" CopyToOutputDirectory="PreserveNewest" />
 
+    <!-- Zonas del mapa (I-15). -->
+    <None Update="zones.json" CopyToOutputDirectory="PreserveNewest" />
+
     <!-- Catálogo de objetos junto al ejecutable (I-04). -->
     <None Update="items.json" CopyToOutputDirectory="PreserveNewest" />
 

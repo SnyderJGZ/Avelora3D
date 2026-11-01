@@ -96,5 +96,11 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: experiencia, oro y objetos obtenidos al matar un PNJ (I-25).</summary>
         LootGained = 29,
+
+        /// <summary>Servidor → cliente: zonas del mapa disponibles (I-15).</summary>
+        ZoneList = 30,
+
+        /// <summary>Servidor → cliente: cambio de zona del jugador (I-15).</summary>
+        ZoneChanged = 31,
     }
 }

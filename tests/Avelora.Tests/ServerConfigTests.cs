@@ -457,6 +457,21 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Las_Zonas_Se_Resuelven_Junto_A_La_Configuracion_Y_Vacias_Las_Desactivan()
+        {
+            string configPath = Path_("server.json");
+
+            Assert.Equal(string.Empty, new ServerConfig().ZonesPath);
+            Assert.Equal(string.Empty, new ServerConfig().ResolveZonesPath(configPath));
+            Assert.Equal(
+                Path.Combine(_folder, "zonas.json"),
+                new ServerConfig { ZonesPath = "zonas.json" }.ResolveZonesPath(configPath));
+            Assert.Equal(
+                string.Empty,
+                new ServerConfig { ZonesPath = "  " }.ResolveZonesPath(configPath));
+        }
+
+        [Fact]
         public void Un_Archivo_Con_Valores_Invalidos_No_Deja_Arrancar()
         {
             string path = Path_("malo.json");

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Avelora.Server.Entities;
 using Avelora.Server.Items;
 using Avelora.Server.Progression;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 
@@ -37,19 +38,22 @@ namespace Avelora.Server.Simulation
         private readonly ClassCatalog _classes;
         private readonly MapCollisionGrid? _map;
         private readonly CombatEventBuffer? _events;
+        private readonly ZoneMap _zones;
 
         public CombatSystem(
             CombatSettings settings,
             ItemCatalog? catalog = null,
             ClassCatalog? classes = null,
             MapCollisionGrid? map = null,
-            CombatEventBuffer? events = null)
+            CombatEventBuffer? events = null,
+            ZoneMap? zones = null)
         {
             _settings = settings;
             _catalog = catalog;
             _classes = classes ?? ClassCatalog.Default;
             _map = map;
             _events = events;
+            _zones = zones ?? ZoneMap.Empty;
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -72,6 +76,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Ataques rechazados porque el PNJ estaba regresando a casa.</summary>
         public long RejectedEvading { get; private set; }
+
+        /// <summary>Ataques rechazados porque el atacante o el objetivo estaban en zona segura.</summary>
+        public long RejectedSafeZone { get; private set; }
 
         /// <summary>Ataques válidos realizados con un arma equipada.</summary>
         public long AttacksWithWeapon { get; private set; }
@@ -136,6 +143,13 @@ namespace Avelora.Server.Simulation
             if (target.AiState == NpcAiState.Return)
             {
                 RejectedEvading++;
+                return;
+            }
+
+            if (_zones.KindAt(attacker.Position.X, attacker.Position.Y) == ZoneKind.Safe ||
+                _zones.KindAt(target.Position.X, target.Position.Y) == ZoneKind.Safe)
+            {
+                RejectedSafeZone++;
                 return;
             }
 

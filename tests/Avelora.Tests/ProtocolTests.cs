@@ -185,7 +185,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)18, ProtocolConstants.Version);
+            Assert.Equal((ushort)19, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -1383,6 +1383,161 @@ namespace Avelora.Tests
             oversizedText[7] = (byte)'n';
             oversizedText[8] = 121;
             Assert.False(MessageCodec.TryReadChat(oversizedText, 0, oversizedText.Length, out _));
+        }
+
+        [Fact]
+        public void ZoneList_Admite_Cero_Y_El_Maximo_Y_Rechaza_Campos_Invalidos()
+        {
+            byte[] empty = MessageCodec.EncodeZoneList(new ZoneListMessage(Array.Empty<ZoneInfo>()));
+            Assert.Equal(2, empty.Length);
+            Assert.True(MessageCodec.TryReadZoneList(empty, 0, empty.Length, out ZoneListMessage emptyRead));
+            Assert.Empty(emptyRead.Zones);
+
+            var zones = new ZoneInfo[ProtocolConstants.MaxZones];
+            for (int i = 0; i < zones.Length; i++)
+            {
+                var rects = new ZoneRect[4];
+                for (int r = 0; r < rects.Length; r++)
+                {
+                    rects[r] = new ZoneRect((short)(-100 + r), (short)(-200 - r), 1, 2);
+                }
+
+                zones[i] = new ZoneInfo((ushort)(i + 1), i % 2 == 0 ? ZoneKind.Safe : ZoneKind.Pvp, rects);
+            }
+
+            byte[] full = MessageCodec.EncodeZoneList(new ZoneListMessage(zones));
+            Assert.Equal(1154, full.Length);
+            Assert.True(MessageCodec.TryReadZoneList(full, 0, full.Length, out ZoneListMessage decoded));
+            Assert.Equal(zones.Length, decoded.Zones.Length);
+            for (int i = 0; i < zones.Length; i++)
+            {
+                Assert.Equal(zones[i].Id, decoded.Zones[i].Id);
+                Assert.Equal(zones[i].Kind, decoded.Zones[i].Kind);
+                Assert.Equal(zones[i].Rects.Length, decoded.Zones[i].Rects.Length);
+                for (int r = 0; r < zones[i].Rects.Length; r++)
+                {
+                    Assert.Equal(zones[i].Rects[r].X, decoded.Zones[i].Rects[r].X);
+                    Assert.Equal(zones[i].Rects[r].Y, decoded.Zones[i].Rects[r].Y);
+                    Assert.Equal(zones[i].Rects[r].Width, decoded.Zones[i].Rects[r].Width);
+                    Assert.Equal(zones[i].Rects[r].Height, decoded.Zones[i].Rects[r].Height);
+                }
+            }
+            Assert.False(MessageCodec.TryReadZoneList(full, 0, full.Length - 1, out _));
+            Assert.False(MessageCodec.TryReadZoneList(full, 0, full.Length + 1, out _));
+            Assert.False(MessageCodec.TryReadZoneList(new byte[] { 29, 0 }, 0, 2, out _));
+
+            byte[][] malformed =
+            {
+                new byte[] { 30, 33 },
+                new byte[] { 30, 1, 1, 0, 1, 0 },
+                new byte[] { 30, 1, 1, 0, 1, 17 },
+                new byte[] { 30, 1, 0, 0, 0, 0 },
+                new byte[] { 30, 1, 1, 0, 0, 0 },
+                new byte[] { 30, 1, 1, 0, 3, 0 },
+                new byte[] { 30, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0 },
+            };
+            foreach (byte[] bytes in malformed)
+            {
+                Assert.False(MessageCodec.TryReadZoneList(bytes, 0, bytes.Length, out _));
+            }
+
+            byte[] tooManyRectangles = new byte[2 + (9 * 4) + (129 * 8)];
+            tooManyRectangles[0] = (byte)MessageType.ZoneList;
+            tooManyRectangles[1] = 9;
+            int at = 2;
+            for (int i = 0; i < 9; i++)
+            {
+                int count = i < 8 ? 16 : 1;
+                tooManyRectangles[at++] = (byte)(i + 1);
+                tooManyRectangles[at++] = 0;
+                tooManyRectangles[at++] = (byte)ZoneKind.Safe;
+                tooManyRectangles[at++] = (byte)count;
+                for (int r = 0; r < count; r++)
+                {
+                    tooManyRectangles[at++] = 0;
+                    tooManyRectangles[at++] = 0;
+                    tooManyRectangles[at++] = 0;
+                    tooManyRectangles[at++] = 0;
+                    tooManyRectangles[at++] = 1;
+                    tooManyRectangles[at++] = 0;
+                    tooManyRectangles[at++] = 1;
+                    tooManyRectangles[at++] = 0;
+                }
+            }
+            Assert.False(MessageCodec.TryReadZoneList(tooManyRectangles, 0, tooManyRectangles.Length, out _));
+
+            byte[] negativeWidth = (byte[])full.Clone();
+            negativeWidth[10] = 0xFF;
+            negativeWidth[11] = 0xFF;
+            Assert.False(MessageCodec.TryReadZoneList(negativeWidth, 0, negativeWidth.Length, out _));
+            byte[] negativeHeight = (byte[])full.Clone();
+            negativeHeight[12] = 0xFF;
+            negativeHeight[13] = 0xFF;
+            Assert.False(MessageCodec.TryReadZoneList(negativeHeight, 0, negativeHeight.Length, out _));
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new ZoneInfo[ProtocolConstants.MaxZones + 1])));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Safe, Array.Empty<ZoneRect>()) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Safe, new ZoneRect[17]) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(0, ZoneKind.Safe, new[] { new ZoneRect(0, 0, 1, 1) }) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Normal, new[] { new ZoneRect(0, 0, 1, 1) }) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Pvp, new[] { new ZoneRect(0, 0, 0, 1) }) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, (ZoneKind)3, new[] { new ZoneRect(0, 0, 1, 1) }) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Pvp, new[] { new ZoneRect(0, 0, -1, 1) }) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(new[] { new ZoneInfo(1, ZoneKind.Pvp, new[] { new ZoneRect(0, 0, 1, 0) }) })));
+
+            var encodedTooManyRects = new ZoneInfo[9];
+            for (int i = 0; i < encodedTooManyRects.Length; i++)
+            {
+                int count = i < 8 ? 16 : 1;
+                var rects = new ZoneRect[count];
+                for (int r = 0; r < count; r++) rects[r] = new ZoneRect(0, 0, 1, 1);
+                encodedTooManyRects[i] = new ZoneInfo((ushort)(i + 1), ZoneKind.Safe, rects);
+            }
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneList(
+                new ZoneListMessage(encodedTooManyRects)));
+        }
+
+        [Fact]
+        public void ZoneChanged_Valida_Identificador_Y_Tipo()
+        {
+            foreach (ZoneChangedMessage original in new[]
+            {
+                new ZoneChangedMessage(1, ZoneKind.Safe),
+                new ZoneChangedMessage(2, ZoneKind.Pvp),
+                new ZoneChangedMessage(0, ZoneKind.Normal),
+            })
+            {
+                byte[] bytes = MessageCodec.EncodeZoneChanged(original);
+                Assert.Equal(4, bytes.Length);
+                Assert.True(MessageCodec.TryReadZoneChanged(bytes, 0, bytes.Length, out ZoneChangedMessage decoded));
+                Assert.Equal(original.ZoneId, decoded.ZoneId);
+                Assert.Equal(original.Kind, decoded.Kind);
+            }
+
+            foreach (ZoneChangedMessage invalid in new[]
+            {
+                new ZoneChangedMessage(0, ZoneKind.Safe),
+                new ZoneChangedMessage(1, ZoneKind.Normal),
+                new ZoneChangedMessage(1, (ZoneKind)3),
+            })
+            {
+                Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeZoneChanged(invalid));
+            }
+
+            Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 1, 0 }, 0, 3, out _));
+            Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 1, 0, 1, 0 }, 0, 5, out _));
+            Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 30, 1, 0, 1 }, 0, 4, out _));
+            Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 0, 0, 1 }, 0, 4, out _));
+            Assert.False(MessageCodec.TryReadZoneChanged(new byte[] { 31, 1, 0, 0 }, 0, 4, out _));
         }
     }
 }

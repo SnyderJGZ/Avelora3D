@@ -17,6 +17,7 @@ using Avelora.Server.Persistence;
 using Avelora.Server.Progression;
 using Avelora.Server.Security;
 using Avelora.Server.Simulation;
+using Avelora.Server.Zones;
 using Avelora.Shared;
 using Avelora.Shared.Maps;
 
@@ -170,6 +171,28 @@ namespace Avelora.Server
                 }
             }
 
+            ZoneMap zones = ZoneMap.Empty;
+            if (!string.IsNullOrWhiteSpace(config.ZonesPath))
+            {
+                try
+                {
+                    zones = ZoneMap.Load(config.ResolveZonesPath(configPath), map);
+                    if (npcs != null)
+                    {
+                        zones.ValidateSpawners(npcs);
+                    }
+                }
+                catch (Exception ex) when (
+                    ex is IOException ||
+                    ex is System.Text.Json.JsonException ||
+                    ex is InvalidOperationException ||
+                    ex is ArgumentException)
+                {
+                    ConsoleReporter.WriteError("No se pudieron cargar las zonas: " + ex.Message);
+                    return 2;
+                }
+            }
+
             // Persistencia (Etapa F): una base SQLite y un hilo de guardado. La zona y el tick no
             // saben nada de SQLite; solo reciben personajes ya cargados y entregan fotos.
             IPlayerRepository? repository = null;
@@ -257,7 +280,8 @@ namespace Avelora.Server
                 (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
                 levels,
                 classes,
-                (long)Math.Ceiling(config.LootReserveSeconds * SimulationConstants.TickRate));
+                (long)Math.Ceiling(config.LootReserveSeconds * SimulationConstants.TickRate),
+                zones);
 
             try
             {
@@ -311,7 +335,8 @@ namespace Avelora.Server
                 network.KeyFingerprint,
                 npcs,
                 levels,
-                classes);
+                classes,
+                zones);
 
             using var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (sender, eventArgs) =>

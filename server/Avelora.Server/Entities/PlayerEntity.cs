@@ -34,6 +34,12 @@ namespace Avelora.Server.Entities
         /// <summary>Oro del personaje.</summary>
         public int Gold { get; set; }
 
+        /// <summary>Zona actual del jugador; cero representa el terreno normal (I-15).</summary>
+        public ushort ZoneId { get; set; }
+
+        /// <summary>Tipo de la zona actual del jugador (I-15).</summary>
+        public ZoneKind ZoneKind { get; set; } = ZoneKind.Normal;
+
         public const int MaxGold = (int)ProtocolConstants.MaxGold;
 
         /// <summary>Nombre usado para identificar al personaje en avisos de reparación de equipo.</summary>

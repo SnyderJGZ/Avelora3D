@@ -80,6 +80,9 @@ namespace Avelora.Server.Configuration
         /// </summary>
         public string NpcsPath { get; set; } = "npcs.json";
 
+        /// <summary>Ruta de zonas del mapa (I-15). Vacía mantiene todo el mapa como zona normal.</summary>
+        public string ZonesPath { get; set; } = "";
+
         /// <summary>
         /// Ruta del archivo de objetos (<c>items.json</c>, I-04). Si es relativa se resuelve junto
         /// a la configuración, como <see cref="DatabasePath"/>. Vacío = sin objetos.
@@ -663,6 +666,23 @@ namespace Avelora.Server.Configuration
 
             string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
             return Path.GetFullPath(Path.Combine(configDirectory ?? ".", NpcsPath));
+        }
+
+        /// <summary>Resuelve zones.json junto a server.json; una ruta vacía desactiva las zonas.</summary>
+        public string ResolveZonesPath(string configPath)
+        {
+            if (string.IsNullOrWhiteSpace(ZonesPath))
+            {
+                return string.Empty;
+            }
+
+            if (Path.IsPathRooted(ZonesPath))
+            {
+                return ZonesPath;
+            }
+
+            string? configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath));
+            return Path.GetFullPath(Path.Combine(configDirectory ?? ".", ZonesPath));
         }
 
         /// <summary>

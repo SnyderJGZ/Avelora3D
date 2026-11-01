@@ -30,7 +30,16 @@ namespace Avelora.Shared.Protocol
         /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel;
         /// I-13 a 17 por CombatEvent e I-25 a 18 por el oro del inventario y LootGained.
         /// </summary>
-        public const ushort Version = 18;
+        public const ushort Version = 19;
+
+        /// <summary>Máximo de zonas de mapa anunciadas al entrar (I-15).</summary>
+        public const int MaxZones = 32;
+
+        /// <summary>Máximo de rectángulos de una zona (I-15).</summary>
+        public const int MaxZoneRectsPerZone = 16;
+
+        /// <summary>Máximo total de rectángulos anunciados en ZoneList (I-15).</summary>
+        public const int MaxZoneRects = 128;
 
         /// <summary>Máximo de eventos de combate en un mensaje (I-13).</summary>
         public const int MaxCombatEventsPerMessage = 64;

@@ -14,6 +14,7 @@
   "persistenceEnabled": true,
   "databasePath": "avelora-carga.db",
   "npcsPath": "npcs-carga.json",
+  "zonesPath": "zones-carga.json",
   "itemsPath": "items-carga.json",
   "levelsPath": "levels-carga.json",
   "classesPath": "classes-carga.json",

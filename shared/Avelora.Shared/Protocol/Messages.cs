@@ -964,4 +964,65 @@ namespace Avelora.Shared.Protocol
         public uint Gold { get; }
         public LootItemEntry[] Items { get; }
     }
+
+    /// <summary>Tipo de zona informado por el servidor (I-15).</summary>
+    public enum ZoneKind : byte
+    {
+        Normal = 0,
+        Safe = 1,
+        Pvp = 2,
+    }
+
+    /// <summary>Rectángulo de casillas del mapa; X/Y son la esquina inferior izquierda.</summary>
+    public readonly struct ZoneRect
+    {
+        public ZoneRect(short x, short y, short width, short height)
+        {
+            X = x;
+            Y = y;
+            Width = width;
+            Height = height;
+        }
+
+        public short X { get; }
+        public short Y { get; }
+        public short Width { get; }
+        public short Height { get; }
+    }
+
+    /// <summary>Zona con id estable y sus rectángulos (I-15).</summary>
+    public readonly struct ZoneInfo
+    {
+        public ZoneInfo(ushort id, ZoneKind kind, ZoneRect[] rects)
+        {
+            Id = id;
+            Kind = kind;
+            Rects = rects ?? Array.Empty<ZoneRect>();
+        }
+
+        public ushort Id { get; }
+        public ZoneKind Kind { get; }
+        public ZoneRect[] Rects { get; }
+    }
+
+    /// <summary>Lista de zonas que el servidor envía al entrar al mundo (I-15).</summary>
+    public readonly struct ZoneListMessage
+    {
+        public ZoneListMessage(ZoneInfo[] zones) => Zones = zones ?? Array.Empty<ZoneInfo>();
+
+        public ZoneInfo[] Zones { get; }
+    }
+
+    /// <summary>Zona actual del jugador tras cruzar su borde (I-15).</summary>
+    public readonly struct ZoneChangedMessage
+    {
+        public ZoneChangedMessage(ushort zoneId, ZoneKind kind)
+        {
+            ZoneId = zoneId;
+            Kind = kind;
+        }
+
+        public ushort ZoneId { get; }
+        public ZoneKind Kind { get; }
+    }
 }

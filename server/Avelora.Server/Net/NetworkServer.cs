@@ -11,6 +11,7 @@ using Avelora.Server.Entities;
 using Avelora.Server.Persistence;
 using Avelora.Server.Progression;
 using Avelora.Server.Simulation;
+using Avelora.Server.Zones;
 using Avelora.Server.Items;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
@@ -48,6 +49,7 @@ namespace Avelora.Server.Net
         private readonly RSA _serverKey;
         private readonly bool _ownsServerKey;
         private readonly Func<long> _clock;
+        private readonly byte[]? _zoneList;
         private long _nextSaveTick;
 
         /// <summary>
@@ -145,6 +147,8 @@ namespace Avelora.Server.Net
         private long _combatEventsTrimmed;
         private long _lootGainedMessages;
         private long _lootGainedBytes;
+        private long _zoneChangedMessages;
+        private long _zoneChangedBytes;
 
         public NetworkServer(
             Zone zone,
@@ -230,7 +234,12 @@ namespace Avelora.Server.Net
             _zone.InventoryChanged += OnInventoryChanged;
             _zone.ProgressChanged += OnProgressChanged;
             _zone.LootGained += OnLootGained;
+            _zone.ZoneChanged += OnZoneChanged;
             _zone.StatsChanged += OnStatsChanged;
+            if (_zone.Zones.Zones.Length > 0)
+            {
+                _zoneList = MessageCodec.EncodeZoneList(new ZoneListMessage(_zone.Zones.Zones));
+            }
         }
 
         /// <summary>Puerto UDP efectivo.</summary>
@@ -403,7 +412,9 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _combatEventBytes),
             Interlocked.Read(ref _combatEventsTrimmed),
             Interlocked.Read(ref _lootGainedMessages),
-            Interlocked.Read(ref _lootGainedBytes));
+            Interlocked.Read(ref _lootGainedBytes),
+            Interlocked.Read(ref _zoneChangedMessages),
+            Interlocked.Read(ref _zoneChangedBytes));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -1611,6 +1622,11 @@ namespace Avelora.Server.Net
                 _mapHash));
 
             Enqueue(connectionId, welcome, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            if (_zoneList != null)
+            {
+                Enqueue(connectionId, (byte[])_zoneList.Clone(), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            }
+
             byte[][] itemCatalogChunks = EncodeItemCatalog(_zone, _config, player);
             for (int i = 0; i < itemCatalogChunks.Length; i++)
             {
@@ -1794,6 +1810,18 @@ namespace Avelora.Server.Net
                 Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
                 Interlocked.Increment(ref _lootGainedMessages);
                 Interlocked.Add(ref _lootGainedBytes, bytes.Length);
+            }
+        }
+
+        private void OnZoneChanged(PlayerEntity player, ZoneChangedMessage message)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
+                session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodeZoneChanged(message);
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _zoneChangedMessages);
+                Interlocked.Add(ref _zoneChangedBytes, bytes.Length);
             }
         }
 
@@ -2464,7 +2492,9 @@ namespace Avelora.Server.Net
             long combatEventBytes = 0,
             long combatEventsTrimmed = 0,
             long lootGainedMessages = 0,
-            long lootGainedBytes = 0)
+            long lootGainedBytes = 0,
+            long zoneChangedMessages = 0,
+            long zoneChangedBytes = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2496,6 +2526,8 @@ namespace Avelora.Server.Net
             CombatEventsTrimmed = combatEventsTrimmed;
             LootGainedMessages = lootGainedMessages;
             LootGainedBytes = lootGainedBytes;
+            ZoneChangedMessages = zoneChangedMessages;
+            ZoneChangedBytes = zoneChangedBytes;
             SaveLastError = saveLastError;
         }
 
@@ -2559,6 +2591,9 @@ namespace Avelora.Server.Net
 
         public long LootGainedMessages { get; }
         public long LootGainedBytes { get; }
+
+        public long ZoneChangedMessages { get; }
+        public long ZoneChangedBytes { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

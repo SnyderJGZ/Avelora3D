@@ -2,6 +2,7 @@
   "tickRate": 20,
   "mapPath": "maps/avelora-valle.avmap",
   "zoneId": 1,
+  "zonesPath": "zones.json",
   "port": 7777,
   "maxPlayers": 10,
   "maxConnections": 16,
