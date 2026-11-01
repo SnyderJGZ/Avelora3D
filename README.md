@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (cliente I-15b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (cliente I-15b hecho; I-15pb pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -29,6 +29,7 @@ calcular igual (movimiento y colisión).
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
 > a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**;
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
+> I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
@@ -48,7 +49,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx -v q --nologo` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **734/734 en verde** |
+| `dotnet test Avelora.slnx` | **803/803 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -376,13 +377,16 @@ pueden discrepar** del formato.
 | `LootGained` | 29 | S → C | 10 B + 5 B/objeto | experiencia (u32), oro (u32), N (u8); itemId (u16), cantidad (u16), bandera `OnGround` (u8); máximo 32 |
 | `ZoneList` | 30 | S → C | 2 B + 4 B/zona + 8 B/rectángulo | N (u8); id (u16), tipo (u8), R (u8); x/y/w/h (i16); máximo 32 zonas y 128 rectángulos (1154 B) |
 | `ZoneChanged` | 31 | S → C | 4 B | id de zona (u16) y tipo (u8); id 0 solo con `Normal` |
+| `SetPvpMode` | 32 | C → S | 2 B | modo elegido: PvE (0) o PvP (1) |
+| `PvpStatus` | 33 | S → C | 8 B | modo, forzado, fase de cambio y segundos restantes |
+| `PvpModeRejected` | 34 | S → C | 2 B | `NotInSafeZone` o `TooSoon` |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
   `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList`,
-  `CharacterRejected`, `LootGained`, `ZoneList` y `ZoneChanged`.
+  `CharacterRejected`, `LootGained`, `ZoneList`, `ZoneChanged`, `SetPvpMode`, `PvpStatus` y `PvpModeRejected`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 - **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
@@ -398,6 +402,7 @@ Canales:
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
+> I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
@@ -858,7 +863,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v19** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v20** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1095,7 +1100,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat, selección de personaje y zonas | ⏳ I-01 a I-25 de servidor hechas; pendientes I-15b y los clientes anteriores de la hoja de ruta |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat, selección de personaje y zonas | ⏳ I-01 a I-25 de servidor hechas; I-15b hecho; pendientes I-15pb y los clientes anteriores de la hoja de ruta |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1110,7 +1115,8 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-11** | Penalización de experiencia al morir por un PNJ (sin protocolo ni migración) | ✅ servidor |
 | **I-12** | Armas por clase, requisitos de nivel y dos manos (protocolo v16; esquema v6) | ✅ servidor y bots; cliente I-12b pendiente |
 | **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
-| **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor y bots; cliente I-15b pendiente |
+| **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor, bots y cliente I-15b |
+| **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor y bots; cliente I-15pb pendiente |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
 
 ### Enemigos y vida del jugador (I-03)
@@ -1855,7 +1861,7 @@ los bots (el servidor siguió hasta 160 s); la carga es consistente salvo ese me
 por un bot. Sin `[corrección]` en los logs. Informe: `docs/agentes/informes/I-25.md`.
 
 **Trabajo futuro:** grupos con reparto estilo WoW (dueño = grupo, turnos o tiradas) y mostrar al
-cliente quién es el dueño de un PNJ. El cliente Unity incorpora I-25b para protocolo v18; queda pendiente I-15b para v19.
+cliente quién es el dueño de un PNJ. El cliente Unity incorpora I-25b para protocolo v18; I-15b incorporó v19; el cliente I-15pb para v20 sigue pendiente.
 
 ### Zonas seguras y PvP (I-15, protocolo v19)
 
@@ -1888,7 +1894,7 @@ visión y recarga, por lo que no consume el cooldown. Los PNJ ignoran jugadores 
 persecución y vuelven a casa; una segunda rejilla los detiene en el borde de la zona. Al iniciar,
 `ValidateSpawners` rechaza cualquier radio de aparición/deambulación que toque una casilla segura.
 El botín sigue perteneciendo al jugador marcado aunque entre en una zona segura. `pvp` solo identifica
-el área: el combate entre jugadores y la marca son trabajo futuro I-15p.
+el área: el combate entre jugadores se describe en [I-15p](#combate-entre-jugadores-i-15p-protocolo-v20-esquema-v8).
 No cambia el esquema SQLite, que sigue en v7.
 
 Las métricas del servidor incluyen `ataque_rech_zona_segura`, `aggro_cancelado_zona`, `cambios_zona`,
@@ -1897,8 +1903,48 @@ Las métricas del servidor incluyen `ataque_rech_zona_segura`, `aggro_cancelado_
 idéntica a `zones.json`; las dos pasadas de 50 bots (fight 120 s y random 60 s) dejaron estos resultados: en fight (120 s) tick p99 **0.061 ms** (I-25: 0.039), 0 correcciones, 265 muertes de PNJ y 265 `botin_msgs` (I-25: 311; los bots salen de la ciudad antes de luchar), `zona_msgs=243` = `zona_cambios` de los bots, `zona_listas=50/50`, `entradas_zona_segura=115`; en random (60 s) p99 **0.069 ms**, **0.24** correcciones por bot y minuto (14 muertes, inputs en vuelo), `zona_msgs=297` = `zona_cambios`, `aggro_cancelado_zona=8`. Logs en `tools/carga/resultados/20261031-222140-fight-50-redund4-corr/` y `20261031-222426-random-50-redund4-corr/`.
 La suite de I-15 añade pruebas de protocolo, límites/bordes/solapes, mapa real, IA, combate, red y bots. Build sin advertencias; **760/760** pruebas.
 
-**Fuera de alcance:** combate PvP y marca (I-15p), capa de zonas pintada en Unity, editor visual y
-servicios de ciudad. El cliente Unity no se actualizó; necesita I-15b para el protocolo v19.
+**Fuera de alcance de I-15:** el combate PvP se añadió en [I-15p](#combate-entre-jugadores-i-15p-protocolo-v20-esquema-v8); editor visual y servicios de ciudad siguen fuera. El cliente I-15b está hecho; I-15pb adaptará el cliente a v20.
+
+### Combate entre jugadores (I-15p, protocolo v20, esquema v8)
+
+Cada jugador elige **PvE** (por defecto) o **PvP**. El modo solo cambia tras **5 minutos seguidos
+en zona segura**; salir reinicia la espera. Fuera de ella no se puede cambiar. En zona PvP todos
+tienen **PvP forzado** y al salir conservan el forzado otros **5 minutos**. El PvP efectivo es el
+modo elegido PvP, estar en zona PvP o tener tiempo forzado restante.
+
+Dos jugadores pueden dañarse en zona normal o PvP si ambos tienen PvP efectivo, están vivos y ninguno
+está en zona segura. Alcance, línea de visión, defensa y recarga se resuelven en el servidor como
+contra PNJ. Una muerte PvP no da experiencia al atacante ni penaliza la de la víctima; se mantiene
+la reaparición de I-03. El forzado sigue corriendo estando muerto y dentro de la ciudad.
+
+SQLite migra automáticamente de v7 a **v8**: `pvp_mode` conserva el modo elegido y
+`pvp_forced_seconds` el tiempo restante, redondeado hacia arriba. El forzado solo corre conectado:
+desconectarse no lo elimina. Dentro de la arena se recarga cada tick; desconectarse allí conserva
+los 300 segundos y la posición. La espera en segura no se guarda: conectar o reaparecer empieza en 0.
+Se permite cambiar el modo elegido durante el forzado; el efectivo sigue PvP hasta agotarlo.
+
+`SetPvpMode(mode)` (2 B) pasa por la cola fiable de acciones. `PvpModeRejected(reason)` (2 B) distingue
+`NotInSafeZone` y `TooSoon`. Pedir el modo actual no envía nada y cuenta en `pvp_modo_igual`.
+`PvpStatus` (8 B) se envía solo al propio jugador, en el primer tick y cuando cambia el modo, tipo
+de forzado o fase de cambio. Incluye segundos para que el cliente descuente localmente, sin envíos
+por segundo. Sin zonas configuradas no se envía este estado; las reglas y temporizadores siguen
+funcionando. Los demás jugadores reciben el PvP efectivo en el **bit 6** del byte acción/rango del
+snapshot, solo para `Player`, sin aumentar los 15 B por entidad.
+
+`server.json`: `pvpModeChangeSeconds=300`, `pvpForcedSeconds=300`, ambos entre 1 y 3600.
+La carga usa **5/30 segundos**. Bots: `--pvp-bots N` (o `-PvpBots N` en el guion) selecciona bots
+que piden PvP al estar listos (esperan quietos en la zona segura hasta entonces) y pueden perseguir jugadores PvP visibles; `BotBehavior` no cambia.
+
+Métricas: `pvp_ataques_ok`, `pvp_muertes`, `ataque_rech_pvp_segura`, `ataque_rech_pvp_atacante_pve`,
+`ataque_rech_pvp_objetivo_pve`, `ataque_rech_pvp_muerto`, `ataque_rech_pvp_propio`, `pvp_cambios_modo`,
+`pvp_modo_igual`, `pvp_rech_fuera_segura`, `pvp_rech_pronto`, `pvp_estado_msgs`, `pvp_estado_bytes`,
+`pvp_rech_msgs`. Los bots cuentan `pvp_estados`, `pvp_rechazos` y `pvp_modo_pedidos`.
+
+Verificación: **803/803** pruebas, build con 0 advertencias. Carga de 50 bots: `fight` 120 s con
+`-PvpBots 10 -LogCorrections -NuevaBase` y `random` 60 s con `-LogCorrections -NuevaBase`;
+Fight tras el arreglo: `pvp_ataques_ok`=0, 10 peticiones y 10 cambios de modo, 1224 rechazos por zona segura y 0 correcciones; no se repitió la carga ni se ajustó más el comportamiento.
+Las cifras y comparación con I-15 están en [el informe I-15p](docs/agentes/informes/I-15p.md).
+El cliente Unity I-15b usa v19 y no conecta al servidor v20 hasta I-15pb. No se tocó `client/`.
 
 ### Chat (I-07, protocolo v10)
 
@@ -1989,6 +2035,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v7 y protocolo v19.
-Quedan pendientes el cliente **I-15b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v20, incluido I-15p.
+Quedan pendientes el cliente **I-15pb** y las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

@@ -19,6 +19,8 @@
   "inventorySlots": 20,
   "groundItemSeconds": 60,
   "lootReserveSeconds": 30,
+  "pvpModeChangeSeconds": 300,
+  "pvpForcedSeconds": 300,
   "lootTagSeconds": 10,
   "maxGroundItems": 500,
   "pickupRange": 1.5,

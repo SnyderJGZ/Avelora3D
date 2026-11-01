@@ -48,6 +48,9 @@ namespace Avelora.Shared.Protocol
         private const int ZoneListEntrySize = 2 + 1 + 1;
         private const int ZoneRectSize = 2 + 2 + 2 + 2;
         private const int ZoneChangedSize = 1 + 2 + 1;
+        private const int SetPvpModeSize = 1 + 1;
+        private const int PvpStatusSize = 1 + 1 + 1 + 1 + 2 + 2;
+        private const int PvpModeRejectedSize = 1 + 1;
         private const int StatsSize = 37;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
@@ -1175,7 +1178,8 @@ namespace Avelora.Shared.Protocol
                 if (entities[i].HealthPercent > 100 ||
                     entities[i].Action > EntityAction.Dead ||
                     entities[i].Rank > ProtocolConstants.MaxEntityRank ||
-                    (entities[i].Kind != EntityKind.Npc && entities[i].Rank != 0))
+                    (entities[i].Kind != EntityKind.Npc && entities[i].Rank != 0) ||
+                    (entities[i].Pvp && entities[i].Kind != EntityKind.Player))
                 {
                     throw new ArgumentOutOfRangeException(
                         nameof(message),
@@ -1200,8 +1204,8 @@ namespace Avelora.Shared.Protocol
                 writer.WriteSByte(state.DirectionY);
                 writer.WriteByte((byte)state.Kind);
                 writer.WriteByte(state.HealthPercent);
-                // Bits 0–3: acción; bits 4–5: rango; bits 6–7: reservados (0).
-                writer.WriteByte((byte)((byte)state.Action | (state.Rank << 4)));
+                // Bits 0–3: acción; bits 4–5: rango; bit 6: PvP efectivo (solo jugadores); bit 7: reservado (0).
+                writer.WriteByte((byte)((byte)state.Action | (state.Rank << 4) | (state.Pvp ? 0x40 : 0)));
                 writer.WriteUInt16(state.TypeId);
             }
 
@@ -1261,6 +1265,7 @@ namespace Avelora.Shared.Protocol
                     byte packedAction = reader.ReadByte();
                     byte rawAction = (byte)(packedAction & 0x0f);
                     byte rank = (byte)((packedAction >> 4) & 0x03);
+                    bool pvp = (packedAction & 0x40) != 0;
 
                     // El códec no conoce el catálogo de PNJ: cualquier tipo es válido aquí y el
                     // cliente dibuja uno desconocido con el aspecto por defecto.
@@ -1273,8 +1278,9 @@ namespace Avelora.Shared.Protocol
                         !MovementSimulator.IsValidDirection(directionX, directionY) ||
                         healthPercent > 100 ||
                         rawAction > (byte)EntityAction.Dead ||
-                        (packedAction & 0xc0) != 0 ||
-                        (rawKind != (byte)EntityKind.Npc && rank != 0))
+                        (packedAction & 0x80) != 0 ||
+                        (rawKind != (byte)EntityKind.Npc && rank != 0) ||
+                        (pvp && rawKind != (byte)EntityKind.Player))
                     {
                         return false;
                     }
@@ -1289,7 +1295,8 @@ namespace Avelora.Shared.Protocol
                         healthPercent,
                         (EntityAction)rawAction,
                         typeId,
-                        rank);
+                        rank,
+                        pvp);
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);
@@ -1981,6 +1988,121 @@ namespace Avelora.Shared.Protocol
             {
                 return false;
             }
+        }
+
+        /// <summary>Codifica SetPvpMode en dos bytes.</summary>
+        public static byte[] EncodeSetPvpMode(in SetPvpModeMessage message)
+        {
+            if (message.Mode > PvpMode.Pvp)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "El modo PvP no es válido.");
+            }
+
+            var buffer = new byte[SetPvpModeSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.SetPvpMode);
+            writer.WriteByte((byte)message.Mode);
+            return buffer;
+        }
+
+        /// <summary>Lee SetPvpMode y valida tipo, tamaño y modo.</summary>
+        public static bool TryReadSetPvpMode(
+            byte[] buffer, int offset, int length, out SetPvpModeMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.SetPvpMode, SetPvpModeSize) ||
+                buffer[offset + 1] > (byte)PvpMode.Pvp)
+            {
+                return false;
+            }
+
+            message = new SetPvpModeMessage((PvpMode)buffer[offset + 1]);
+            return true;
+        }
+
+        /// <summary>Codifica el estado PvP propio en ocho bytes.</summary>
+        public static byte[] EncodePvpStatus(in PvpStatusMessage message)
+        {
+            if (!IsValidPvpStatus(message))
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "PvpStatus contiene valores incoherentes.");
+            }
+
+            var buffer = new byte[PvpStatusSize];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.PvpStatus);
+            writer.WriteByte((byte)message.Mode);
+            writer.WriteByte((byte)message.Forced);
+            writer.WriteByte((byte)message.Change);
+            writer.WriteUInt16(message.ForcedSeconds);
+            writer.WriteUInt16(message.ChangeSeconds);
+            return buffer;
+        }
+
+        /// <summary>Lee PvpStatus y valida tipo, tamaño, estados y tiempos.</summary>
+        public static bool TryReadPvpStatus(byte[] buffer, int offset, int length, out PvpStatusMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.PvpStatus, PvpStatusSize))
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                var candidate = new PvpStatusMessage(
+                    (PvpMode)reader.ReadByte(),
+                    (PvpForcedState)reader.ReadByte(),
+                    (PvpChangeState)reader.ReadByte(),
+                    reader.ReadUInt16(),
+                    reader.ReadUInt16());
+                if (reader.Remaining != 0 || !IsValidPvpStatus(candidate))
+                {
+                    return false;
+                }
+
+                message = candidate;
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsValidPvpStatus(in PvpStatusMessage message) =>
+            message.Mode <= PvpMode.Pvp &&
+            message.Forced <= PvpForcedState.Timer &&
+            message.Change <= PvpChangeState.Ready &&
+            ((message.ForcedSeconds > 0) == (message.Forced == PvpForcedState.Timer)) &&
+            ((message.ChangeSeconds > 0) == (message.Change == PvpChangeState.Waiting));
+
+        /// <summary>Codifica un rechazo del cambio de modo en dos bytes.</summary>
+        public static byte[] EncodePvpModeRejected(in PvpModeRejectedMessage message)
+        {
+            if (message.Reason != PvpModeRejectReason.NotInSafeZone && message.Reason != PvpModeRejectReason.TooSoon)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "El motivo del rechazo PvP no es válido.");
+            }
+
+            return new[] { (byte)MessageType.PvpModeRejected, (byte)message.Reason };
+        }
+
+        /// <summary>Lee el rechazo PvP y valida tipo, tamaño y motivo.</summary>
+        public static bool TryReadPvpModeRejected(
+            byte[] buffer, int offset, int length, out PvpModeRejectedMessage message)
+        {
+            message = default;
+            if (!HasExactHeader(buffer, offset, length, MessageType.PvpModeRejected, PvpModeRejectedSize) ||
+                (buffer[offset + 1] != (byte)PvpModeRejectReason.NotInSafeZone &&
+                 buffer[offset + 1] != (byte)PvpModeRejectReason.TooSoon))
+            {
+                return false;
+            }
+
+            message = new PvpModeRejectedMessage((PvpModeRejectReason)buffer[offset + 1]);
+            return true;
         }
 
         private static bool IsPlayableZoneKind(ZoneKind kind) =>

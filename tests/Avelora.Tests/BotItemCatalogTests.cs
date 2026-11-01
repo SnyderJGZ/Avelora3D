@@ -31,6 +31,70 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Bot_Cuenta_Estados_Y_Rechazos_Pvp_Y_Pide_Modo_Al_Estar_Listo()
+        {
+            var transport = new SightTransport(sendPvpTelemetry: true);
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 300, accountPrefix: "bot-pvp", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Random,
+                transportFactory: () => transport, pvp: true);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(1, bot.PvpStatuses);
+            Assert.Equal(1, bot.PvpRejects);
+            Assert.Equal(1, bot.PvpModeRequests);
+            Assert.True(transport.PvpModeSent);
+        }
+
+        [Fact]
+        public void Fight_Pvp_Espera_Quieto_Mientras_Cuenta_La_Zona_Segura()
+        {
+            var transport = new SightTransport(sendPvpWaiting: true);
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 300, accountPrefix: "bot-pvp", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Random,
+                transportFactory: () => transport, pvp: true);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(0, transport.PositiveMoveInputs);
+            Assert.Equal(0, bot.PvpModeRequests);
+        }
+
+        [Fact]
+        public void Fight_Sin_Pvp_No_Espera_Por_Estado_Pvp()
+        {
+            var transport = new SightTransport(sendPvpWaiting: true);
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 300, accountPrefix: "bot-pvp", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Random,
+                transportFactory: () => transport, pvp: false);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.True(transport.PositiveMoveInputs > 0);
+        }
+
+        [Fact]
+        public void Fight_Pvp_Incluye_Enemigo_Jugador_Pvp_Visible()
+        {
+            var transport = new SightTransport(sendPvpPlayer: true);
+            using var bot = new BotClient(
+                1, "127.0.0.1", 7777, new byte[ProtocolConstants.MapHashSize],
+                seed: 17, runMs: 300, accountPrefix: "bot-pvp", password: "clave",
+                invitationCode: "invitacion", behavior: BotBehavior.Fight,
+                transportFactory: () => transport, pvp: true);
+
+            bot.Run(CancellationToken.None);
+
+            Assert.Equal(43, transport.LastAttackTarget);
+        }
+
+        [Fact]
         public void Fight_Equipa_Arma_Aunque_FistDamage_Con_Bono_Supere_Su_Daño_Base()
         {
             var transport = new ArmaConBonoTransport();
@@ -195,10 +259,20 @@ namespace Avelora.Tests
             private bool _connectPending;
             private bool _connected;
             private readonly bool _sendZoneTelemetry;
+            private readonly bool _sendPvpTelemetry;
+            private readonly bool _sendPvpPlayer;
+            private readonly bool _sendPvpWaiting;
 
-            public SightTransport(bool sendZoneTelemetry = false)
+            public SightTransport(
+                bool sendZoneTelemetry = false,
+                bool sendPvpTelemetry = false,
+                bool sendPvpPlayer = false,
+                bool sendPvpWaiting = false)
             {
                 _sendZoneTelemetry = sendZoneTelemetry;
+                _sendPvpTelemetry = sendPvpTelemetry;
+                _sendPvpPlayer = sendPvpPlayer;
+                _sendPvpWaiting = sendPvpWaiting;
                 using RSA rsa = RSA.Create(2048);
                 _publicKey = rsa.ExportParameters(includePrivateParameters: false);
             }
@@ -206,6 +280,8 @@ namespace Avelora.Tests
             public bool IsConnected => _connected;
             public int AttacksSent { get; private set; }
             public int PositiveMoveInputs { get; private set; }
+            public bool PvpModeSent { get; private set; }
+            public int LastAttackTarget { get; private set; } = -1;
             public event Action? Connected;
             public event Action<DisconnectReason>? Disconnected;
             public event TransportMessageHandler? Received;
@@ -242,6 +318,11 @@ namespace Avelora.Tests
                     _incoming.Enqueue(MessageCodec.EncodeWelcome(new WelcomeMessage(
                         ProtocolConstants.Version, (ushort)SimulationConstants.TickRate, 42, 0, 0,
                         1.5f, 2.5f, 4f, 0.4f, 0.4f, new byte[ProtocolConstants.MapHashSize])));
+                    if (_sendPvpWaiting)
+                    {
+                        _incoming.Enqueue(MessageCodec.EncodePvpStatus(new PvpStatusMessage(
+                            PvpMode.Pve, PvpForcedState.None, PvpChangeState.Waiting, 0, 5)));
+                    }
                     if (_sendZoneTelemetry)
                     {
                         _incoming.Enqueue(MessageCodec.EncodeZoneList(new ZoneListMessage(new[]
@@ -254,15 +335,31 @@ namespace Avelora.Tests
                         _incoming.Enqueue(MessageCodec.EncodeZoneChanged(new ZoneChangedMessage(0, ZoneKind.Normal)));
                     }
 
+                    if (_sendPvpTelemetry)
+                    {
+                        _incoming.Enqueue(MessageCodec.EncodePvpStatus(new PvpStatusMessage(
+                            PvpMode.Pve, PvpForcedState.None, PvpChangeState.Ready, 0, 0)));
+                        _incoming.Enqueue(MessageCodec.EncodePvpModeRejected(
+                            new PvpModeRejectedMessage(PvpModeRejectReason.NotInSafeZone)));
+                    }
+
                     _incoming.Enqueue(MessageCodec.EncodeItemCatalog(new ItemCatalogMessage(
                         1.5f, 10, 6f, 0.8f, Array.Empty<ItemCatalogEntry>())));
                     _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
                         0, Array.Empty<ushort>(), Array.Empty<ushort>())));
-                    _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(1, 0, new[]
-                    {
-                        new EntityState(42, 96, 160, 0, 0, EntityKind.Player, 100, EntityAction.None),
-                        new EntityState(100, 352, 160, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2001),
-                    })));
+                    _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(1, 0,
+                        _sendPvpPlayer
+                            ? new[]
+                            {
+                                new EntityState(42, 96, 160, 0, 0, EntityKind.Player, 100, EntityAction.None),
+                                new EntityState(43, 112, 160, 0, 0, EntityKind.Player, 100, EntityAction.None, pvp: true),
+                                new EntityState(100, 352, 160, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2001),
+                            }
+                            : new[]
+                            {
+                                new EntityState(42, 96, 160, 0, 0, EntityKind.Player, 100, EntityAction.None),
+                                new EntityState(100, 352, 160, 0, 0, EntityKind.Npc, 100, EntityAction.None, 2001),
+                            })));
                     _incoming.Enqueue(MessageCodec.EncodeCombatEvent(new CombatEventMessage(new[]
                     {
                         new CombatEventEntry(42, 100, 10, CombatEventFlags.Ranged),
@@ -271,6 +368,14 @@ namespace Avelora.Tests
                 else if (data[0] == (byte)MessageType.Attack)
                 {
                     AttacksSent++;
+                    if (MessageCodec.TryReadAttack(data, 0, length, out AttackMessage attack))
+                    {
+                        LastAttackTarget = attack.TargetId;
+                    }
+                }
+                else if (MessageCodec.TryReadSetPvpMode(data, 0, length, out _))
+                {
+                    PvpModeSent = true;
                 }
                 else if (MessageCodec.TryReadMoveInput(data, 0, length, out MoveInputMessage input) &&
                     input.TryGetDirection(0, out sbyte directionX, out _) && directionX > 0)

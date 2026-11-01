@@ -678,8 +678,8 @@ namespace Avelora.Shared.Protocol
 
     /// <summary>Estado de una entidad dentro de un snapshot.</summary>
     /// <remarks>
-    /// Ocupa 15 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1), vida (1), acción
-    /// y rango empaquetados (1, I-20) y tipo de PNJ (2, I-03c).
+    /// Ocupa 15 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1), vida (1), acción,
+    /// rango y PvP (1, I-20/I-15p) y tipo de PNJ (2, I-03c).
     /// </remarks>
     public readonly struct EntityState
     {
@@ -693,7 +693,8 @@ namespace Avelora.Shared.Protocol
             byte healthPercent,
             EntityAction action,
             ushort typeId = 0,
-            byte rank = 0)
+            byte rank = 0,
+            bool pvp = false)
         {
             Id = id;
             X = x;
@@ -705,6 +706,7 @@ namespace Avelora.Shared.Protocol
             Action = action;
             TypeId = typeId;
             Rank = rank;
+            Pvp = pvp;
         }
 
         public int Id { get; }
@@ -735,6 +737,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Rango del PNJ (0 = normal); jugadores y objetos llevan 0.</summary>
         public byte Rank { get; }
+
+        /// <summary>PvP efectivo; solo es válido para jugadores.</summary>
+        public bool Pvp { get; }
     }
 
     /// <summary>
@@ -1024,5 +1029,73 @@ namespace Avelora.Shared.Protocol
 
         public ushort ZoneId { get; }
         public ZoneKind Kind { get; }
+    }
+
+    /// <summary>Modo PvE/PvP elegido por el jugador (I-15p).</summary>
+    public enum PvpMode : byte
+    {
+        Pve = 0,
+        Pvp = 1,
+    }
+
+    /// <summary>Origen del PvP efectivo forzado (I-15p).</summary>
+    public enum PvpForcedState : byte
+    {
+        None = 0,
+        InZone = 1,
+        Timer = 2,
+    }
+
+    /// <summary>Disponibilidad para cambiar el modo en zona segura (I-15p).</summary>
+    public enum PvpChangeState : byte
+    {
+        Unavailable = 0,
+        Waiting = 1,
+        Ready = 2,
+    }
+
+    /// <summary>Motivo por el que no se aceptó cambiar el modo PvP (I-15p).</summary>
+    public enum PvpModeRejectReason : byte
+    {
+        NotInSafeZone = 1,
+        TooSoon = 2,
+    }
+
+    /// <summary>Petición del cliente para cambiar su modo PvP elegido (I-15p).</summary>
+    public readonly struct SetPvpModeMessage
+    {
+        public SetPvpModeMessage(PvpMode mode) => Mode = mode;
+        public PvpMode Mode { get; }
+    }
+
+    /// <summary>Estado PvP propio, enviado solo al cambiar (I-15p).</summary>
+    public readonly struct PvpStatusMessage
+    {
+        public PvpStatusMessage(
+            PvpMode mode,
+            PvpForcedState forced,
+            PvpChangeState change,
+            ushort forcedSeconds,
+            ushort changeSeconds)
+        {
+            Mode = mode;
+            Forced = forced;
+            Change = change;
+            ForcedSeconds = forcedSeconds;
+            ChangeSeconds = changeSeconds;
+        }
+
+        public PvpMode Mode { get; }
+        public PvpForcedState Forced { get; }
+        public PvpChangeState Change { get; }
+        public ushort ForcedSeconds { get; }
+        public ushort ChangeSeconds { get; }
+    }
+
+    /// <summary>Rechazo de una petición de cambio de modo PvP (I-15p).</summary>
+    public readonly struct PvpModeRejectedMessage
+    {
+        public PvpModeRejectedMessage(PvpModeRejectReason reason) => Reason = reason;
+        public PvpModeRejectReason Reason { get; }
     }
 }

@@ -80,7 +80,9 @@ namespace Avelora.Tests
                 pickupRange: config.PickupRange,
                 pickupRangeTolerance: config.AttackRangeTolerance,
                 potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
-                zones: zones);
+                zones: zones,
+                pvpModeChangeTicks: (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
+                pvpForcedTicks: (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
         }
 
         [Fact]
@@ -151,6 +153,77 @@ namespace Avelora.Tests
 
             Assert.DoesNotContain(harness.Transport.Sent, sent =>
                 MessageCodec.TryReadZoneList(sent.Data, 0, sent.Data.Length, out _));
+        }
+
+        [Fact]
+        public void Network_Envia_Estado_Pvp_Rechazo_Y_Bit_Pvp_En_Snapshot()
+        {
+            var config = new ServerConfig();
+            MapCollisionGrid map = MapFile.Load(MapPath);
+            int spawnX = (int)Math.Floor(config.SpawnX);
+            int spawnY = (int)Math.Floor(config.SpawnY);
+            ZoneMap zones = ZoneMap.FromDefinitions(new[]
+            {
+                new ZoneDefinition
+                {
+                    Id = 1,
+                    Name = "Segura de red",
+                    Kind = "safe",
+                    Rects = new List<ZoneRectDefinition>
+                    {
+                        new ZoneRectDefinition { X = spawnX, Y = spawnY, W = 1, H = 1 },
+                    },
+                },
+                new ZoneDefinition
+                {
+                    Id = 2,
+                    Name = "Arena de red",
+                    Kind = "pvp",
+                    Rects = new List<ZoneRectDefinition>
+                    {
+                        new ZoneRectDefinition { X = spawnX + 3, Y = spawnY, W = 1, H = 1 },
+                    },
+                },
+            }, map);
+
+            using var harness = new Harness(zones: zones);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.Contains(harness.Transport.Sent, sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadPvpStatus(sent.Data, 0, sent.Data.Length, out _));
+
+            PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            first.Position = new Vec2(spawnX + 1.5f, spawnY + 0.5f);
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeSetPvpMode(
+                new SetPvpModeMessage(PvpMode.Pvp)));
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            SentMessage rejected = Assert.Single(harness.Transport.Sent.FindAll(sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadPvpModeRejected(sent.Data, 0, sent.Data.Length, out _)));
+            Assert.True(MessageCodec.TryReadPvpModeRejected(
+                rejected.Data, 0, rejected.Data.Length, out PvpModeRejectedMessage rejection));
+            Assert.Equal(PvpModeRejectReason.NotInSafeZone, rejection.Reason);
+
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+            PlayerEntity second = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(2));
+            second.Position = new Vec2(spawnX + 3.5f, spawnY + 0.5f);
+            harness.Transport.Sent.Clear();
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            EntityState other = Assert.Single(SnapshotFor(harness, 1).Entities, entity => entity.Id == second.Id);
+            Assert.True(other.Pvp);
+            NetworkStats stats = harness.Server.Snapshot();
+            Assert.True(stats.PvpStatusMessages > 0);
+            Assert.True(stats.PvpStatusBytes >= 8);
+            Assert.Equal(1, stats.PvpRejectedMessages);
         }
 
         [Fact]
@@ -1279,6 +1352,8 @@ namespace Avelora.Tests
                 new AllocatePointsMessage(2, 0, 0, 1)));
             harness.Server.PollOnce();
             harness.Zone.Tick();
+            firstPlayer.PvpMode = PvpMode.Pvp;
+            firstPlayer.PvpForcedTicksLeft = 501;
 
             harness.Transport.RaiseDisconnected(1);
             harness.Server.PollOnce();
@@ -1287,6 +1362,8 @@ namespace Avelora.Tests
             Assert.True(saves.TryGetLatest(firstPlayer.CharacterId, out CharacterRecord saved));
             Assert.Equal(2, saved.AllocStr);
             Assert.Equal(1, saved.AllocVit);
+            Assert.Equal(1, saved.PvpMode);
+            Assert.Equal(26, saved.PvpForcedSeconds);
 
             harness.Connect(2);
             harness.Handshake(2);
@@ -1300,8 +1377,44 @@ namespace Avelora.Tests
             PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
             Assert.Equal(2, reconnected.AllocStr);
             Assert.Equal(1, reconnected.AllocVit);
+            Assert.Equal(PvpMode.Pvp, reconnected.PvpMode);
+            // El forzado se restaura a 520 ticks; el tick de conexión ya ha consumido uno.
+            Assert.Equal((26 * SimulationConstants.TickRate) - 1, reconnected.PvpForcedTicksLeft);
             Assert.True(saves.Flush(TimeSpan.FromSeconds(2)));
             Assert.Equal(SqlitePlayerRepository.SchemaVersion, QuerySchemaVersion(database));
+        }
+
+        [Fact]
+        public void Modo_Y_Forzado_Pvp_Se_Conservan_Al_Reconectar_Con_Repositorio_En_Memoria()
+        {
+            using var repository = new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            first.PvpMode = PvpMode.Pvp;
+            first.PvpForcedTicksLeft = 501;
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(2)));
+            CharacterRecord saved = Assert.Single(repository.ListCharacters(1));
+            Assert.Equal(1, saved.PvpMode);
+            Assert.Equal(26, saved.PvpForcedSeconds);
+
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(2));
+            Assert.Equal(PvpMode.Pvp, reconnected.PvpMode);
+            Assert.Equal(26 * SimulationConstants.TickRate, reconnected.PvpForcedTicksLeft);
         }
 
         [Fact]

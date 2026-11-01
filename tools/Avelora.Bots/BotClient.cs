@@ -141,6 +141,7 @@ namespace Avelora.Bots
         private readonly string? _tracePositionsPath;
         private readonly string? _reportWelcomePath;
         private readonly int _attackCooldownMs;
+        private readonly bool _pvpEnabled;
         private float _pickupRange;
 
         private IClientTransport? _transport;
@@ -222,6 +223,11 @@ namespace Avelora.Bots
         private long _zoneChanges;
         private long _safeZoneEntries;
         private long _pvpZoneEntries;
+        private long _pvpStatuses;
+        private long _pvpRejects;
+        private long _pvpModeRequests;
+        private bool _pvpModeRequested;
+        private PvpStatusMessage _lastPvpStatus;
         private long _sentChat;
         private long _receivedChat;
         private long _deathsSeen;
@@ -299,7 +305,8 @@ namespace Avelora.Bots
             string? tracePositionsPath = null,
             string? reportWelcomePath = null,
             string? serverKeyFingerprint = null,
-            float pickupRange = 1.5f)
+            float pickupRange = 1.5f,
+            bool pvp = false)
         {
             if (startDelayMs < 0)
             {
@@ -343,6 +350,7 @@ namespace Avelora.Bots
             _welcomeTimeoutMs = welcomeTimeoutMs;
             _behavior = behavior;
             _attackCooldownMs = attackCooldownMs;
+            _pvpEnabled = pvp;
             _pickupRange = pickupRange;
             _logCorrections = logCorrections;
             _tracePositionsPath = tracePositionsPath;
@@ -453,6 +461,10 @@ namespace Avelora.Bots
         public long ZoneChanges => Interlocked.Read(ref _zoneChanges);
         public long SafeZoneEntries => Interlocked.Read(ref _safeZoneEntries);
         public long PvpZoneEntries => Interlocked.Read(ref _pvpZoneEntries);
+        public long PvpStatuses => Interlocked.Read(ref _pvpStatuses);
+        public long PvpRejects => Interlocked.Read(ref _pvpRejects);
+        public long PvpModeRequests => Interlocked.Read(ref _pvpModeRequests);
+        public PvpStatusMessage LastPvpStatus => _lastPvpStatus;
         public uint Gold => _gold;
 
         /// <summary>Mensajes de chat enviados por el comportamiento <c>chat</c> (I-07).</summary>
@@ -734,6 +746,13 @@ namespace Avelora.Bots
                         {
                             // Muerto: el servidor consume los inputs pero no mueve. Se mandan a
                             // cero para que la predicción local tampoco se mueva (I-03).
+                            _directionX = 0;
+                            _directionY = 0;
+                        }
+                        else if (_pvpEnabled && !_pvpModeRequested && _lastPvpStatus.Mode == PvpMode.Pve &&
+                                 _lastPvpStatus.Change == PvpChangeState.Waiting)
+                        {
+                            // Bot PvP: quieto en zona segura hasta poder pedir el modo (salir reinicia la espera).
                             _directionX = 0;
                             _directionY = 0;
                         }
@@ -1454,6 +1473,28 @@ namespace Avelora.Bots
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
+            if (MessageCodec.TryReadPvpStatus(buffer, offset, length, out PvpStatusMessage pvpStatus))
+            {
+                _lastPvpStatus = pvpStatus;
+                Interlocked.Increment(ref _pvpStatuses);
+                if (_pvpEnabled && !_pvpModeRequested &&
+                    pvpStatus.Change == PvpChangeState.Ready && pvpStatus.Mode == PvpMode.Pve)
+                {
+                    byte[] request = MessageCodec.EncodeSetPvpMode(new SetPvpModeMessage(PvpMode.Pvp));
+                    _transport!.Send(request, request.Length, DeliveryMode.ReliableOrdered);
+                    _pvpModeRequested = true;
+                    Interlocked.Increment(ref _pvpModeRequests);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadPvpModeRejected(buffer, offset, length, out _))
+            {
+                Interlocked.Increment(ref _pvpRejects);
+                return;
+            }
+
             if (MessageCodec.TryReadZoneList(buffer, offset, length, out _))
             {
                 Interlocked.Increment(ref _zoneLists);
@@ -2061,6 +2102,19 @@ namespace Avelora.Bots
             for (int i = 0; i < entities.Length; i++)
             {
                 EntityState state = entities[i];
+
+                if (state.Kind == EntityKind.Player)
+                {
+                    if (_pvpEnabled && state.Id != EntityId && state.Pvp && state.Action != EntityAction.Dead)
+                    {
+                        _npcs[state.Id] = new NpcView(
+                            ProtocolConstants.DequantizePosition(state.X),
+                            ProtocolConstants.DequantizePosition(state.Y),
+                            state.Action);
+                    }
+
+                    continue;
+                }
 
                 if (state.Kind != EntityKind.Npc)
                 {

@@ -149,6 +149,9 @@ namespace Avelora.Server.Net
         private long _lootGainedBytes;
         private long _zoneChangedMessages;
         private long _zoneChangedBytes;
+        private long _pvpStatusMessages;
+        private long _pvpStatusBytes;
+        private long _pvpRejectedMessages;
 
         public NetworkServer(
             Zone zone,
@@ -235,6 +238,8 @@ namespace Avelora.Server.Net
             _zone.ProgressChanged += OnProgressChanged;
             _zone.LootGained += OnLootGained;
             _zone.ZoneChanged += OnZoneChanged;
+            _zone.PvpStatusChanged += OnPvpStatusChanged;
+            _zone.PvpModeRejected += OnPvpModeRejected;
             _zone.StatsChanged += OnStatsChanged;
             if (_zone.Zones.Zones.Length > 0)
             {
@@ -414,7 +419,10 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _lootGainedMessages),
             Interlocked.Read(ref _lootGainedBytes),
             Interlocked.Read(ref _zoneChangedMessages),
-            Interlocked.Read(ref _zoneChangedBytes));
+            Interlocked.Read(ref _zoneChangedBytes),
+            Interlocked.Read(ref _pvpStatusMessages),
+            Interlocked.Read(ref _pvpStatusBytes),
+            Interlocked.Read(ref _pvpRejectedMessages));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -689,6 +697,20 @@ namespace Avelora.Server.Net
                 if (_zone.ItemActions != null)
                 {
                     _zone.ItemActions.TryEnqueue(ItemAction.ResetPoints(entityId));
+                }
+                else
+                {
+                    Interlocked.Increment(ref _messagesRejected);
+                }
+
+                return;
+            }
+
+            if (MessageCodec.TryReadSetPvpMode(buffer, offset, length, out SetPvpModeMessage pvpMode))
+            {
+                if (_zone.ItemActions != null)
+                {
+                    _zone.ItemActions.TryEnqueue(ItemAction.SetPvpMode(entityId, pvpMode.Mode));
                 }
                 else
                 {
@@ -1565,6 +1587,9 @@ namespace Avelora.Server.Net
                 character.AllocVit,
                 character.Mana,
                 character.Gold);
+            player.PvpMode = character.PvpMode == 1 ? PvpMode.Pvp : PvpMode.Pve;
+            player.PvpForcedTicksLeft = Math.Clamp(character.PvpForcedSeconds, 0, ushort.MaxValue) *
+                SimulationConstants.TickRate;
 
             for (int i = 0; i < character.InventoryItems.Length; i++)
             {
@@ -1754,6 +1779,9 @@ namespace Avelora.Server.Net
                 Level = player.Level,
                 Experience = player.Experience,
                 Gold = player.Gold,
+                PvpMode = (int)player.PvpMode,
+                PvpForcedSeconds = (player.PvpForcedTicksLeft + SimulationConstants.TickRate - 1) /
+                    SimulationConstants.TickRate,
                 UpdatedUtc = DateTime.UtcNow,
             };
             if (_saves != null)
@@ -1822,6 +1850,27 @@ namespace Avelora.Server.Net
                 Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
                 Interlocked.Increment(ref _zoneChangedMessages);
                 Interlocked.Add(ref _zoneChangedBytes, bytes.Length);
+            }
+        }
+
+        private void OnPvpStatusChanged(PlayerEntity player, PvpStatusMessage message)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodePvpStatus(message);
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _pvpStatusMessages);
+                Interlocked.Add(ref _pvpStatusBytes, bytes.Length);
+            }
+        }
+
+        private void OnPvpModeRejected(PlayerEntity player, PvpModeRejectReason reason)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodePvpModeRejected(new PvpModeRejectedMessage(reason));
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _pvpRejectedMessages);
             }
         }
 
@@ -2156,7 +2205,8 @@ namespace Avelora.Server.Net
                     entity is NpcEntity typed ? (ushort)typed.TypeId :
                     entity is PlayerEntity classed ? checked((ushort)classed.ClassId) :
                     entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0,
-                    entity is NpcEntity ranked ? ranked.Rank : (byte)0);
+                    entity is NpcEntity ranked ? ranked.Rank : (byte)0,
+                    entity is PlayerEntity pvpPlayer && pvpPlayer.PvpEffective);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(
@@ -2494,7 +2544,10 @@ namespace Avelora.Server.Net
             long lootGainedMessages = 0,
             long lootGainedBytes = 0,
             long zoneChangedMessages = 0,
-            long zoneChangedBytes = 0)
+            long zoneChangedBytes = 0,
+            long pvpStatusMessages = 0,
+            long pvpStatusBytes = 0,
+            long pvpRejectedMessages = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2528,6 +2581,9 @@ namespace Avelora.Server.Net
             LootGainedBytes = lootGainedBytes;
             ZoneChangedMessages = zoneChangedMessages;
             ZoneChangedBytes = zoneChangedBytes;
+            PvpStatusMessages = pvpStatusMessages;
+            PvpStatusBytes = pvpStatusBytes;
+            PvpRejectedMessages = pvpRejectedMessages;
             SaveLastError = saveLastError;
         }
 
@@ -2594,6 +2650,10 @@ namespace Avelora.Server.Net
 
         public long ZoneChangedMessages { get; }
         public long ZoneChangedBytes { get; }
+
+        public long PvpStatusMessages { get; }
+        public long PvpStatusBytes { get; }
+        public long PvpRejectedMessages { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

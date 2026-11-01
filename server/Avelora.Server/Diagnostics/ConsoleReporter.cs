@@ -85,6 +85,9 @@ namespace Avelora.Server.Diagnostics
                       " spawner(s), " + npcs.TotalEnemies + " enemigo(s), rangos: " + DescribeRanks(npcs)));
             Console.WriteLine("  Zonas         : " + DescribeZones(zones));
             Console.WriteLine(
+                "  PvP           : cambio tras " + Invariant(config.PvpModeChangeSeconds, "0.#") +
+                " s en zona segura, forzado " + Invariant(config.PvpForcedSeconds, "0.#") + " s");
+            Console.WriteLine(
                 "  Combate       : daño, alcance y recarga por clase o arma, tolerancia +" +
                 Invariant(config.AttackRangeTolerance, "0.##") + " tiles, cola de ataques " +
                 config.MaxQueuedAttacks);
@@ -174,8 +177,20 @@ namespace Avelora.Server.Diagnostics
                 " ataque_rech_objetivo=" + zone.RejectedAttackTarget +
                  " ataque_rech_distancia=" + zone.RejectedAttackDistance +
                  " ataque_rech_vision=" + zone.RejectedAttackLineOfSight +
-                 " ataque_rech_regreso=" + zone.RejectedAttackEvading +
-                 " ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone +
+                  " ataque_rech_regreso=" + zone.RejectedAttackEvading +
+                  " ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone +
+                  " pvp_ataques_ok=" + zone.PvpAttacksOk +
+                  " pvp_muertes=" + zone.PvpKills +
+                  " ataque_rech_pvp_segura=" + zone.RejectedPvpSafeZone +
+                  " ataque_rech_pvp_atacante_pve=" + zone.RejectedPvpAttackerPve +
+                  " ataque_rech_pvp_objetivo_pve=" + zone.RejectedPvpTargetPve +
+                  " ataque_rech_pvp_muerto=" + zone.RejectedPvpTargetDead +
+                  " ataque_rech_pvp_propio=" + zone.RejectedPvpSelf +
+                  " pvp_cambios_modo=" + zone.PvpModeChanges +
+                  " pvp_modo_igual=" + zone.PvpModeUnchanged +
+                  " pvp_rech_fuera_segura=" + zone.PvpRejectedNotInSafeZone +
+                  " pvp_rech_pronto=" + zone.PvpRejectedTooSoon +
+                  " pvp_estado_msgs=" + zone.PvpStatusMessages +
                  " aggro_cancelado_zona=" + zone.NpcAggroCancelledSafeZone +
                  " cambios_zona=" + zone.ZoneChanges +
                  " entradas_zona_segura=" + zone.SafeZoneEntries +
@@ -278,6 +293,10 @@ namespace Avelora.Server.Diagnostics
                 " chat_rech_invalido=" + network.ChatRejectedInvalid +
                 " chat_rech_largo=" + network.ChatRejectedLong +
                 " chat_rech_rapido=" + network.ChatRejectedFast);
+            Console.WriteLine(
+                "            pvp: pvp_estado_msgs=" + network.PvpStatusMessages +
+                " pvp_estado_bytes=" + network.PvpStatusBytes +
+                " pvp_rech_msgs=" + network.PvpRejectedMessages);
 
             if (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError))
             {
@@ -383,7 +402,19 @@ namespace Avelora.Server.Diagnostics
                  zone.RejectedAttackDistance + " por distancia, " +
                   "ataque_rech_vision=" + zone.RejectedAttackLineOfSight + ", " +
                   "ataque_rech_regreso=" + zone.RejectedAttackEvading + ", " +
-                  "ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone + ", " +
+                   "ataque_rech_zona_segura=" + zone.RejectedAttackSafeZone + ", " +
+                   "pvp_ataques_ok=" + zone.PvpAttacksOk + ", " +
+                   "pvp_muertes=" + zone.PvpKills + ", " +
+                   "ataque_rech_pvp_segura=" + zone.RejectedPvpSafeZone + ", " +
+                   "ataque_rech_pvp_atacante_pve=" + zone.RejectedPvpAttackerPve + ", " +
+                   "ataque_rech_pvp_objetivo_pve=" + zone.RejectedPvpTargetPve + ", " +
+                   "ataque_rech_pvp_muerto=" + zone.RejectedPvpTargetDead + ", " +
+                   "ataque_rech_pvp_propio=" + zone.RejectedPvpSelf + ", " +
+                   "pvp_cambios_modo=" + zone.PvpModeChanges + ", " +
+                   "pvp_modo_igual=" + zone.PvpModeUnchanged + ", " +
+                   "pvp_rech_fuera_segura=" + zone.PvpRejectedNotInSafeZone + ", " +
+                   "pvp_rech_pronto=" + zone.PvpRejectedTooSoon + ", " +
+                   "pvp_estado_msgs=" + zone.PvpStatusMessages + ", " +
                   "aggro_cancelado_zona=" + zone.NpcAggroCancelledSafeZone + ", " +
                   "cambios_zona=" + zone.ZoneChanges + ", " +
                   "entradas_zona_segura=" + zone.SafeZoneEntries + ", " +
@@ -482,6 +513,10 @@ namespace Avelora.Server.Diagnostics
                 ", chat_rech_invalido=" + network.ChatRejectedInvalid +
                 ", chat_rech_largo=" + network.ChatRejectedLong +
                 ", chat_rech_rapido=" + network.ChatRejectedFast);
+            Console.WriteLine(
+                "  PvP             : pvp_estado_msgs=" + network.PvpStatusMessages +
+                ", pvp_estado_bytes=" + network.PvpStatusBytes +
+                ", pvp_rech_msgs=" + network.PvpRejectedMessages);
             Console.WriteLine("  Jugadores       : " + zone.Players.Count);
             Console.WriteLine("  Código de salida: " + exitCode);
         }

@@ -152,12 +152,12 @@ solo manda el id (`TypeId` de jugador = `classId`).
    código).
 2. **Reajuste de puntos (sustituye a §0.4):** gratis **hasta el nivel 10**; después, con un objeto
    («piedra de reajuste») que suelta un mob. El objeto se añade a `items.json`; no hay comercio.
-3. **PvP (sustituye a §0.6): zonas marcadas + marca personal.** Un jugador solo puede dañar a otro
-   cuando se cumplen **las tres** cosas: ambos están en una zona PvP, ambos tienen la marca puesta y
-   ninguno está muerto. Fuera de zona la marca no hace nada. Detalles propuestos: la marca se activa con
-   `SetPvpMark(on)`; activarla surte efecto al instante, **corrección (§0.11):** la marca solo se quita en zonas seguras; al entrar en una zona PvP la marca no se activa sola. La curación de
-   aliados afecta a cualquier jugador **no hostil** (el sanador cura a cualquiera salvo a quien le esté
-   atacando en ese momento por PvP; la regla exacta se afina en I-17).
+3. **PvP (sustituye a §0.6): modo PvE/PvP elegido y PvP forzado (I-15p).**
+   Por defecto PvE; solo se cambia en zona segura tras 5 minutos seguidos en ella. Salir reinicia
+   la espera. En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos. PvP efectivo
+   significa modo elegido PvP, estar en zona PvP o tener tiempo forzado restante. Dos jugadores
+   vivos con PvP efectivo se pueden dañar fuera de zonas seguras, también en zona normal.
+   Alcance, visión, defensa y recarga los decide el servidor. La curación de aliados se afina en I-17.
 4. **Armas de dos manos y base para clases futuras.** Cada arma declara `handedness`
    (`one` | `two`); una `two` bloquea `offhand`. Los tipos de arma y la lista que cada clase puede usar
    son **datos** (`weaponTypes` en `classes.json`), así bárbaro (hacha a dos manos), paladín (maza y
@@ -179,12 +179,12 @@ solo manda el id (`TypeId` de jugador = `classId`).
    ni base de datos (los puntos libres se derivan, §0.2). Con 3 puntos por nivel, a nivel 25 hay 75 puntos
    (3 × 25), la mitad de lo planteado antes: la base de clase y el equipo pesan más.
 2. **Habilidad final: nivel 20** (las demás en 1, 5 y 10).
-3. **Marca PvP:** se puede **activar en cualquier sitio, pero solo se quita dentro de una zona segura**;
-   fuera no hay forma de quitarla. Además de zonas PvP, el mapa necesita **zonas seguras** (donde el
-   daño entre jugadores está desactivado y se puede quitar la marca). Una zona puede ser PvP, segura o
-   normal (sin PvP aunque haya marca). Consecuencia a vigilar: con la marca puesta fuera de una zona
-   PvP no se puede dañar a nadie, así que «estar marcado» solo importa dentro de zonas PvP; el riesgo es
-   que un jugador marcado por error tenga que volver a una zona segura para quitarla (es la intención).
+3. **Modo PvE/PvP:** la propuesta anterior queda **sustituida por la decisión del usuario de I-15p**.
+   Solo cambia tras 5 minutos seguidos en segura; el forzado sigue bajando allí y estando muerto.
+   Se puede cambiar el modo elegido durante el forzado sin eliminarlo. Se guardan modo y segundos
+   restantes (solo corren conectado); la espera segura no se guarda y conectar o reaparecer la reinicia.
+   En segura nunca hay daño entre jugadores; fuera se exige PvP efectivo en ambos. Protocolo v20,
+   esquema v8: `SetPvpMode`, `PvpStatus`, `PvpModeRejected` y bit 6 del snapshot para jugadores.
 4. **Clases futuras = clases base nuevas, fuera del MVP.** En el MVP solo existen guerrero, mago,
    ranger y sanador; lo único que se hace por las futuras es **dejar la base**: nada de lo que se
    construya puede depender de un `classId` concreto en el código. No hay clases avanzadas. `classes.json` es una lista abierta
@@ -226,7 +226,7 @@ Si dos zonas se solapan manda la más restrictiva: `safe` > `pvp` > `normal`.
 
 **Reglas en una zona `safe`:**
 - Ningún jugador puede dañar a otro; ni habilidades de área alcanzan a los de dentro.
-- La marca PvP se puede quitar (y no se puede activar el daño por ella).
+- El modo PvE/PvP puede cambiarse tras 5 minutos seguidos en segura; el forzado sigue corriendo y no hay daño PvP dentro.
 - Los mobs **no aparecen** ni **entran** en una zona segura (los spawners no se colocan ahí y la IA
   trata el borde como pared). **Decidido:** cuando el jugador entra en una zona segura, el aggro de los
   mobs sobre él **se cancela** (pasan a `Return`, reutilizando la IA); no pueden dañarlo dentro, y si
@@ -255,7 +255,7 @@ al cargar (`kind` por casilla) hace la consulta O(1) en el tick. Si el diseñado
 ciudades visualmente, B se hace después como tarea aparte.
 
 **Qué necesita saber el cliente:** el tipo de zona donde está el jugador (para mostrar «Zona segura» /
-«Zona PvP», habilitar el botón de la marca y pintar las zonas en el minimapa). El servidor manda un
+«Zona PvP», habilitar el selector PvE/PvP según `PvpStatus` y pintar las zonas en el minimapa). El servidor manda un
 mensaje `ZoneChanged(zoneId, kind)` al entrar/salir y, en el `Welcome`, la lista de zonas
 (rectángulos incluidos, para dibujarlas). No se confía en el cliente: la regla de daño la aplica
 siempre el servidor.
@@ -762,14 +762,17 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
   entran y salen de la ciudad.
 - **I-15b (Claude):** rótulo «Zona segura / Zona PvP» y zonas en el minimapa.
 
-### I-15p - Combate entre jugadores (PvP) (protocolo v20)
+### I-15p - Combate entre jugadores (modo PvE/PvP, protocolo v20, esquema v8)
 
-- **Alcance:** sobre las zonas de I-15 y la marca personal (§0.10): `SetPvpMark(on)`;
-  `Attack` admite jugadores como objetivo solo si ambos están en zona PvP y marcados; la marca solo se quita en zona segura (§0.11); sin XP ni penalización de XP por muerte entre jugadores; la reaparición de
-  I-03 se mantiene; el estado de marca viaja en el snapshot o en un mensaje propio (decidir en la
-  tarea, mirando el coste en bytes).
-- **Fuera:** facciones, grupos, gremios, reputación, **pérdida de objetos** (explorar tras el MVP).
-- **Verificación:** pruebas de reglas, bots de dos bandos.
+- **Alcance:** `SetPvpMode` elige PvE/PvP tras 5 minutos seguidos en segura. En zona PvP el modo
+  efectivo es forzado, y dura 5 minutos tras salir. El daño exige dos jugadores vivos con PvP
+  efectivo fuera de segura. Sin XP ni penalización por muerte PvP; reaparición de I-03.
+- **Persistencia:** modo elegido y segundos forzados restantes, que solo corren conectado; espera
+  segura reiniciada al conectar o reaparecer. Configuración 300/300 segundos (carga: 5/30).
+- **Estado:** bit 6 del snapshot para el PvP efectivo ajeno; `PvpStatus` propio al cambiar de fase,
+  con segundos restantes, y `PvpModeRejected` con motivo. Cliente I-15pb por implementar.
+- **Fuera:** facciones, grupos, gremios, reputación y pérdida de objetos (tras el MVP).
+- **Verificación:** pruebas de reglas, protocolo, red, persistencia y bots; dos pasadas de carga.
 
 ### I-16 — Habilidades: base y daño de objetivo único (protocolo v17)
 

@@ -102,5 +102,14 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: cambio de zona del jugador (I-15).</summary>
         ZoneChanged = 31,
+
+        /// <summary>Cliente → servidor: elegir modo PvE o PvP (I-15p).</summary>
+        SetPvpMode = 32,
+
+        /// <summary>Servidor → cliente: estado propio del modo y los temporizadores PvP (I-15p).</summary>
+        PvpStatus = 33,
+
+        /// <summary>Servidor → cliente: motivo de rechazo del cambio de modo PvP (I-15p).</summary>
+        PvpModeRejected = 34,
     }
 }

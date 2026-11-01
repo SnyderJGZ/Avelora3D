@@ -14,6 +14,8 @@
 [CmdletBinding()]
 param(
     [int]$Bots = 50,
+    [ValidateRange(0, 100)]
+    [int]$PvpBots = 0,
     [int]$Seconds = 120,
     [ValidateSet('random', 'crowd', 'fight', 'chat', 'inventory')]
     [string]$Behavior = 'random',
@@ -149,11 +151,16 @@ if ($LogCorrections) {
     $correctionsArgument = ' --log-corrections'
 }
 
+$pvpBotsArgument = ''
+if ($PvpBots -gt 0) {
+    $pvpBotsArgument = ' --pvp-bots ' + $PvpBots
+}
+
 $botsCommand = 'chcp 65001 >nul & "' + $botsExe + '" --bots ' + $Bots + $commonArguments +
-    ' --behavior ' + $Behavior + ' --input-redundancy ' + $InputRedundancy + $correctionsArgument +
+    ' --behavior ' + $Behavior + ' --input-redundancy ' + $InputRedundancy + $pvpBotsArgument + $correctionsArgument +
     ' > "' + $botsOut + '" 2>&1'
 
-Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior, redundancia $InputRedundancy"
+Write-Host "Bots: $Bots durante $Seconds s, rampa $RampMs ms, comportamiento $Behavior, PvP $PvpBots, redundancia $InputRedundancy"
 $botsProcess = Start-LoggedCommand $botsCommand
 
 $abuseProcess = $null

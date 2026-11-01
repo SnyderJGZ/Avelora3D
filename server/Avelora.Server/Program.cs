@@ -281,7 +281,9 @@ namespace Avelora.Server
                 levels,
                 classes,
                 (long)Math.Ceiling(config.LootReserveSeconds * SimulationConstants.TickRate),
-                zones);
+                zones,
+                (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
+                (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
 
             try
             {

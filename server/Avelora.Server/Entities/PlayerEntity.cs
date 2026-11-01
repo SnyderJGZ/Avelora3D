@@ -40,6 +40,23 @@ namespace Avelora.Server.Entities
         /// <summary>Tipo de la zona actual del jugador (I-15).</summary>
         public ZoneKind ZoneKind { get; set; } = ZoneKind.Normal;
 
+        /// <summary>Modo PvE/PvP elegido por el jugador; por defecto es PvE (I-15p).</summary>
+        public PvpMode PvpMode { get; set; } = PvpMode.Pve;
+
+        /// <summary>Ticks de PvP forzado restantes; se repone mientras permanece en zona PvP.</summary>
+        public int PvpForcedTicksLeft { get; set; }
+
+        /// <summary>Ticks seguidos en zona segura; no se persiste.</summary>
+        public int SafeZoneTicks { get; set; }
+
+        /// <summary>Última clave de estado PvP enviada; 0xff significa que aún no se envió.</summary>
+        internal byte PvpStatusKey { get; set; } = 0xff;
+
+        public bool IsPvpEffective(ZoneKind kindHere) =>
+            PvpMode == PvpMode.Pvp || kindHere == ZoneKind.Pvp || PvpForcedTicksLeft > 0;
+
+        public bool PvpEffective => IsPvpEffective(ZoneKind);
+
         public const int MaxGold = (int)ProtocolConstants.MaxGold;
 
         /// <summary>Nombre usado para identificar al personaje en avisos de reparación de equipo.</summary>

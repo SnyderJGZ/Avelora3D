@@ -24,7 +24,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 7;
+        public const int SchemaVersion = 8;
 
         private const string TimeFormat = "O";
 
@@ -135,7 +135,7 @@ namespace Avelora.Server.Persistence
                         using (SqliteTransaction transaction = connection.BeginTransaction())
                         {
                             CreateInventorySchema(connection, transaction);
-                            SetUserVersion(connection, transaction, 2);
+                        SetUserVersion(connection, transaction, 2);
                             transaction.Commit();
                         }
 
@@ -144,6 +144,7 @@ namespace Avelora.Server.Persistence
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
                         break;
                     case 2:
                         MigrateV2ToV3(connection);
@@ -151,24 +152,32 @@ namespace Avelora.Server.Persistence
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
                         break;
                     case 3:
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
                         break;
                     case 4:
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
                         break;
                     case 5:
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
                         break;
                     case 6:
                         MigrateV6ToV7(connection);
+                        MigrateV7ToV8(connection);
+                        break;
+                    case 7:
+                        MigrateV7ToV8(connection);
                         break;
                     case SchemaVersion:
                         break;
@@ -507,7 +516,8 @@ namespace Avelora.Server.Persistence
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
                 "zone_id = @zone, x = @x, y = @y, map_hash = @map, " +
                 "class_id = @class, alloc_str = @allocStr, alloc_dex = @allocDex, " +
-                "alloc_int = @allocInt, alloc_vit = @allocVit, gold = @gold, updated_utc = @updated " +
+                "alloc_int = @allocInt, alloc_vit = @allocVit, gold = @gold, " +
+                "pvp_mode = @pvpMode, pvp_forced_seconds = @pvpForced, updated_utc = @updated " +
                 "WHERE id = @id AND account_id = @account AND deleted_utc IS NULL;";
             update.Parameters.AddWithValue("@level", character.Level);
             update.Parameters.AddWithValue("@experience", character.Experience);
@@ -523,6 +533,8 @@ namespace Avelora.Server.Persistence
             update.Parameters.AddWithValue("@allocInt", character.AllocInt);
             update.Parameters.AddWithValue("@allocVit", character.AllocVit);
             update.Parameters.AddWithValue("@gold", character.Gold);
+            update.Parameters.AddWithValue("@pvpMode", character.PvpMode);
+            update.Parameters.AddWithValue("@pvpForced", character.PvpForcedSeconds);
             update.Parameters.AddWithValue("@updated", FormatTime(character.UpdatedUtc));
             update.Parameters.AddWithValue("@id", character.Id);
             update.Parameters.AddWithValue("@account", character.AccountId);
@@ -661,6 +673,8 @@ CREATE TABLE characters (
     alloc_int       INTEGER NOT NULL DEFAULT 0,
     alloc_vit       INTEGER NOT NULL DEFAULT 0,
     gold            INTEGER NOT NULL DEFAULT 0,
+    pvp_mode        INTEGER NOT NULL DEFAULT 0,
+    pvp_forced_seconds INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL
 );
@@ -891,6 +905,19 @@ CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE del
             transaction.Commit();
         }
 
+        private static void MigrateV7ToV8(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                "ALTER TABLE characters ADD COLUMN pvp_mode INTEGER NOT NULL DEFAULT 0; " +
+                "ALTER TABLE characters ADD COLUMN pvp_forced_seconds INTEGER NOT NULL DEFAULT 0;";
+            command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, 8);
+            transaction.Commit();
+        }
+
         private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
         {
             using SqliteCommand command = connection.CreateCommand();
@@ -1076,7 +1103,7 @@ CREATE TABLE character_equipment (
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
                 "map_hash, created_utc, updated_utc, class_id, " +
-                "alloc_str, alloc_dex, alloc_int, alloc_vit, gold " +
+                "alloc_str, alloc_dex, alloc_int, alloc_vit, gold, pvp_mode, pvp_forced_seconds " +
                 "FROM characters WHERE account_id = @account AND id = @id AND deleted_utc IS NULL LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@id", characterId);
@@ -1166,6 +1193,8 @@ CREATE TABLE character_equipment (
                 long rawAllocInt = reader.GetInt64(16);
                 long rawAllocVit = reader.GetInt64(17);
                 long rawGold = reader.GetInt64(18);
+                long rawPvpMode = reader.GetInt64(19);
+                long rawPvpForcedSeconds = reader.GetInt64(20);
                 int gold = rawGold < 0 ? 0 : rawGold > PlayerEntity.MaxGold
                     ? PlayerEntity.MaxGold : (int)rawGold;
                 if (rawGold < 0 || rawGold > PlayerEntity.MaxGold)
@@ -1173,6 +1202,23 @@ CREATE TABLE character_equipment (
                     Console.Error.WriteLine(
                         "AVISO: se corrigió gold inválido del personaje " + reader.GetInt32(0) +
                         " (" + rawGold + " → " + gold + ").");
+                }
+
+                int pvpMode = rawPvpMode == 1 ? 1 : 0;
+                if (rawPvpMode < 0 || rawPvpMode > 1)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió pvp_mode inválido del personaje " + reader.GetInt32(0) +
+                        " (" + rawPvpMode + " → " + pvpMode + ").");
+                }
+
+                int pvpForcedSeconds = rawPvpForcedSeconds < 0 ? 0 :
+                    rawPvpForcedSeconds > ushort.MaxValue ? ushort.MaxValue : (int)rawPvpForcedSeconds;
+                if (rawPvpForcedSeconds < 0 || rawPvpForcedSeconds > ushort.MaxValue)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió pvp_forced_seconds inválido del personaje " + reader.GetInt32(0) +
+                        " (" + rawPvpForcedSeconds + " → " + pvpForcedSeconds + ").");
                 }
                 long maxAllocated = (long)_levels.PointsPerLevel * level;
                 bool validAllocations = rawAllocStr >= 0 && rawAllocDex >= 0 && rawAllocInt >= 0 && rawAllocVit >= 0 &&
@@ -1234,7 +1280,11 @@ CREATE TABLE character_equipment (
                     allocDex: allocDex,
                     allocInt: allocInt,
                     allocVit: allocVit,
-                    gold: gold);
+                    gold: gold)
+                {
+                    PvpMode = pvpMode,
+                    PvpForcedSeconds = pvpForcedSeconds,
+                };
 
             }
 

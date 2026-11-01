@@ -175,7 +175,8 @@ namespace Avelora.Bots
                         logCorrections: options.LogCorrections,
                         tracePositionsPath: options.TracePositionsPath,
                         reportWelcomePath: options.ReportWelcomePath,
-                        serverKeyFingerprint: options.ServerKeyFingerprint);
+                        serverKeyFingerprint: options.ServerKeyFingerprint,
+                        pvp: i <= options.PvpBots);
                     bots.Add(bot);
 
                     var thread = new Thread(() => RunBot(bot, cancellation.Token))
@@ -263,6 +264,9 @@ namespace Avelora.Bots
             long sentHellos = 0;
             long sentChat = 0;
             long receivedChat = 0;
+            long pvpStatuses = 0;
+            long pvpRejects = 0;
+            long pvpModeRequests = 0;
             var responses = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
             bool abusive = BotClient.IsAbusive(options.Behavior);
@@ -298,6 +302,9 @@ namespace Avelora.Bots
                 zoneChanges += bot.ZoneChanges;
                 safeZoneEntries += bot.SafeZoneEntries;
                 pvpZoneEntries += bot.PvpZoneEntries;
+                pvpStatuses += bot.PvpStatuses;
+                pvpRejects += bot.PvpRejects;
+                pvpModeRequests += bot.PvpModeRequests;
                 finalGold += bot.Gold;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
@@ -364,8 +371,11 @@ namespace Avelora.Bots
                      " puntos_repartidos=" + bot.PointsAllocated +
                      " stats_recibidos=" + bot.StatsReceived +
                      " personajes_creados=" + bot.CharactersCreated +
-                     " rechazos_personaje=" + bot.CharacterRejects +
-                     " snapshots=" + bot.Snapshots);
+                      " rechazos_personaje=" + bot.CharacterRejects +
+                      " snapshots=" + bot.Snapshots +
+                      " pvp_estados=" + bot.PvpStatuses +
+                      " pvp_rechazos=" + bot.PvpRejects +
+                      " pvp_modo_pedidos=" + bot.PvpModeRequests);
 
                 if (options.Behavior == BotBehavior.Fight)
                 {
@@ -448,6 +458,9 @@ namespace Avelora.Bots
             Console.WriteLine(
                 "  Zonas      : zona_listas=" + zoneLists + ", zona_cambios=" + zoneChanges +
                 ", zona_segura_entradas=" + safeZoneEntries + ", zona_pvp_entradas=" + pvpZoneEntries);
+            Console.WriteLine(
+                "  PvP Bots   : pvp_estados=" + pvpStatuses +
+                ", pvp_rechazos=" + pvpRejects + ", pvp_modo_pedidos=" + pvpModeRequests);
 
             if (options.Behavior == BotBehavior.Fight)
             {
@@ -890,6 +903,17 @@ namespace Avelora.Bots
                         options.AttackCooldownMs = attackCooldownMs;
                         break;
 
+                    case "--pvp-bots":
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int pvpBots) ||
+                            pvpBots < 0 || pvpBots > MaxBots)
+                        {
+                            error = "Número de bots PvP inválido: " + value + " (0.." + MaxBots + ")";
+                            return false;
+                        }
+
+                        options.PvpBots = pvpBots;
+                        break;
+
                     case "--seed":
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seed))
                         {
@@ -1086,6 +1110,8 @@ namespace Avelora.Bots
 
             /// <summary>Recarga entre ataques del modo <c>fight</c>; el servidor usa 800 ms por defecto.</summary>
             public int AttackCooldownMs { get; set; } = 800;
+
+            public int PvpBots { get; set; }
 
             public int Seed { get; set; } = 20261019;
 

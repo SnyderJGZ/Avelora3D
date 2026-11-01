@@ -39,6 +39,7 @@ namespace Avelora.Server.Simulation
         private readonly InterestSystem _interest;
         private readonly NpcSystem? _npcs;
         private readonly CombatSystem? _combat;
+        private readonly PvpSystem _pvp;
         private readonly PlayerVitalsSystem? _vitals;
         private readonly ItemSystem? _items;
         private readonly StatsSystem _stats;
@@ -88,7 +89,9 @@ namespace Avelora.Server.Simulation
             LevelTable? levels = null,
             ClassCatalog? classes = null,
             long lootReserveTicks = 600,
-            ZoneMap? zones = null)
+            ZoneMap? zones = null,
+            int pvpModeChangeTicks = 6000,
+            int pvpForcedTicks = 6000)
         {
             if (map is null)
             {
@@ -142,6 +145,9 @@ namespace Avelora.Server.Simulation
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
             _classes = classes ?? ClassCatalog.Default;
+            _pvp = new PvpSystem(pvpModeChangeTicks, pvpForcedTicks);
+            _pvp.StatusChanged += OnPvpStatusChanged;
+            _pvp.ModeRejected += OnPvpModeRejected;
             _stats = new StatsSystem(_levels, _classes, items);
             _random = new System.Random(npcSeed);
             _movement = movement;
@@ -259,6 +265,10 @@ namespace Avelora.Server.Simulation
         /// <summary>Se invoca solo cuando un jugador cruza el límite de una zona.</summary>
         public event Action<PlayerEntity, ZoneChangedMessage>? ZoneChanged;
 
+        public event Action<PlayerEntity, PvpStatusMessage>? PvpStatusChanged;
+
+        public event Action<PlayerEntity, PvpModeRejectReason>? PvpModeRejected;
+
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
 
@@ -313,6 +323,19 @@ namespace Avelora.Server.Simulation
         public long RejectedAttackEvading => _combat?.RejectedEvading ?? 0;
 
         public long RejectedAttackSafeZone => _combat?.RejectedSafeZone ?? 0;
+
+        public long PvpAttacksOk => _combat?.PvpAttacksOk ?? 0;
+        public long PvpKills => _combat?.PvpKills ?? 0;
+        public long RejectedPvpSafeZone => _combat?.RejectedPvpSafeZone ?? 0;
+        public long RejectedPvpAttackerPve => _combat?.RejectedPvpAttackerPve ?? 0;
+        public long RejectedPvpTargetPve => _combat?.RejectedPvpTargetPve ?? 0;
+        public long RejectedPvpTargetDead => _combat?.RejectedPvpTargetDead ?? 0;
+        public long RejectedPvpSelf => _combat?.RejectedPvpSelf ?? 0;
+        public long PvpModeChanges => _pvp.ModeChanges;
+        public long PvpModeUnchanged => _pvp.ModeUnchanged;
+        public long PvpRejectedNotInSafeZone => _pvp.RejectedNotInSafeZone;
+        public long PvpRejectedTooSoon => _pvp.RejectedTooSoon;
+        public long PvpStatusMessages => _pvp.StatusMessages;
 
         public long NpcAggroCancelledSafeZone => _npcs?.AggroCancelledSafeZone ?? 0;
 
@@ -612,6 +635,7 @@ namespace Avelora.Server.Simulation
             }
 
             UpdatePlayerZones();
+            _pvp.Tick(Entities, _itemInbox, !ReferenceEquals(Zones, ZoneMap.Empty));
 
             // Las posiciones ya son las del tick: se reindexa lo que haya cambiado de celda. Es
             // O(n) con n = entidades vivas y deja la grilla lista para los snapshots de AfterTick.
@@ -691,6 +715,12 @@ namespace Avelora.Server.Simulation
                 ZoneChanged?.Invoke(player, new ZoneChangedMessage(id, kind));
             }
         }
+
+        private void OnPvpStatusChanged(PlayerEntity player, PvpStatusMessage message) =>
+            PvpStatusChanged?.Invoke(player, message);
+
+        private void OnPvpModeRejected(PlayerEntity player, PvpModeRejectReason reason) =>
+            PvpModeRejected?.Invoke(player, reason);
 
         private PlayerEntity? ResolveLootOwner(NpcEntity npc)
         {

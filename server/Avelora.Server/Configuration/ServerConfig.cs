@@ -104,6 +104,12 @@ namespace Avelora.Server.Configuration
         /// <summary>Segundos durante los que el botín caído queda reservado a su dueño (I-25).</summary>
         public double LootReserveSeconds { get; set; } = 30d;
 
+        /// <summary>Segundos seguidos en zona segura para cambiar el modo PvP (I-15p).</summary>
+        public double PvpModeChangeSeconds { get; set; } = 300d;
+
+        /// <summary>Segundos de PvP forzado al salir de una zona PvP (I-15p).</summary>
+        public double PvpForcedSeconds { get; set; } = 300d;
+
         /// <summary>Segundos sin golpear para que cambie el dueño del botín (I-25).</summary>
         public double LootTagSeconds { get; set; } = 10d;
 
@@ -578,6 +584,18 @@ namespace Avelora.Server.Configuration
             {
                 throw new InvalidOperationException(
                     "lootReserveSeconds debe estar entre 0 y groundItemSeconds.");
+            }
+
+            if (!(PvpModeChangeSeconds >= 1d) || PvpModeChangeSeconds > 3600d ||
+                double.IsNaN(PvpModeChangeSeconds) || double.IsInfinity(PvpModeChangeSeconds))
+            {
+                throw new InvalidOperationException("pvpModeChangeSeconds debe estar entre 1 y 3600.");
+            }
+
+            if (!(PvpForcedSeconds >= 1d) || PvpForcedSeconds > 3600d ||
+                double.IsNaN(PvpForcedSeconds) || double.IsInfinity(PvpForcedSeconds))
+            {
+                throw new InvalidOperationException("pvpForcedSeconds debe estar entre 1 y 3600.");
             }
 
             if (MaxGroundItems < 1 || MaxGroundItems > 5000)

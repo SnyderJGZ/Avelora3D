@@ -1,4 +1,6 @@
 #nullable enable
+using Avelora.Shared.Protocol;
+
 namespace Avelora.Server.Simulation
 {
     /// <summary>Tipo de acción de objeto que llega desde una conexión.</summary>
@@ -12,6 +14,7 @@ namespace Avelora.Server.Simulation
         ResetPoints = 5,
         MoveItem = 6,
         DestroyItem = 7,
+        SetPvpMode = 8,
     }
 
     /// <summary>Intención validada sintácticamente en la red y pendiente de resolver en el tick.</summary>
@@ -75,5 +78,8 @@ namespace Avelora.Server.Simulation
 
         public static ItemAction ResetPoints(int playerEntityId) =>
             new ItemAction(ItemActionKind.ResetPoints, playerEntityId, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        public static ItemAction SetPvpMode(int playerEntityId, PvpMode mode) =>
+            new ItemAction(ItemActionKind.SetPvpMode, playerEntityId, 0, (byte)mode, 0, 0, 0, 0, 0, 0);
     }
 }

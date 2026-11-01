@@ -28,9 +28,10 @@ namespace Avelora.Shared.Protocol
         /// de acción de <c>EntityState</c> también transporta el rango de los PNJ; I-21 a 14 por
         /// trocear <c>ItemCatalog</c> y retirar <c>DropItem</c>; I-10 a 15 por el saludo sin
         /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel;
-        /// I-13 a 17 por CombatEvent e I-25 a 18 por el oro del inventario y LootGained.
+        /// I-13 a 17 por CombatEvent, I-25 a 18 por el oro del inventario y LootGained, I-15 a 19
+        /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP.
         /// </summary>
-        public const ushort Version = 19;
+        public const ushort Version = 20;
 
         /// <summary>Máximo de zonas de mapa anunciadas al entrar (I-15).</summary>
         public const int MaxZones = 32;

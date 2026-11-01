@@ -59,6 +59,14 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques que han resultado válidos.</summary>
         public long AttacksOk { get; private set; }
 
+        public long PvpAttacksOk { get; private set; }
+        public long PvpKills { get; private set; }
+        public long RejectedPvpSafeZone { get; private set; }
+        public long RejectedPvpAttackerPve { get; private set; }
+        public long RejectedPvpTargetPve { get; private set; }
+        public long RejectedPvpTargetDead { get; private set; }
+        public long RejectedPvpSelf { get; private set; }
+
         /// <summary>Ataques rechazados porque el objetivo no existía, no era un PNJ o estaba muerto.</summary>
         public long RejectedTarget { get; private set; }
 
@@ -131,23 +139,64 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            // Regla 3: el objetivo existe, es un PNJ y está vivo.
-            if (!entities.TryGet(intent.TargetId, out Entity? targetEntity) ||
-                !(targetEntity is NpcEntity target) ||
-                target.Action == EntityAction.Dead)
+            if (!entities.TryGet(intent.TargetId, out Entity? targetEntity))
             {
                 RejectedTarget++;
                 return;
             }
 
-            if (target.AiState == NpcAiState.Return)
+            Entity target = targetEntity;
+            PlayerEntity? victim = targetEntity as PlayerEntity;
+            NpcEntity? npc = targetEntity as NpcEntity;
+            if (victim != null)
+            {
+                if (victim.Id == attacker.Id)
+                {
+                    RejectedPvpSelf++;
+                    return;
+                }
+
+                if (victim.IsDead)
+                {
+                    RejectedPvpTargetDead++;
+                    return;
+                }
+
+                ZoneKind attackerZone = _zones.KindAt(attacker.Position.X, attacker.Position.Y);
+                ZoneKind victimZone = _zones.KindAt(victim.Position.X, victim.Position.Y);
+                if (attackerZone == ZoneKind.Safe || victimZone == ZoneKind.Safe)
+                {
+                    RejectedPvpSafeZone++;
+                    return;
+                }
+
+                if (!attacker.IsPvpEffective(attackerZone))
+                {
+                    RejectedPvpAttackerPve++;
+                    return;
+                }
+
+                if (!victim.IsPvpEffective(victimZone))
+                {
+                    RejectedPvpTargetPve++;
+                    return;
+                }
+            }
+            else if (npc == null || npc.Action == EntityAction.Dead)
+            {
+                RejectedTarget++;
+                return;
+            }
+
+            if (npc != null && npc.AiState == NpcAiState.Return)
             {
                 RejectedEvading++;
                 return;
             }
 
-            if (_zones.KindAt(attacker.Position.X, attacker.Position.Y) == ZoneKind.Safe ||
-                _zones.KindAt(target.Position.X, target.Position.Y) == ZoneKind.Safe)
+            if (victim == null &&
+                (_zones.KindAt(attacker.Position.X, attacker.Position.Y) == ZoneKind.Safe ||
+                 _zones.KindAt(target.Position.X, target.Position.Y) == ZoneKind.Safe))
             {
                 RejectedSafeZone++;
                 return;
@@ -202,47 +251,89 @@ namespace Avelora.Server.Simulation
                 _catalog,
                 attacker.Equipment,
                 hasWeapon ? weapon!.DamageType : null);
-            int defense = damageType == "physical" ? target.Defense : target.MagicResist;
-            damage = CharacterStats.MitigateDamage(damage, defense);
-            target.Health = Math.Max(0, target.Health - damage);
-
-            target.LastAttackerPlayerId = attacker.Id;
-            if (target.LootOwnerId == attacker.Id)
+            int defense;
+            if (victim != null)
             {
-                target.LootOwnerLastHitTick = tick;
+                DerivedCharacterStats victimStats = CharacterStats.Calculate(
+                    _classes,
+                    victim.ClassId,
+                    victim.Level,
+                    victim.AllocStr,
+                    victim.AllocDex,
+                    victim.AllocInt,
+                    victim.AllocVit,
+                    _catalog,
+                    victim.Equipment);
+                defense = damageType == "physical" ? victimStats.Defense : victimStats.MagicResist;
             }
-            else if (target.LootOwnerId <= 0 ||
-                tick - target.LootOwnerLastHitTick >= _settings.LootTagTimeoutTicks ||
-                !entities.TryGet(target.LootOwnerId, out Entity? ownerEntity) || ownerEntity is not PlayerEntity)
+            else
             {
-                if (target.LootOwnerId > 0)
+                NpcEntity targetNpc = npc!;
+                defense = damageType == "physical" ? targetNpc.Defense : targetNpc.MagicResist;
+            }
+
+            damage = CharacterStats.MitigateDamage(damage, defense);
+            if (victim != null)
+            {
+                victim.Health = Math.Max(0, victim.Health - damage);
+                victim.LastDamageTick = tick;
+                victim.RegenAccumulator = 0d;
+                if (victim.Health == 0)
                 {
-                    LootOwnerChanges++;
+                    victim.Action = EntityAction.Dead;
+                    if (victim.DeathTick < 0)
+                    {
+                        victim.DeathTick = tick;
+                    }
+
+                    PvpKills++;
+                }
+            }
+            else
+            {
+                NpcEntity targetNpc = npc!;
+                targetNpc.Health = Math.Max(0, targetNpc.Health - damage);
+                targetNpc.LastAttackerPlayerId = attacker.Id;
+                if (targetNpc.LootOwnerId == attacker.Id)
+                {
+                    targetNpc.LootOwnerLastHitTick = tick;
                 }
 
-                target.LootOwnerId = attacker.Id;
-                target.LootOwnerLastHitTick = tick;
-            }
+                else if (targetNpc.LootOwnerId <= 0 ||
+                    tick - targetNpc.LootOwnerLastHitTick >= _settings.LootTagTimeoutTicks ||
+                    !entities.TryGet(targetNpc.LootOwnerId, out Entity? ownerEntity) || ownerEntity is not PlayerEntity)
+                {
+                    if (targetNpc.LootOwnerId > 0)
+                    {
+                        LootOwnerChanges++;
+                    }
 
-            if (target.Health == 0)
-            {
-                // La baja definitiva (quitar del almacén y del interés, y programar la reaparición)
-                // la hace NpcSystem en este mismo tick: aquí solo consta que ha muerto.
-                target.Action = EntityAction.Dead;
-                target.KillerPlayerId = attacker.Id;
-            }
-            else if (target.AiState == NpcAiState.Wander)
-            {
-                // Aggro al recibir daño (I-03): aunque esté fuera de su radio, persigue al que le
-                // pegó. Un PNJ en Return sigue volviendo a casa y no cambia de objetivo.
-                target.AiState = NpcAiState.Chase;
-                target.TargetEntityId = attacker.Id;
+                    targetNpc.LootOwnerId = attacker.Id;
+                    targetNpc.LootOwnerLastHitTick = tick;
+                }
+
+                if (targetNpc.Health == 0)
+                {
+                    // La baja definitiva y la reaparición las resuelve NpcSystem en este tick.
+                    targetNpc.Action = EntityAction.Dead;
+                    targetNpc.KillerPlayerId = attacker.Id;
+                }
+                else if (targetNpc.AiState == NpcAiState.Wander)
+                {
+                    // Aggro al recibir daño (I-03); un PNJ en Return no cambia de objetivo.
+                    targetNpc.AiState = NpcAiState.Chase;
+                    targetNpc.TargetEntityId = attacker.Id;
+                }
             }
 
             attacker.LastAttackTick = tick;
             attacker.Action = EntityAction.Attacking;
             attacker.ActionUntilTick = tick + AttackingTicks;
             AttacksOk++;
+            if (victim != null)
+            {
+                PvpAttacksOk++;
+            }
             if (hasWeapon)
             {
                 AttacksWithWeapon++;
@@ -262,7 +353,7 @@ namespace Avelora.Server.Simulation
                     flags |= CombatEventFlags.Magical;
                 }
 
-                if (target.Health == 0)
+                if ((victim?.Health ?? npc!.Health) == 0)
                 {
                     flags |= CombatEventFlags.Killed;
                 }

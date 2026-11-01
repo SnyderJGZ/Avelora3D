@@ -178,7 +178,8 @@ namespace Avelora.Tests
 
             Attack(zone, attacker.Id, other.Id);
             zone.Tick();
-            Assert.Equal(2, zone.RejectedAttackTarget);
+            Assert.Equal(1, zone.RejectedAttackTarget);
+            Assert.Equal(1, zone.RejectedPvpAttackerPve);
             Assert.Equal(0, zone.AttacksOk);
         }
 

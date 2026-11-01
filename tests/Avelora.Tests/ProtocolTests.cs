@@ -185,7 +185,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)19, ProtocolConstants.Version);
+            Assert.Equal((ushort)20, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -602,6 +602,145 @@ namespace Avelora.Tests
             Assert.Equal(EntityKind.Npc, decoded.Entities[1].Kind);
             Assert.Equal((byte)50, decoded.Entities[1].HealthPercent);
             Assert.Equal(EntityAction.Attacking, decoded.Entities[1].Action);
+        }
+
+        [Fact]
+        public void El_Snapshot_Transporta_Pvp_Efectivo_Solo_En_Jugadores()
+        {
+            var player = new EntityState(1, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None, pvp: true);
+            byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(1, 0, new[] { player }));
+
+            Assert.Equal((byte)0x40, bytes[23]);
+            Assert.True(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out SnapshotMessage decoded));
+            Assert.True(decoded.Entities[0].Pvp);
+
+            var npc = new EntityState(2, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None, pvp: true);
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSnapshot(
+                new SnapshotMessage(1, 0, new[] { npc })));
+
+            byte[] npcBytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(
+                1, 0, new[] { new EntityState(2, 0, 0, 0, 0, EntityKind.Npc, 100, EntityAction.None) }));
+            npcBytes[23] = 0x40;
+            Assert.False(MessageCodec.TryReadSnapshot(npcBytes, 0, npcBytes.Length, out _));
+
+            bytes[23] = 0x80;
+            Assert.False(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void SetPvpMode_Va_Y_Vuelve_Y_Rechaza_Modo_Invalido()
+        {
+            byte[] bytes = MessageCodec.EncodeSetPvpMode(new SetPvpModeMessage(PvpMode.Pvp));
+            Assert.Equal(2, bytes.Length);
+            Assert.True(MessageCodec.TryReadSetPvpMode(bytes, 0, bytes.Length, out SetPvpModeMessage decoded));
+            Assert.Equal(PvpMode.Pvp, decoded.Mode);
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSetPvpMode(
+                new SetPvpModeMessage((PvpMode)2)));
+            bytes[1] = 2;
+            Assert.False(MessageCodec.TryReadSetPvpMode(bytes, 0, bytes.Length, out _));
+            Assert.False(MessageCodec.TryReadSetPvpMode(bytes, 0, 1, out _));
+        }
+
+        [Fact]
+        public void PvpStatus_Va_Y_Vuelve_Y_Valida_Estados_Y_Tiempos()
+        {
+            var original = new PvpStatusMessage(
+                PvpMode.Pve, PvpForcedState.Timer, PvpChangeState.Waiting, 12, 3);
+            byte[] bytes = MessageCodec.EncodePvpStatus(original);
+            Assert.Equal(8, bytes.Length);
+            Assert.True(MessageCodec.TryReadPvpStatus(bytes, 0, bytes.Length, out PvpStatusMessage decoded));
+            Assert.Equal(original.Mode, decoded.Mode);
+            Assert.Equal(original.Forced, decoded.Forced);
+            Assert.Equal(original.Change, decoded.Change);
+            Assert.Equal(original.ForcedSeconds, decoded.ForcedSeconds);
+            Assert.Equal(original.ChangeSeconds, decoded.ChangeSeconds);
+            Assert.False(MessageCodec.TryReadPvpStatus(bytes, 0, 7, out _));
+            Assert.False(MessageCodec.TryReadPvpStatus(bytes, 0, 9, out _));
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodePvpStatus(
+                new PvpStatusMessage(PvpMode.Pve, PvpForcedState.None, PvpChangeState.Waiting, 1, 1)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodePvpStatus(
+                new PvpStatusMessage(PvpMode.Pve, PvpForcedState.Timer, PvpChangeState.Ready, 0, 0)));
+            bytes[2] = 3;
+            Assert.False(MessageCodec.TryReadPvpStatus(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void PvpModeRejected_Va_Y_Vuelve_Y_Rechaza_Motivo_Invalido()
+        {
+            byte[] bytes = MessageCodec.EncodePvpModeRejected(
+                new PvpModeRejectedMessage(PvpModeRejectReason.TooSoon));
+            Assert.Equal(2, bytes.Length);
+            Assert.True(MessageCodec.TryReadPvpModeRejected(
+                bytes, 0, bytes.Length, out PvpModeRejectedMessage decoded));
+            Assert.Equal(PvpModeRejectReason.TooSoon, decoded.Reason);
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodePvpModeRejected(
+                new PvpModeRejectedMessage((PvpModeRejectReason)3)));
+            bytes[1] = 3;
+            Assert.False(MessageCodec.TryReadPvpModeRejected(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void El_Protocolo_Pvp_Usa_La_Version_20()
+        {
+            Assert.Equal((ushort)20, ProtocolConstants.Version);
+        }
+
+        [Theory]
+        [InlineData(2, 0, 0, 0, 0)]
+        [InlineData(0, 3, 0, 0, 0)]
+        [InlineData(0, 0, 3, 0, 0)]
+        [InlineData(0, 0, 0, 1, 0)]
+        [InlineData(0, 1, 0, 1, 0)]
+        [InlineData(0, 2, 0, 0, 0)]
+        [InlineData(0, 0, 0, 0, 1)]
+        [InlineData(0, 0, 2, 0, 1)]
+        [InlineData(0, 0, 1, 0, 0)]
+        public void PvpStatus_Rechaza_Cada_Combinacion_Invalida(int mode, int forced, int change, int forcedSeconds, int changeSeconds)
+        {
+            var message = new PvpStatusMessage((PvpMode)mode, (PvpForcedState)forced,
+                (PvpChangeState)change, (ushort)forcedSeconds, (ushort)changeSeconds);
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodePvpStatus(message));
+            byte[] bytes = { (byte)MessageType.PvpStatus, (byte)mode, (byte)forced, (byte)change,
+                (byte)forcedSeconds, 0, (byte)changeSeconds, 0 };
+            Assert.False(MessageCodec.TryReadPvpStatus(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void Mensajes_Pvp_Rechazan_Tipo_Distinto_Y_Longitudes_De_Mas_Y_Menos()
+        {
+            byte[] mode = MessageCodec.EncodeSetPvpMode(new SetPvpModeMessage(PvpMode.Pve));
+            byte[] status = MessageCodec.EncodePvpStatus(new PvpStatusMessage(
+                PvpMode.Pvp, PvpForcedState.InZone, PvpChangeState.Ready, 0, 0));
+            byte[] rejected = MessageCodec.EncodePvpModeRejected(
+                new PvpModeRejectedMessage(PvpModeRejectReason.NotInSafeZone));
+            Assert.True(MessageCodec.TryReadSetPvpMode(mode, 0, mode.Length, out _));
+            Assert.True(MessageCodec.TryReadPvpStatus(status, 0, status.Length, out _));
+            Assert.True(MessageCodec.TryReadPvpModeRejected(rejected, 0, rejected.Length, out _));
+            foreach (int delta in new[] { -1, 1 })
+            {
+                byte[] sizedMode = (byte[])mode.Clone();
+                byte[] sizedStatus = (byte[])status.Clone();
+                byte[] sizedRejected = (byte[])rejected.Clone();
+                Array.Resize(ref sizedMode, 2 + delta);
+                Array.Resize(ref sizedStatus, 8 + delta);
+                Array.Resize(ref sizedRejected, 2 + delta);
+                Assert.False(MessageCodec.TryReadSetPvpMode(sizedMode, 0, sizedMode.Length, out _));
+                Assert.False(MessageCodec.TryReadPvpStatus(sizedStatus, 0, sizedStatus.Length, out _));
+                Assert.False(MessageCodec.TryReadPvpModeRejected(sizedRejected, 0, sizedRejected.Length, out _));
+            }
+            mode[0] = status[0] = rejected[0] = (byte)MessageType.Attack;
+            Assert.False(MessageCodec.TryReadSetPvpMode(mode, 0, mode.Length, out _));
+            Assert.False(MessageCodec.TryReadPvpStatus(status, 0, status.Length, out _));
+            Assert.False(MessageCodec.TryReadPvpModeRejected(rejected, 0, rejected.Length, out _));
+            foreach (byte reason in new byte[] { 0, 3 })
+            {
+                Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodePvpModeRejected(
+                    new PvpModeRejectedMessage((PvpModeRejectReason)reason)));
+                rejected[0] = (byte)MessageType.PvpModeRejected;
+                rejected[1] = reason;
+                Assert.False(MessageCodec.TryReadPvpModeRejected(rejected, 0, rejected.Length, out _));
+            }
         }
 
         [Fact]
