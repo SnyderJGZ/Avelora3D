@@ -11,9 +11,10 @@ namespace Avelora.Server.Simulation
     public sealed class PvpSystem
     {
         private readonly int _modeChangeTicks;
+        private readonly int _modeChangeFromPvpTicks;
         private readonly int _forcedTicks;
 
-        public PvpSystem(int modeChangeTicks, int forcedTicks)
+        public PvpSystem(int modeChangeTicks, int modeChangeFromPvpTicks, int forcedTicks)
         {
             if (modeChangeTicks < 1)
             {
@@ -25,7 +26,13 @@ namespace Avelora.Server.Simulation
                 throw new ArgumentOutOfRangeException(nameof(forcedTicks));
             }
 
+            if (modeChangeFromPvpTicks < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(modeChangeFromPvpTicks));
+            }
+
             _modeChangeTicks = modeChangeTicks;
+            _modeChangeFromPvpTicks = modeChangeFromPvpTicks;
             _forcedTicks = forcedTicks;
         }
 
@@ -68,7 +75,14 @@ namespace Avelora.Server.Simulation
 
                 if (player.ZoneKind == ZoneKind.Safe)
                 {
-                    if (player.SafeZoneTicks < _modeChangeTicks)
+                    if (player.SafeZoneTicks == 0)
+                    {
+                        player.SafeZoneWaitTicks = player.PvpMode == PvpMode.Pvp || player.PvpForcedTicksLeft > 0
+                            ? _modeChangeFromPvpTicks
+                            : _modeChangeTicks;
+                    }
+
+                    if (player.SafeZoneTicks < player.SafeZoneWaitTicks)
                     {
                         player.SafeZoneTicks++;
                     }
@@ -103,7 +117,7 @@ namespace Avelora.Server.Simulation
                     continue;
                 }
 
-                if (player.SafeZoneTicks < _modeChangeTicks)
+                if (player.SafeZoneTicks < player.SafeZoneWaitTicks)
                 {
                     RejectedTooSoon++;
                     ModeRejected?.Invoke(player, PvpModeRejectReason.TooSoon);
@@ -131,7 +145,7 @@ namespace Avelora.Server.Simulation
                     : player.PvpForcedTicksLeft > 0 ? PvpForcedState.Timer : PvpForcedState.None;
                 PvpChangeState change = player.ZoneKind != ZoneKind.Safe
                     ? PvpChangeState.Unavailable
-                    : player.SafeZoneTicks >= _modeChangeTicks ? PvpChangeState.Ready : PvpChangeState.Waiting;
+                    : player.SafeZoneTicks >= player.SafeZoneWaitTicks ? PvpChangeState.Ready : PvpChangeState.Waiting;
                 byte key = (byte)((byte)player.PvpMode | ((byte)forced << 1) | ((byte)change << 3));
                 if (key == player.PvpStatusKey)
                 {
@@ -140,23 +154,23 @@ namespace Avelora.Server.Simulation
 
                 player.PvpStatusKey = key;
                 StatusMessages++;
-                StatusChanged?.Invoke(player, BuildStatus(player, _modeChangeTicks));
+                StatusChanged?.Invoke(player, BuildStatus(player));
             }
         }
 
-        public static PvpStatusMessage BuildStatus(PlayerEntity player, int modeChangeTicks)
+        public static PvpStatusMessage BuildStatus(PlayerEntity player)
         {
             PvpForcedState forced = player.ZoneKind == ZoneKind.Pvp
                 ? PvpForcedState.InZone
                 : player.PvpForcedTicksLeft > 0 ? PvpForcedState.Timer : PvpForcedState.None;
             PvpChangeState change = player.ZoneKind != ZoneKind.Safe
                 ? PvpChangeState.Unavailable
-                : player.SafeZoneTicks >= modeChangeTicks ? PvpChangeState.Ready : PvpChangeState.Waiting;
+                : player.SafeZoneTicks >= player.SafeZoneWaitTicks ? PvpChangeState.Ready : PvpChangeState.Waiting;
             ushort forcedSeconds = forced == PvpForcedState.Timer
                 ? ToSeconds(player.PvpForcedTicksLeft)
                 : (ushort)0;
             ushort changeSeconds = change == PvpChangeState.Waiting
-                ? ToSeconds(Math.Max(0, modeChangeTicks - player.SafeZoneTicks))
+                ? ToSeconds(Math.Max(0, player.SafeZoneWaitTicks - player.SafeZoneTicks))
                 : (ushort)0;
             return new PvpStatusMessage(player.PvpMode, forced, change, forcedSeconds, changeSeconds);
         }

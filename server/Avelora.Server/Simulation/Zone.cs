@@ -90,7 +90,8 @@ namespace Avelora.Server.Simulation
             ClassCatalog? classes = null,
             long lootReserveTicks = 600,
             ZoneMap? zones = null,
-            int pvpModeChangeTicks = 6000,
+            int pvpModeChangeTicks = 600,
+            int pvpModeChangeFromPvpTicks = 1200,
             int pvpForcedTicks = 6000)
         {
             if (map is null)
@@ -145,7 +146,7 @@ namespace Avelora.Server.Simulation
             _itemCatalog = items;
             _levels = levels ?? LevelTable.Default;
             _classes = classes ?? ClassCatalog.Default;
-            _pvp = new PvpSystem(pvpModeChangeTicks, pvpForcedTicks);
+            _pvp = new PvpSystem(pvpModeChangeTicks, pvpModeChangeFromPvpTicks, pvpForcedTicks);
             _pvp.StatusChanged += OnPvpStatusChanged;
             _pvp.ModeRejected += OnPvpModeRejected;
             _stats = new StatsSystem(_levels, _classes, items);

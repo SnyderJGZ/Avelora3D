@@ -34,6 +34,7 @@ namespace Avelora.Tests
         private static Zone NewZone(
             bool withZones = true,
             int modeChangeTicks = 20,
+            int modeChangeFromPvpTicks = 40,
             int forcedTicks = 40,
             PlayerVitalsSettings? vitals = null)
         {
@@ -55,6 +56,7 @@ namespace Avelora.Tests
                 classes: ClassCatalog.Default,
                 zones: withZones ? Zones(map) : null,
                 pvpModeChangeTicks: modeChangeTicks,
+                pvpModeChangeFromPvpTicks: modeChangeFromPvpTicks,
                 pvpForcedTicks: forcedTicks);
         }
 
@@ -72,7 +74,7 @@ namespace Avelora.Tests
             List<PvpModeRejectReason> rejected = new List<PvpModeRejectReason>();
             zone.PvpModeRejected += (_, reason) => rejected.Add(reason);
 
-            for (int i = 0; i < 9; i++)
+            for (int i = 0; i < 18; i++)
             {
                 zone.Tick();
             }
@@ -83,16 +85,135 @@ namespace Avelora.Tests
             Assert.Equal(1, zone.PvpRejectedTooSoon);
             Assert.Equal(new[] { PvpModeRejectReason.TooSoon }, rejected);
 
-            for (int i = 0; i < 9; i++)
-            {
-                zone.Tick();
-            }
-
             RequestMode(zone, player, PvpMode.Pvp);
             zone.Tick();
             Assert.Equal(PvpMode.Pvp, player.PvpMode);
             Assert.True(player.PvpEffective);
             Assert.Equal(1, zone.PvpModeChanges);
+        }
+
+        [Fact]
+        public void Espera_Pve_En_Segura_Pasa_A_Lista_Al_Cumplir_20_Ticks()
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(11, 5), new Vec2(0.4f, 0.4f), 8);
+            List<PvpStatusMessage> statuses = new List<PvpStatusMessage>();
+            zone.PvpStatusChanged += (_, status) => statuses.Add(status);
+
+            zone.Tick();
+            Assert.Equal((ushort)1, Assert.Single(statuses).ChangeSeconds);
+            for (int i = 1; i < 19; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            Assert.Equal(19, player.SafeZoneTicks);
+            zone.Tick();
+            Assert.Contains(statuses, status => status.Change == PvpChangeState.Ready);
+            Assert.Equal(20, player.SafeZoneTicks);
+        }
+
+        [Fact]
+        public void Entrar_En_Segura_Con_Modo_Pvp_Espera_40_Ticks()
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(11, 5), new Vec2(0.4f, 0.4f), 8);
+            player.PvpMode = PvpMode.Pvp;
+            List<PvpStatusMessage> statuses = new List<PvpStatusMessage>();
+            zone.PvpStatusChanged += (_, status) => statuses.Add(status);
+
+            zone.Tick();
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            Assert.Equal((ushort)2, statuses[0].ChangeSeconds);
+            for (int i = 1; i < 20; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            RequestMode(zone, player, PvpMode.Pve);
+            zone.Tick();
+            Assert.Equal(PvpMode.Pvp, player.PvpMode);
+            Assert.Equal(1, zone.PvpRejectedTooSoon);
+
+            for (int i = 21; i < 40; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Contains(statuses, status => status.Change == PvpChangeState.Ready);
+            Assert.Equal(40, player.SafeZoneTicks);
+        }
+
+        [Fact]
+        public void Entrar_En_Segura_Con_Forzado_Y_Modo_Pve_Espera_40_Ticks()
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(11, 5), new Vec2(0.4f, 0.4f), 8);
+            player.PvpForcedTicksLeft = 100;
+            List<PvpStatusMessage> statuses = new List<PvpStatusMessage>();
+            zone.PvpStatusChanged += (_, status) => statuses.Add(status);
+
+            zone.Tick();
+            Assert.Equal(PvpMode.Pve, player.PvpMode);
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            Assert.Equal((ushort)2, statuses[0].ChangeSeconds);
+            for (int i = 1; i < 20; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            for (int i = 20; i < 40; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Contains(statuses, status => status.Change == PvpChangeState.Ready);
+            Assert.Equal(40, player.SafeZoneTicks);
+        }
+
+        [Fact]
+        public void Espera_Al_Entrar_Con_Forzado_No_Baja_Y_Se_Recalcula_Al_Reentrar()
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(11, 5), new Vec2(0.4f, 0.4f), 8);
+            player.PvpForcedTicksLeft = 5;
+            List<PvpStatusMessage> statuses = new List<PvpStatusMessage>();
+            zone.PvpStatusChanged += (_, status) => statuses.Add(status);
+
+            zone.Tick();
+            Assert.Equal(4, player.PvpForcedTicksLeft);
+            Assert.Equal((ushort)2, statuses[0].ChangeSeconds);
+            for (int i = 1; i < 20; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Equal(0, player.PvpForcedTicksLeft);
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
+            for (int i = 20; i < 40; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Contains(statuses, status => status.Change == PvpChangeState.Ready);
+            Assert.Equal(40, player.SafeZoneTicks);
+
+            player.Position = new Vec2(5, 5);
+            zone.Tick();
+            Assert.Equal(0, player.SafeZoneTicks);
+            player.Position = new Vec2(11, 5);
+            zone.Tick();
+            Assert.Equal((ushort)1, statuses[statuses.Count - 1].ChangeSeconds);
+            for (int i = 1; i < 20; i++)
+            {
+                zone.Tick();
+            }
+
+            Assert.Equal(PvpChangeState.Ready, statuses[statuses.Count - 1].Change);
+            Assert.Equal(20, player.SafeZoneTicks);
         }
 
         [Fact]
@@ -124,20 +245,20 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Zona_Pvp_Forza_40_Ticks_Y_El_Temporizador_Sigue_En_La_Segura()
+        public void Pvp_Forzado_Sigue_Bajando_En_La_Segura_Y_Se_Cambia_Tras_40_Ticks()
         {
-            Zone zone = NewZone();
+            Zone zone = NewZone(forcedTicks: 80);
             PlayerEntity player = zone.SpawnPlayer(1, new Vec2(21, 5), new Vec2(0.4f, 0.4f), 8);
             zone.Tick();
-            Assert.Equal(40, player.PvpForcedTicksLeft);
+            Assert.Equal(80, player.PvpForcedTicksLeft);
             Assert.True(player.PvpEffective);
 
             player.Position = new Vec2(11, 5);
             zone.Tick();
-            Assert.Equal(39, player.PvpForcedTicksLeft);
+            Assert.Equal(79, player.PvpForcedTicksLeft);
             Assert.Equal(ZoneKind.Safe, player.ZoneKind);
 
-            for (int i = 0; i < 18; i++)
+            for (int i = 0; i < 38; i++)
             {
                 zone.Tick();
             }
@@ -151,7 +272,7 @@ namespace Avelora.Tests
             Assert.Equal(PvpMode.Pve, player.PvpMode);
             Assert.True(player.PvpEffective);
 
-            for (int i = 21; i < 39; i++)
+            for (int i = 0; i < 38; i++)
             {
                 zone.Tick();
                 Assert.True(player.PvpEffective);

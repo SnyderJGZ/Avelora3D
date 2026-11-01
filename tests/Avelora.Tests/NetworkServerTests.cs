@@ -82,6 +82,8 @@ namespace Avelora.Tests
                 potionCooldownTicks: (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
                 zones: zones,
                 pvpModeChangeTicks: (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
+                pvpModeChangeFromPvpTicks: (int)Math.Ceiling(
+                    config.PvpModeChangeFromPvpSeconds * SimulationConstants.TickRate),
                 pvpForcedTicks: (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
         }
 

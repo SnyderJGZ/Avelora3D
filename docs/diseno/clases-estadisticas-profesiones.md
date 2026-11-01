@@ -152,9 +152,10 @@ solo manda el id (`TypeId` de jugador = `classId`).
    código).
 2. **Reajuste de puntos (sustituye a §0.4):** gratis **hasta el nivel 10**; después, con un objeto
    («piedra de reajuste») que suelta un mob. El objeto se añade a `items.json`; no hay comercio.
-3. **PvP (sustituye a §0.6): modo PvE/PvP elegido y PvP forzado (I-15p).**
-   Por defecto PvE; solo se cambia en zona segura tras 5 minutos seguidos en ella. Salir reinicia
-   la espera. En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos. PvP efectivo
+3. **PvP (sustituye a §0.6): modo PvE/PvP elegido y PvP forzado (I-15p/I-15q).**
+   Por defecto PvE; se cambia en zona segura tras 30 segundos, o 60 segundos si se entra con PvP
+   efectivo, evaluado al entrar y sin reducirse si el forzado acaba dentro. Salir reinicia la espera.
+   En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos. PvP efectivo
    significa modo elegido PvP, estar en zona PvP o tener tiempo forzado restante. Dos jugadores
    vivos con PvP efectivo se pueden dañar fuera de zonas seguras, también en zona normal.
    Alcance, visión, defensa y recarga los decide el servidor. La curación de aliados se afina en I-17.
@@ -764,13 +765,15 @@ Las dos primeras son server-only y no cambian el protocolo; así el riesgo de da
 
 ### I-15p - Combate entre jugadores (modo PvE/PvP, protocolo v20, esquema v8)
 
-- **Alcance:** `SetPvpMode` elige PvE/PvP tras 5 minutos seguidos en segura. En zona PvP el modo
-  efectivo es forzado, y dura 5 minutos tras salir. El daño exige dos jugadores vivos con PvP
+- **Alcance:** `SetPvpMode` elige PvE/PvP tras 30 segundos seguidos en segura (60 si se entra con
+  PvP efectivo, evaluado al entrar). El jugador ve «PvP activo». En zona PvP el modo efectivo es
+  forzado, y dura 5 minutos tras salir. El daño exige dos jugadores vivos con PvP
   efectivo fuera de segura. Sin XP ni penalización por muerte PvP; reaparición de I-03.
 - **Persistencia:** modo elegido y segundos forzados restantes, que solo corren conectado; espera
-  segura reiniciada al conectar o reaparecer. Configuración 300/300 segundos (carga: 5/30).
+  segura reiniciada al conectar o reaparecer. Configuración 30/60/300 segundos (cambio normal/desde PvP/forzado; carga: 5/10/30).
 - **Estado:** bit 6 del snapshot para el PvP efectivo ajeno; `PvpStatus` propio al cambiar de fase,
-  con segundos restantes, y `PvpModeRejected` con motivo. Cliente I-15pb por implementar.
+  con segundos restantes, y `PvpModeRejected` con motivo. Cliente I-15pb implementado; rótulo «PvP activo» y cuenta
+  atrás del forzado solo cuando el modo elegido es PvE.
 - **Fuera:** facciones, grupos, gremios, reputación y pérdida de objetos (tras el MVP).
 - **Verificación:** pruebas de reglas, protocolo, red, persistencia y bots; dos pasadas de carga.
 

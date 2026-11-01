@@ -66,7 +66,8 @@ namespace Avelora.Tests
             Assert.Equal(1.5f, config.PickupRange);
             Assert.Equal(1d, config.PotionCooldownSeconds);
             Assert.Equal(1024, config.MaxQueuedItemActions);
-            Assert.Equal(300d, config.PvpModeChangeSeconds);
+            Assert.Equal(30d, config.PvpModeChangeSeconds);
+            Assert.Equal(60d, config.PvpModeChangeFromPvpSeconds);
             Assert.Equal(300d, config.PvpForcedSeconds);
         }
 
@@ -87,6 +88,10 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeSeconds = 3601 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeSeconds = double.NaN }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeSeconds = double.PositiveInfinity }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeFromPvpSeconds = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeFromPvpSeconds = 3601 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeFromPvpSeconds = double.NaN }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { PvpModeChangeFromPvpSeconds = double.PositiveInfinity }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpForcedSeconds = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpForcedSeconds = 3601 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { PvpForcedSeconds = double.NaN }.Validate);

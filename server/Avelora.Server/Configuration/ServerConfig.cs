@@ -105,7 +105,10 @@ namespace Avelora.Server.Configuration
         public double LootReserveSeconds { get; set; } = 30d;
 
         /// <summary>Segundos seguidos en zona segura para cambiar el modo PvP (I-15p).</summary>
-        public double PvpModeChangeSeconds { get; set; } = 300d;
+        public double PvpModeChangeSeconds { get; set; } = 30d;
+
+        /// <summary>Espera en zona segura si se entró con PvP efectivo (I-15q).</summary>
+        public double PvpModeChangeFromPvpSeconds { get; set; } = 60d;
 
         /// <summary>Segundos de PvP forzado al salir de una zona PvP (I-15p).</summary>
         public double PvpForcedSeconds { get; set; } = 300d;
@@ -590,6 +593,12 @@ namespace Avelora.Server.Configuration
                 double.IsNaN(PvpModeChangeSeconds) || double.IsInfinity(PvpModeChangeSeconds))
             {
                 throw new InvalidOperationException("pvpModeChangeSeconds debe estar entre 1 y 3600.");
+            }
+
+            if (!(PvpModeChangeFromPvpSeconds >= 1d) || PvpModeChangeFromPvpSeconds > 3600d ||
+                double.IsNaN(PvpModeChangeFromPvpSeconds) || double.IsInfinity(PvpModeChangeFromPvpSeconds))
+            {
+                throw new InvalidOperationException("pvpModeChangeFromPvpSeconds debe estar entre 1 y 3600.");
             }
 
             if (!(PvpForcedSeconds >= 1d) || PvpForcedSeconds > 3600d ||

@@ -283,6 +283,7 @@ namespace Avelora.Server
                 (long)Math.Ceiling(config.LootReserveSeconds * SimulationConstants.TickRate),
                 zones,
                 (int)Math.Ceiling(config.PvpModeChangeSeconds * SimulationConstants.TickRate),
+                (int)Math.Ceiling(config.PvpModeChangeFromPvpSeconds * SimulationConstants.TickRate),
                 (int)Math.Ceiling(config.PvpForcedSeconds * SimulationConstants.TickRate));
 
             try

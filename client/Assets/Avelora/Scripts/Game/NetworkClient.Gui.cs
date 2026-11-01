@@ -141,17 +141,25 @@ namespace Avelora.Client
             Color color;
             if (_pvpStatus.Forced == PvpForcedState.InZone)
             {
-                text = "PvP forzado";
+                text = "PvP activo";
                 color = new Color(1f, 0.4f, 0.35f);
             }
             else if (_pvpStatus.Forced == PvpForcedState.Timer)
             {
-                text = "PvP forzado " + Clock(_pvpForcedEndsAt);
-                color = new Color(1f, 0.6f, 0.3f);
+                if (_pvpStatus.Mode == PvpMode.Pve)
+                {
+                    text = "PvP activo " + Clock(_pvpForcedEndsAt);
+                    color = new Color(1f, 0.6f, 0.3f);
+                }
+                else
+                {
+                    text = "PvP activo";
+                    color = new Color(1f, 0.4f, 0.35f);
+                }
             }
             else if (_pvpStatus.Mode == PvpMode.Pvp)
             {
-                text = "PvP";
+                text = "PvP activo";
                 color = new Color(1f, 0.4f, 0.35f);
             }
             else

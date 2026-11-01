@@ -86,7 +86,8 @@ namespace Avelora.Server.Diagnostics
             Console.WriteLine("  Zonas         : " + DescribeZones(zones));
             Console.WriteLine(
                 "  PvP           : cambio tras " + Invariant(config.PvpModeChangeSeconds, "0.#") +
-                " s en zona segura, forzado " + Invariant(config.PvpForcedSeconds, "0.#") + " s");
+                " s en zona segura, desde PvP " + Invariant(config.PvpModeChangeFromPvpSeconds, "0.#") +
+                " s, forzado " + Invariant(config.PvpForcedSeconds, "0.#") + " s");
             Console.WriteLine(
                 "  Combate       : daño, alcance y recarga por clase o arma, tolerancia +" +
                 Invariant(config.AttackRangeTolerance, "0.##") + " tiles, cola de ataques " +

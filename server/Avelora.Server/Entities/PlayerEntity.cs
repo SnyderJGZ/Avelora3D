@@ -49,6 +49,9 @@ namespace Avelora.Server.Entities
         /// <summary>Ticks seguidos en zona segura; no se persiste.</summary>
         public int SafeZoneTicks { get; set; }
 
+        /// <summary>Ticks de espera requeridos en la zona segura actual; se fija al entrar (I-15q).</summary>
+        public int SafeZoneWaitTicks { get; set; }
+
         /// <summary>Última clave de estado PvP enviada; 0xff significa que aún no se envió.</summary>
         internal byte PvpStatusKey { get; set; } = 0xff;
 

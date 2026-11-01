@@ -22,6 +22,7 @@
   "groundItemSeconds": 60,
   "lootReserveSeconds": 30,
   "pvpModeChangeSeconds": 5,
+  "pvpModeChangeFromPvpSeconds": 10,
   "pvpForcedSeconds": 30,
   "lootTagSeconds": 10,
   "maxGroundItems": 500,
