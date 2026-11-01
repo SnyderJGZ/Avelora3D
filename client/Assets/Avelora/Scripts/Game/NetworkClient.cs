@@ -125,8 +125,17 @@ namespace Avelora.Client
             public bool OnSelf;
         }
 
+        private struct LootText
+        {
+            public string Text;
+            public Color Color;
+            public float StartTime;
+            public int Line;
+        }
+
         private readonly List<CombatProjectile> _projectiles = new List<CombatProjectile>(32);
         private readonly List<DamageNumber> _damageNumbers = new List<DamageNumber>(32);
+        private readonly List<LootText> _lootTexts = new List<LootText>(16);
 
         [Header("Diagnóstico")]
         [SerializeField] private bool showOverlay = true;
@@ -164,6 +173,7 @@ namespace Avelora.Client
         private Vec2 _lastAuthoritative;
         private int _entityId;
         private ushort[] _inventoryIds = new ushort[0];
+        private uint _gold;
         // Objeto equipado por hueco, en el orden de EquipSlot (I-14); 0 = vacío.
         private ushort[] _equipment = new ushort[ProtocolConstants.EquipSlotCount];
 
@@ -340,6 +350,7 @@ namespace Avelora.Client
             _ownHealthPercent = 100;
             _ownDead = false;
             _inventoryIds = new ushort[0];
+            _gold = 0;
             _inventoryCounts = new ushort[0];
             System.Array.Clear(_equipment, 0, _equipment.Length);
             _catalog.Clear();
@@ -1092,6 +1103,7 @@ namespace Avelora.Client
                         _inventoryIds = inventory.ItemIds;
                         _inventoryCounts = inventory.Counts;
                         _equipment = inventory.Equipment;
+                        _gold = inventory.Gold;
                     }
 
                     break;
@@ -1177,6 +1189,15 @@ namespace Avelora.Client
                         MessageCodec.TryReadCombatEvent(buffer, offset, length, out CombatEventMessage combatEvent))
                     {
                         HandleCombatEvent(combatEvent);
+                    }
+
+                    break;
+
+                case MessageType.LootGained:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadLootGained(buffer, offset, length, out LootGainedMessage loot))
+                    {
+                        HandleLootGained(loot);
                     }
 
                     break;
@@ -1276,6 +1297,62 @@ namespace Avelora.Client
                 StartTime = Time.unscaledTime,
                 Text = damage.ToString() + ((flags & CombatEventFlags.Killed) != 0 ? "!" : string.Empty),
                 OnSelf = targetId == _entityId,
+            });
+        }
+
+        private void HandleLootGained(LootGainedMessage loot)
+        {
+            float startTime = Time.unscaledTime;
+            int line = 0;
+
+            if (loot.Experience > 0)
+            {
+                AddLootText("+" + loot.Experience + " exp", new Color(0.6f, 0.85f, 1f), startTime, line++);
+            }
+
+            if (loot.Gold > 0)
+            {
+                AddLootText("+" + loot.Gold + " oro", new Color(1f, 0.85f, 0.25f), startTime, line++);
+            }
+
+            LootItemEntry[] items = loot.Items;
+            for (int groundPass = 0; groundPass < 2; groundPass++)
+            {
+                bool onGround = groundPass == 1;
+                for (int i = 0; i < items.Length; i++)
+                {
+                    LootItemEntry item = items[i];
+                    if (item.OnGround != onGround)
+                    {
+                        continue;
+                    }
+
+                    string name = _catalog.TryGetValue(item.ItemId, out ItemCatalogEntry entry)
+                        ? entry.Name
+                        : "Objeto " + item.ItemId;
+                    string count = item.Count > 1 ? " x" + item.Count : string.Empty;
+                    string text = onGround
+                        ? "Inventario lleno: " + name + count + " al suelo"
+                        : name + count;
+                    Color color = onGround ? new Color(1f, 0.45f, 0.35f) : Color.white;
+                    AddLootText(text, color, startTime, line++);
+                }
+            }
+        }
+
+        private void AddLootText(string text, Color color, float startTime, int line)
+        {
+            if (_lootTexts.Count == 16)
+            {
+                _lootTexts.RemoveAt(0);
+            }
+
+            _lootTexts.Add(new LootText
+            {
+                Text = text,
+                Color = color,
+                StartTime = startTime,
+                Line = line,
             });
         }
 
@@ -1629,6 +1706,7 @@ namespace Avelora.Client
             _remoteViews.Clear();
             _projectiles.Clear();
             _damageNumbers.Clear();
+            _lootTexts.Clear();
         }
 
         private static string DescribeReject(RejectReason reason)

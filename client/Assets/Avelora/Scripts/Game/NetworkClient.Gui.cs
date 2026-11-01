@@ -135,13 +135,21 @@ namespace Avelora.Client
                 }
             }
 
+            for (int i = _lootTexts.Count - 1; i >= 0; i--)
+            {
+                if (now - _lootTexts[i].StartTime >= 2.5f)
+                {
+                    _lootTexts.RemoveAt(i);
+                }
+            }
+
             Camera cam = Camera.main;
             if (cam == null)
             {
                 return;
             }
 
-            if (_damageNumbers.Count > 0)
+            if (_damageNumbers.Count > 0 || _lootTexts.Count > 0)
             {
                 EnsureOverlayStyles();
             }
@@ -185,6 +193,28 @@ namespace Avelora.Client
                 color.a = 1f - elapsed / 0.9f;
                 GUI.color = color;
                 GUI.Label(new Rect(gui.x - 32f, gui.y - 20f, 64f, 24f), number.Text, _damageNumberStyle);
+            }
+
+            if (_lootTexts.Count > 0 && TryGetEntityPosition(_entityId, out Vector3 self))
+            {
+                for (int i = 0; i < _lootTexts.Count; i++)
+                {
+                    LootText loot = _lootTexts[i];
+                    float elapsed = now - loot.StartTime;
+                    Vector3 world = self + Vector3.up * (1.0f + 1.0f * elapsed / 2.5f);
+                    Vector3 screen = cam.WorldToScreenPoint(world);
+                    if (screen.z < 0f)
+                    {
+                        continue;
+                    }
+
+                    Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
+                    gui.y += loot.Line * 18f;
+                    Color color = loot.Color;
+                    color.a = 1f - elapsed / 2.5f;
+                    GUI.color = color;
+                    GUI.Label(new Rect(gui.x - 120f, gui.y - 20f, 240f, 22f), loot.Text, _damageNumberStyle);
+                }
             }
 
             GUI.color = previousColor;
@@ -582,7 +612,7 @@ namespace Avelora.Client
             Rect content = Part(_inventoryPanel, scale, 17f, 75f, 810f, 620f);
             int rows = Mathf.Max(1, (_inventoryIds.Length + columns - 1) / columns);
             // Abajo quedan 34 px para la línea de ayuda.
-            float cell = Mathf.Min((content.width - 40f) / columns, (content.height - 50f - ((rows - 1) * 6f)) / rows);
+            float cell = Mathf.Min((content.width - 40f) / columns, (content.height - 72f - ((rows - 1) * 6f)) / rows);
             float gap = 6f;
             float gridWidth = (columns * cell) + ((columns - 1) * gap);
             float left = content.x + ((content.width - gridWidth) / 2f);
@@ -599,6 +629,11 @@ namespace Avelora.Client
                     hovered = _inventoryIds[i];
                 }
             }
+
+            GUI.Label(
+                new Rect(content.x + 12f, content.yMax - 48f, content.width - 24f, 20f),
+                "Oro: " + _gold.ToString("N0"),
+                _darkSmallStyle);
 
             GUI.Label(
                 new Rect(content.x + 12f, content.yMax - 26f, content.width - 24f, 20f),
