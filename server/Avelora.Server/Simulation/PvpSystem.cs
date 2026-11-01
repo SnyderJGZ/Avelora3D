@@ -68,6 +68,14 @@ namespace Avelora.Server.Simulation
                 {
                     player.PvpForcedTicksLeft = _forcedTicks;
                 }
+                else if (player.ZoneKind == ZoneKind.Safe && player.SafeZoneTicks == 0)
+                {
+                    // Entrada en segura: se decide con el PvP efectivo previo y se cancela el forzado.
+                    player.SafeZoneWaitTicks = player.PvpMode == PvpMode.Pvp || player.PvpForcedTicksLeft > 0
+                        ? _modeChangeFromPvpTicks
+                        : _modeChangeTicks;
+                    player.PvpForcedTicksLeft = 0;
+                }
                 else if (player.PvpForcedTicksLeft > 0)
                 {
                     player.PvpForcedTicksLeft--;
@@ -75,13 +83,6 @@ namespace Avelora.Server.Simulation
 
                 if (player.ZoneKind == ZoneKind.Safe)
                 {
-                    if (player.SafeZoneTicks == 0)
-                    {
-                        player.SafeZoneWaitTicks = player.PvpMode == PvpMode.Pvp || player.PvpForcedTicksLeft > 0
-                            ? _modeChangeFromPvpTicks
-                            : _modeChangeTicks;
-                    }
-
                     if (player.SafeZoneTicks < player.SafeZoneWaitTicks)
                     {
                         player.SafeZoneTicks++;

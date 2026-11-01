@@ -1350,6 +1350,7 @@ namespace Avelora.Tests
             }
 
             PlayerEntity firstPlayer = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(harness.Zone.Players[0].Id));
+            Assert.Equal(ZoneKind.Normal, firstPlayer.ZoneKind);
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeAllocatePoints(
                 new AllocatePointsMessage(2, 0, 0, 1)));
             harness.Server.PollOnce();
@@ -1398,6 +1399,7 @@ namespace Avelora.Tests
             harness.Pump();
 
             PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            Assert.Equal(ZoneKind.Normal, first.ZoneKind);
             first.PvpMode = PvpMode.Pvp;
             first.PvpForcedTicksLeft = 501;
             harness.Transport.RaiseDisconnected(1);
@@ -1417,6 +1419,60 @@ namespace Avelora.Tests
             PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(2));
             Assert.Equal(PvpMode.Pvp, reconnected.PvpMode);
             Assert.Equal(26 * SimulationConstants.TickRate, reconnected.PvpForcedTicksLeft);
+        }
+
+        [Fact]
+        public void Un_Jugador_Que_Se_Desconecta_En_La_Ciudad_Guarda_Forzado_Cero()
+        {
+            var config = new ServerConfig();
+            MapCollisionGrid map = MapFile.Load(MapPath);
+            int spawnX = (int)Math.Floor(config.SpawnX);
+            int spawnY = (int)Math.Floor(config.SpawnY);
+            ZoneMap zones = ZoneMap.FromDefinitions(new[]
+            {
+                new ZoneDefinition
+                {
+                    Id = 1,
+                    Name = "Ciudad de persistencia",
+                    Kind = "safe",
+                    Rects = new List<ZoneRectDefinition>
+                    {
+                        new ZoneRectDefinition { X = spawnX, Y = spawnY, W = 1, H = 1 },
+                    },
+                },
+            }, map);
+            Assert.Equal(ZoneKind.Safe, zones.KindAt(config.SpawnX, config.SpawnY));
+
+            using var repository = new InMemoryPlayerRepository(ClassCatalog.Default, 1);
+            repository.Initialize();
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(repository: repository, saves: saves, zones: zones);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            PlayerEntity first = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(1));
+            first.PvpMode = PvpMode.Pvp;
+            first.PvpForcedTicksLeft = 501;
+            harness.Zone.Tick();
+            Assert.Equal(ZoneKind.Safe, first.ZoneKind);
+            Assert.Equal(0, first.PvpForcedTicksLeft);
+
+            harness.Transport.RaiseDisconnected(1);
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+            Assert.True(saves.Flush(TimeSpan.FromSeconds(2)));
+            CharacterRecord saved = Assert.Single(repository.ListCharacters(1));
+            Assert.Equal(0, saved.PvpForcedSeconds);
+
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+            PlayerEntity reconnected = Assert.IsType<PlayerEntity>(harness.Zone.Entities.Get(2));
+            Assert.Equal(0, reconnected.PvpForcedTicksLeft);
+            Assert.Equal(PvpMode.Pvp, reconnected.PvpMode);
         }
 
         [Fact]

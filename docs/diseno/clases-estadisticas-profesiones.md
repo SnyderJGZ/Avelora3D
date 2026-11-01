@@ -155,8 +155,8 @@ solo manda el id (`TypeId` de jugador = `classId`).
 3. **PvP (sustituye a §0.6): modo PvE/PvP elegido y PvP forzado (I-15p/I-15q).**
    Por defecto PvE; se cambia en zona segura tras 30 segundos, o 60 segundos si se entra con PvP
    efectivo, evaluado al entrar y sin reducirse si el forzado acaba dentro. Salir reinicia la espera.
-   En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos. PvP efectivo
-   significa modo elegido PvP, estar en zona PvP o tener tiempo forzado restante. Dos jugadores
+    En zona PvP todos tienen PvP forzado y al salir dura otros 5 minutos, salvo que se entre en una zona segura,
+    donde se cancela al entrar. PvP efectivo significa modo elegido PvP, estar en zona PvP o tener forzado restante. Dos jugadores
    vivos con PvP efectivo se pueden dañar fuera de zonas seguras, también en zona normal.
    Alcance, visión, defensa y recarga los decide el servidor. La curación de aliados se afina en I-17.
 4. **Armas de dos manos y base para clases futuras.** Cada arma declara `handedness`
@@ -227,7 +227,7 @@ Si dos zonas se solapan manda la más restrictiva: `safe` > `pvp` > `normal`.
 
 **Reglas en una zona `safe`:**
 - Ningún jugador puede dañar a otro; ni habilidades de área alcanzan a los de dentro.
-- El modo PvE/PvP puede cambiarse tras 5 minutos seguidos en segura; el forzado sigue corriendo y no hay daño PvP dentro.
+- El modo PvE/PvP puede cambiarse tras 30 s seguidos en segura, o 60 s si se entra con PvP efectivo; al entrar se cancela el forzado. No hay daño PvP dentro.
 - Los mobs **no aparecen** ni **entran** en una zona segura (los spawners no se colocan ahí y la IA
   trata el borde como pared). **Decidido:** cuando el jugador entra en una zona segura, el aggro de los
   mobs sobre él **se cancela** (pasan a `Return`, reutilizando la IA); no pueden dañarlo dentro, y si

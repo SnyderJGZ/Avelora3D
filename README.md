@@ -1118,6 +1118,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-15** | Zonas seguras y PvP con `ZoneList`/`ZoneChanged` (protocolo v19; esquema v7) | ✅ servidor, bots y cliente I-15b |
 | **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor, bots y cliente I-15pb |
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
+| **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
 
 ### Enemigos y vida del jugador (I-03)
@@ -1911,13 +1912,13 @@ La suite de I-15 añade pruebas de protocolo, límites/bordes/solapes, mapa real
 Cada jugador elige **PvE** (por defecto) o **PvP**. El modo solo cambia tras **30 segundos seguidos
 en zona segura**, o **60 segundos** si se entra con PvP efectivo; esa espera se fija al entrar y no
 disminuye si el forzado termina dentro. Salir reinicia la espera. Fuera de ella no se puede cambiar. En zona PvP todos
-tienen **PvP forzado** y al salir conservan el forzado otros **5 minutos**. El PvP efectivo es el
-modo elegido PvP, estar en zona PvP o tener tiempo forzado restante.
+tienen **PvP forzado** y al salir conservan el forzado otros **5 minutos**, pero se cancela al entrar en una zona
+segura. El PvP efectivo es el modo elegido PvP, estar en zona PvP o tener tiempo forzado restante.
 
 Dos jugadores pueden dañarse en zona normal o PvP si ambos tienen PvP efectivo, están vivos y ninguno
 está en zona segura. Alcance, línea de visión, defensa y recarga se resuelven en el servidor como
 contra PNJ. Una muerte PvP no da experiencia al atacante ni penaliza la de la víctima; se mantiene
-la reaparición de I-03. El forzado sigue corriendo estando muerto y dentro de la ciudad.
+la reaparición de I-03. El forzado sigue corriendo estando muerto fuera de la ciudad; dentro de una zona segura se cancela al entrar.
 
 SQLite migra automáticamente de v7 a **v8**: `pvp_mode` conserva el modo elegido y
 `pvp_forced_seconds` el tiempo restante, redondeado hacia arriba. El forzado solo corre conectado:
@@ -1935,8 +1936,9 @@ funcionando. Los demás jugadores reciben el PvP efectivo en el **bit 6** del by
 snapshot, solo para `Player`, sin aumentar los 15 B por entidad.
 
 `server.json`: `pvpModeChangeSeconds=30`, `pvpModeChangeFromPvpSeconds=60` y `pvpForcedSeconds=300`,
-los tres entre 1 y 3600. El HUD muestra «PvP activo»; solo cuenta el forzado tras la arena cuando
-el modo elegido es PvE. El botón de la ciudad conserva la cuenta atrás para cambiar de modo. La carga
+los tres entre 1 y 3600. La espera de 60 segundos se decide con el PvP efectivo previo a la cancelación.
+El HUD muestra «PvP activo»; solo cuenta el forzado tras la arena cuando el modo elegido es PvE. El botón de
+la ciudad conserva la cuenta atrás para cambiar de modo. La carga
 usa **5/10/30 segundos**. Bots: `--pvp-bots N` (o `-PvpBots N` en el guion) selecciona bots
 que piden PvP al estar listos (esperan quietos en la zona segura hasta entonces) y pueden perseguir jugadores PvP visibles; `BotBehavior` no cambia.
 
@@ -1945,11 +1947,12 @@ Métricas: `pvp_ataques_ok`, `pvp_muertes`, `ataque_rech_pvp_segura`, `ataque_re
 `pvp_modo_igual`, `pvp_rech_fuera_segura`, `pvp_rech_pronto`, `pvp_estado_msgs`, `pvp_estado_bytes`,
 `pvp_rech_msgs`. Los bots cuentan `pvp_estados`, `pvp_rechazos` y `pvp_modo_pedidos`.
 
-Verificación I-15p/I-15q: **807/807** pruebas, build con 0 advertencias. Carga de 50 bots: `fight` 120 s con
+Verificación I-15p/I-15q/I-15r: **809/809** pruebas, build con 0 advertencias. Carga de 50 bots: `fight` 120 s con
 `-PvpBots 10 -LogCorrections -NuevaBase` y `random` 60 s con `-LogCorrections -NuevaBase`;
 Fight tras el arreglo: `pvp_ataques_ok`=0, 10 peticiones y 10 cambios de modo, 1224 rechazos por zona segura y 0 correcciones; no se repitió la carga ni se ajustó más el comportamiento.
 Las cifras y comparación con I-15 están en [el informe I-15p](docs/agentes/informes/I-15p.md).
-El cliente Unity I-15pb usa protocolo v20; I-15q también ajusta en él los rótulos y la cuenta atrás.
+El cliente Unity I-15pb usa protocolo v20; I-15q también ajusta en él los rótulos y la cuenta atrás; I-15r
+cancela el forzado al entrar en zona segura.
 
 ### Chat (I-07, protocolo v10)
 

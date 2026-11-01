@@ -157,6 +157,7 @@ namespace Avelora.Tests
 
             zone.Tick();
             Assert.Equal(PvpMode.Pve, player.PvpMode);
+            Assert.Equal(0, player.PvpForcedTicksLeft);
             Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
             Assert.Equal((ushort)2, statuses[0].ChangeSeconds);
             for (int i = 1; i < 20; i++)
@@ -175,7 +176,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Espera_Al_Entrar_Con_Forzado_No_Baja_Y_Se_Recalcula_Al_Reentrar()
+        public void Entrar_Con_Forzado_Lo_Cancela_Y_Espera_40_Ticks()
         {
             Zone zone = NewZone();
             PlayerEntity player = zone.SpawnPlayer(1, new Vec2(11, 5), new Vec2(0.4f, 0.4f), 8);
@@ -184,7 +185,10 @@ namespace Avelora.Tests
             zone.PvpStatusChanged += (_, status) => statuses.Add(status);
 
             zone.Tick();
-            Assert.Equal(4, player.PvpForcedTicksLeft);
+            Assert.Equal(0, player.PvpForcedTicksLeft);
+            Assert.Equal(PvpForcedState.None, statuses[0].Forced);
+            Assert.Equal((ushort)0, statuses[0].ForcedSeconds);
+            Assert.Equal(PvpChangeState.Waiting, statuses[0].Change);
             Assert.Equal((ushort)2, statuses[0].ChangeSeconds);
             for (int i = 1; i < 20; i++)
             {
@@ -245,7 +249,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Pvp_Forzado_Sigue_Bajando_En_La_Segura_Y_Se_Cambia_Tras_40_Ticks()
+        public void Pvp_Forzado_Se_Cancela_Al_Entrar_En_Segura_Y_Cambia_Tras_40_Ticks()
         {
             Zone zone = NewZone(forcedTicks: 80);
             PlayerEntity player = zone.SpawnPlayer(1, new Vec2(21, 5), new Vec2(0.4f, 0.4f), 8);
@@ -255,31 +259,47 @@ namespace Avelora.Tests
 
             player.Position = new Vec2(11, 5);
             zone.Tick();
-            Assert.Equal(79, player.PvpForcedTicksLeft);
+            Assert.Equal(0, player.PvpForcedTicksLeft);
             Assert.Equal(ZoneKind.Safe, player.ZoneKind);
+            Assert.False(player.PvpEffective);
+            Assert.Equal(40, player.SafeZoneWaitTicks);
 
-            for (int i = 0; i < 38; i++)
+            for (int i = 0; i < 37; i++)
             {
                 zone.Tick();
             }
 
             RequestMode(zone, player, PvpMode.Pvp);
             zone.Tick();
-            Assert.Equal(PvpMode.Pvp, player.PvpMode);
-
-            RequestMode(zone, player, PvpMode.Pve);
-            zone.Tick();
+            Assert.Equal(39, player.SafeZoneTicks);
             Assert.Equal(PvpMode.Pve, player.PvpMode);
-            Assert.True(player.PvpEffective);
+            Assert.Equal(1, zone.PvpRejectedTooSoon);
 
-            for (int i = 0; i < 38; i++)
-            {
-                zone.Tick();
-                Assert.True(player.PvpEffective);
-            }
+            RequestMode(zone, player, PvpMode.Pvp);
+            zone.Tick();
+            Assert.Equal(40, player.SafeZoneTicks);
+            Assert.Equal(PvpMode.Pvp, player.PvpMode);
+        }
+
+        [Fact]
+        public void Entrar_En_Segura_Desde_Pvp_Envia_PvpStatus_Sin_Forzado()
+        {
+            Zone zone = NewZone();
+            PlayerEntity player = zone.SpawnPlayer(1, new Vec2(21, 5), new Vec2(0.4f, 0.4f), 8);
+            List<PvpStatusMessage> statuses = new List<PvpStatusMessage>();
+            zone.PvpStatusChanged += (_, status) => statuses.Add(status);
 
             zone.Tick();
-            Assert.False(player.PvpEffective);
+            Assert.Equal(PvpForcedState.InZone, Assert.Single(statuses).Forced);
+            player.Position = new Vec2(11, 5);
+            zone.Tick();
+
+            PvpStatusMessage status = statuses[statuses.Count - 1];
+            Assert.Equal(PvpForcedState.None, status.Forced);
+            Assert.Equal((ushort)0, status.ForcedSeconds);
+            Assert.Equal(PvpChangeState.Waiting, status.Change);
+            Assert.Equal((ushort)2, status.ChangeSeconds);
+            Assert.Equal(0, player.PvpForcedTicksLeft);
         }
 
         [Fact]
@@ -491,7 +511,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Muerto_En_Arena_Reaparece_En_Segura_Y_El_Forzado_Sigue_Corriendo()
+        public void Muerto_En_Arena_Reaparece_En_Segura_Y_Cancela_El_Forzado()
         {
             Zone zone = NewZone(vitals: new PlayerVitalsSettings(new Vec2(11, 5), 0.5, 0, 0));
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(21, 5), new Vec2(0.4f, 0.4f), 8);
@@ -503,9 +523,10 @@ namespace Avelora.Tests
             for (int i = 0; i < 10; i++) zone.Tick();
             Assert.False(victim.IsDead);
             Assert.Equal(ZoneKind.Safe, victim.ZoneKind);
-            Assert.Equal(39, victim.PvpForcedTicksLeft);
+            Assert.Equal(0, victim.PvpForcedTicksLeft);
+            Assert.False(victim.PvpEffective);
             zone.Tick();
-            Assert.Equal(38, victim.PvpForcedTicksLeft);
+            Assert.Equal(0, victim.PvpForcedTicksLeft);
         }
 
         [Theory]
