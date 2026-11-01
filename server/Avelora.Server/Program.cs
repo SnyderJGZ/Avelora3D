@@ -243,7 +243,9 @@ namespace Avelora.Server
                 npcs,
                 config.NpcSeed,
                 new AttackQueue(config.MaxQueuedAttacks),
-                new CombatSettings(config.AttackRangeTolerance),
+                new CombatSettings(
+                    config.AttackRangeTolerance,
+                    (long)Math.Ceiling(config.LootTagSeconds * SimulationConstants.TickRate)),
                 config.PlayerVitals,
                 items,
                 new ItemActionQueue(config.MaxQueuedItemActions),
@@ -254,7 +256,8 @@ namespace Avelora.Server
                 config.AttackRangeTolerance,
                 (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate),
                 levels,
-                classes);
+                classes,
+                (long)Math.Ceiling(config.LootReserveSeconds * SimulationConstants.TickRate));
 
             try
             {

@@ -337,7 +337,7 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Solo_El_Jugador_Que_Da_El_Golpe_Mortal_Recibe_Experiencia()
+        public void El_Dueño_De_Botin_Recibe_Experiencia_Aunque_Otro_De_El_Golpe_Mortal()
         {
             Zone zone = NewZone(Catalog(maxHealth: 20));
             PlayerEntity first = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -348,8 +348,9 @@ namespace Avelora.Tests
             Attack(zone, killer, npc);
             zone.Tick();
 
-            Assert.Equal(0, first.Experience);
-            Assert.Equal(20, killer.Experience);
+            Assert.Equal(20, first.Experience);
+            Assert.Equal(0, killer.Experience);
+            Assert.Equal(killer.Id, npc.KillerPlayerId);
             Assert.Equal(20, zone.ExperienceGranted);
             Assert.Equal(0, zone.LevelUps);
         }

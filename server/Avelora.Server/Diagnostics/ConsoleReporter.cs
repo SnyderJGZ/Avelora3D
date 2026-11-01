@@ -107,7 +107,9 @@ namespace Avelora.Server.Diagnostics
                 Invariant(config.AttackRangeTolerance, "0.##") + ") tiles" +
                 ", poción cd " + Invariant(config.PotionCooldownSeconds, "0.#") + " s (" +
                 (long)Math.Ceiling(config.PotionCooldownSeconds * SimulationConstants.TickRate) +
-                " ticks), cola " + config.MaxQueuedItemActions);
+                " ticks), cola " + config.MaxQueuedItemActions +
+                ", reserva botín " + Invariant(config.LootReserveSeconds, "0.#") + " s, marca " +
+                Invariant(config.LootTagSeconds, "0.#") + " s");
             Console.WriteLine(
                 "  Límites       : " + config.MaxIntentsPerTick + " inputs/tick, " +
                 config.MaxIntentsPerPlayerPerTick + "/jugador/tick, cola de jugador " +
@@ -148,6 +150,8 @@ namespace Avelora.Server.Diagnostics
                  " combate_msgs=" + network.CombatEventMessages +
                  " combate_entradas=" + network.CombatEventEntries +
                  " combate_bytes=" + network.CombatEventBytes +
+                 " botin_msgs=" + network.LootGainedMessages +
+                 " botin_bytes=" + network.LootGainedBytes +
                  " combate_recortados=" + network.CombatEventsTrimmed +
                  " combate_descartados=" + zone.CombatEventsDropped +
                  " recibidos=" + network.BytesReceived +
@@ -168,7 +172,8 @@ namespace Avelora.Server.Diagnostics
                  " ataque_rech_regreso=" + zone.RejectedAttackEvading +
                  " ataques_distancia=" + zone.AttacksRanged +
                  " ataque_rech_cooldown=" + zone.RejectedAttackCooldown +
-                " ataque_rech_muerto=" + zone.RejectedAttackDead +
+                 " ataque_rech_muerto=" + zone.RejectedAttackDead +
+                 " cambios_dueno=" + zone.LootOwnerChanges +
                 " ataques_cola_llena=" + (zone.Attacks?.RejectedQueueFull ?? 0) +
                  " npc_golpes=" + zone.NpcHits +
                  " pnj_persecucion_abandonada=" + zone.NpcChaseGiveUps +
@@ -178,7 +183,9 @@ namespace Avelora.Server.Diagnostics
                 " elites_aparecidos=" + zone.EliteAppearances +
                 " elites_muertos=" + zone.EliteDeaths +
                 DescribeRankMetrics(zone) +
-                " experiencia_otorgada=" + zone.ExperienceGranted +
+                 " experiencia_otorgada=" + zone.ExperienceGranted +
+                 " oro_otorgado=" + zone.GoldGranted +
+                 " pnj_sin_dueno=" + zone.NpcDeathsWithoutOwner +
                 " subidas_nivel=" + zone.LevelUps +
                 " jugador_muertes=" + zone.PlayerDeaths +
                 " muertes_penalizadas=" + zone.PenalizedDeaths +
@@ -189,12 +196,16 @@ namespace Avelora.Server.Diagnostics
                 "            objetos: objetos_soltados=" + zone.ItemsDropped +
                 " objetos_recogidos=" + zone.ItemsPickedUp +
                 " objetos_caducados=" + zone.ItemsExpired +
-                " objetos_descartados=" + zone.ItemsDiscarded +
+                 " objetos_descartados=" + zone.ItemsDiscarded +
+                 " botin_directo=" + zone.ItemsLootedDirect +
+                 " botin_suelo_lleno=" + zone.ItemsLootedToGround +
+                 " botin_lineas_recortadas=" + zone.LootLinesTrimmed +
                 " objetos_en_suelo=" + zone.GroundItemCount +
                 " recoger_rech_muerto=" + zone.RejectedPickupDead +
                 " recoger_rech_objeto=" + zone.RejectedPickupItem +
                 " recoger_rech_distancia=" + zone.RejectedPickupDistance +
-                " recoger_rech_lleno=" + zone.RejectedPickupFull +
+                 " recoger_rech_lleno=" + zone.RejectedPickupFull +
+                 " recogida_rech_reservada=" + zone.RejectedPickupReserved +
                 " usar_rech_muerto=" + zone.RejectedUseDead +
                 " usar_rech_objeto=" + zone.RejectedUseItem +
                 " usar_rech_lleno=" + zone.RejectedUseFull +
@@ -341,10 +352,12 @@ namespace Avelora.Server.Diagnostics
                 network.HandshakesRejected + " saludos rechazados, " + network.RateLimited + " limitados (" +
                 network.RateLimitedDisconnects + " cortes por abuso), " +
                  network.SnapshotsSent + " snapshots, " + network.EntitiesSent + " entidades, " +
-                 network.SnapshotBytes + " bytes enviados, combate_msgs=" + network.CombatEventMessages +
-                 ", combate_entradas=" + network.CombatEventEntries +
-                 ", combate_bytes=" + network.CombatEventBytes +
-                 ", combate_recortados=" + network.CombatEventsTrimmed +
+                  network.SnapshotBytes + " bytes enviados, combate_msgs=" + network.CombatEventMessages +
+                  ", combate_entradas=" + network.CombatEventEntries +
+                  ", combate_bytes=" + network.CombatEventBytes +
+                  ", combate_recortados=" + network.CombatEventsTrimmed +
+                  ", botin_msgs=" + network.LootGainedMessages +
+                  ", botin_bytes=" + network.LootGainedBytes +
                  ", combate_descartados=" + zone.CombatEventsDropped + ", " + network.BytesReceived +
                 " bytes recibidos, " + network.DroppedOutbound + " descartados en cola");
             Console.WriteLine(
@@ -361,7 +374,8 @@ namespace Avelora.Server.Diagnostics
                  "ataque_rech_regreso=" + zone.RejectedAttackEvading + ", " +
                  "ataques_distancia=" + zone.AttacksRanged + ", " +
                  zone.RejectedAttackCooldown + " por recarga, " +
-                zone.RejectedAttackDead + " por jugador muerto, " +
+                 zone.RejectedAttackDead + " por jugador muerto, " +
+                 "cambios_dueno=" + zone.LootOwnerChanges + ", " +
                  (zone.Attacks?.RejectedQueueFull ?? 0) + " por cola llena, " +
                  zone.NpcHits + " golpes de PNJ, " +
                  "pnj_persecucion_abandonada=" + zone.NpcChaseGiveUps + ", " +
@@ -369,7 +383,9 @@ namespace Avelora.Server.Diagnostics
                 zone.NpcDeaths + " muertes, " + zone.NpcRespawns + " reapariciones de PNJ, " +
                 "elites_aparecidos=" + zone.EliteAppearances +
                 ", elites_muertos=" + zone.EliteDeaths + DescribeRankMetrics(zone) + ", " +
-                "experiencia_otorgada=" + zone.ExperienceGranted +
+                 "experiencia_otorgada=" + zone.ExperienceGranted +
+                 ", oro_otorgado=" + zone.GoldGranted +
+                 ", pnj_sin_dueno=" + zone.NpcDeathsWithoutOwner +
                 ", subidas_nivel=" + zone.LevelUps);
             Console.WriteLine(
                 "  Jugador         : " + zone.PlayerDeaths + " muertes, " +
@@ -379,12 +395,16 @@ namespace Avelora.Server.Diagnostics
                 "  Objetos         : objetos_soltados=" + zone.ItemsDropped +
                 ", objetos_recogidos=" + zone.ItemsPickedUp +
                 ", objetos_caducados=" + zone.ItemsExpired +
-                ", objetos_descartados=" + zone.ItemsDiscarded +
+                 ", objetos_descartados=" + zone.ItemsDiscarded +
+                 ", botin_directo=" + zone.ItemsLootedDirect +
+                 ", botin_suelo_lleno=" + zone.ItemsLootedToGround +
+                 ", botin_lineas_recortadas=" + zone.LootLinesTrimmed +
                 ", objetos_en_suelo=" + zone.GroundItemCount +
                 ", recoger_rech_muerto=" + zone.RejectedPickupDead +
                 ", recoger_rech_objeto=" + zone.RejectedPickupItem +
                 ", recoger_rech_distancia=" + zone.RejectedPickupDistance +
-                ", recoger_rech_lleno=" + zone.RejectedPickupFull +
+                 ", recoger_rech_lleno=" + zone.RejectedPickupFull +
+                 ", recogida_rech_reservada=" + zone.RejectedPickupReserved +
                 ", usar_rech_muerto=" + zone.RejectedUseDead +
                 ", usar_rech_objeto=" + zone.RejectedUseItem +
                 ", usar_rech_lleno=" + zone.RejectedUseFull +

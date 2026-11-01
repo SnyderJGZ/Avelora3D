@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-13 de servidor implementadas (cliente I-13b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (cliente I-25b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -27,7 +27,7 @@ calcular igual (movimiento y colisión).
 > esquema SQLite a **v6**: el saludo autentica la cuenta y, después, cada conexión lista, crea, borra o
 > selecciona uno de hasta 10 personajes con su clase. I-12 sube el protocolo a **v16** con restricciones
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
-> a distancia con línea de visión; la persistencia actual sigue en esquema v6.
+> a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
 > [I-05](#armas-y-equipo-i-05-protocolo-v8), [I-06/I-08](#experiencia-niveles-y-clases-i-06-i-08),
@@ -35,8 +35,9 @@ calcular igual (movimiento y colisión).
 > [I-14](#equipo-e-inventario-i-14-protocolo-v12-esquema-v5),
 > [I-20](#mobs-elite-y-campeon-i-20-protocolo-v13), [I-21](#catalogo-troceado-y-fuera-dropitem-i-21-protocolo-v14),
 > [I-10](#personajes-por-cuenta-i-10-protocolo-v15-esquema-v6), [I-11](#penalizacion-por-muerte-i-11),
-> [I-12](#armas-por-clase-y-requisitos-i-12-protocolo-v16) e
-> [I-13](#ataque-a-distancia-y-combatevent-i-13-protocolo-v17).
+> [I-12](#armas-por-clase-y-requisitos-i-12-protocolo-v16),
+> [I-13](#ataque-a-distancia-y-combatevent-i-13-protocolo-v17) e
+> [I-25](#botín-directo-dueño-del-botín-y-oro-i-25-protocolo-v18-esquema-v7).
 >
 > Si la misma cuenta entra dos veces, la sesión anterior recibe `Reject(LoggedInElsewhere)` y se
 > cierra con un **retardo** para que el mensaje llegue. El guardado corre en su propio hilo —al
@@ -45,7 +46,7 @@ calcular igual (movimiento y colisión).
 | Comprobación | Resultado |
 | --- | --- |
 | `dotnet build Avelora.slnx -v q --nologo` | **0 errores, 0 advertencias** |
-| `dotnet test Avelora.slnx` | **709/709 en verde** |
+| `dotnet test Avelora.slnx` | **734/734 en verde** |
 | Compilación en Unity 6 (cliente de F-02) | **0 errores, 0 avisos** |
 | Escena `AveloraEtapaA` en Play con servidor | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` |
 
@@ -353,7 +354,7 @@ pueden discrepar** del formato.
 | `Snapshot` | 12 | S → C | 11 B + 15 B/entidad | tick (u32), último input aplicado (u32), N (u16); por entidad: id (i32), x/y (i16), dirección (i8×2), kind (u8), vida (u8), acción/rango (u8; I-20), TypeId (u16) |
 | `PickUp` | 4 | C → S | 5 B | id de entidad del objeto (i32) |
 | `UseItem` | 5 | C → S | 2 B | índice del hueco (u8) |
-| `Inventory` | 14 | S → C | 4 B + 4 B/hueco | número de huecos (u8), itemId y cantidad (u16 cada uno; 0/0 = vacío), arma equipada (u16; 0 = puños) |
+| `Inventory` | 14 | S → C | 26 B + 4 B/hueco | número de huecos (u8), itemId y cantidad (u16 cada uno; 0/0 = vacío), 10 ids equipados (u16) y oro (u32) |
 | `Equip` | 6 | C → S | 2 B | hueco que contiene el arma (u8) |
 | `Unequip` | 7 | C → S | 3 B | hueco equipado y destino del inventario |
 | `ItemCatalog` | 15 | S → C | 19 B + 37 B/objeto + tipo y nombre | reglas de puños y recogida; objeto: estadísticas, manos, nivel, permiso de clase, `weaponType` UTF-8 (≤16 B) y nombre (≤48 B) |
@@ -370,13 +371,14 @@ pueden discrepar** del formato.
 | `CharacterList` | 26 | S → C | variable, ≤1400 B | máximo por cuenta, personajes (id, nombre, clase, nivel) y clases disponibles (id, nombre) |
 | `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
 | `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed` (u8); máximo 64 |
+| `LootGained` | 29 | S → C | 10 B + 5 B/objeto | experiencia (u32), oro (u32), N (u8); itemId (u16), cantidad (u16), bandera `OnGround` (u8); máximo 32 |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
-  `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList` y
-  `CharacterRejected`.
+  `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList`,
+  `CharacterRejected` y `LootGained`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 - **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
@@ -391,7 +393,7 @@ Canales:
 > `DropItem`, `DestroyItem`, el destino en `Unequip`, los 10 huecos de `Inventory` y las armaduras de
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
-> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`.
+> **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
@@ -852,7 +854,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v17** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v18** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1089,7 +1091,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-13 de servidor hechas; pendientes los clientes I-04b/I-05b/I-06b/I-07b/I-09b/I-10b/I-12b/I-13b |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat y selección de personaje | ⏳ I-01 a I-25 de servidor hechas; pendiente cliente I-25b y los clientes anteriores de la hoja de ruta |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1104,6 +1106,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-11** | Penalización de experiencia al morir por un PNJ (sin protocolo ni migración) | ✅ servidor |
 | **I-12** | Armas por clase, requisitos de nivel y dos manos (protocolo v16; esquema v6) | ✅ servidor y bots; cliente I-12b pendiente |
 | **I-13** | Ataques a distancia con línea de visión y `CombatEvent` (protocolo v17; esquema v6) | ✅ servidor y bots; cliente I-13b pendiente |
+| **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor y bots; cliente I-25b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1675,7 +1678,7 @@ Solo una muerte causada por un PNJ resta experiencia: el servidor calcula el pis
 `umbral del nivel actual × porcentaje / 100`, limitado a la experiencia que tenga el jugador. No se
 reduce el nivel y el nivel máximo no pierde experiencia. `Progress` notifica el cambio en el tick
 siguiente, y los informes muestran `muertes_penalizadas` y `xp_perdida_muerte`. No cambia el protocolo
-sin introducir su propio cambio de protocolo ni esquema; el protocolo actual es v17 y la persistencia sigue en v6.
+sin introducir su propio cambio de protocolo ni esquema; en aquella entrega el protocolo era v17/esquema v6; ahora son v18/v7.
 
 **Verificación y carga I-11:** build sin advertencias; `dotnet test Avelora.slnx` **666/666**. La carga
 prescrita de 50 bots `fight` durante 120 s (`-LogCorrections -NuevaBase`) conectó 50/50 y completó
@@ -1808,6 +1811,48 @@ cambian esas probabilidades.
 documentan en `docs/agentes/informes/I-13.md`; la suite tiene **709 pruebas**. El protocolo es v17,
 sin migración SQLite. La hoja de ruta mantiene pendiente el cliente I-13b.
 
+### Botín directo, dueño del botín y oro (I-25, protocolo v18, esquema v7)
+
+**Dueño.** El primer jugador que acierta marca al PNJ durante 10 s; sus siguientes golpes renuevan
+la marca. Si no vuelve a acertar en ese plazo, otro golpe aceptado puede cambiarla. Si el dueño ya no
+está en la zona, la marca pasa al último atacante presente; si ninguno está, no se entrega botín,
+oro ni experiencia. El dueño puede estar muerto mientras siga en la zona. La marca guarda un id de
+entidad: al desconectarse y volver se asigna otro, así que pierde el dueño anterior.
+
+**Reparto.** Los objetos que caben enteros entran directamente al inventario. Si una pila completa
+no cabe, cae entera al suelo reservada al dueño durante 30 s; después cualquiera puede recogerla con
+E. E sigue siendo necesaria para esos objetos caídos (y para objetos ajenos cuya reserva ya venció).
+No se divide una pila entre inventario y suelo. Los objetos caducan según `groundItemSeconds` y el
+límite de entidades del suelo sigue aplicándose.
+
+**Oro.** `npcs.json` declara `goldMin`/`goldMax` (0..10 000) por tirada, igual que los tipos de carga;
+cada tirada de un élite suma oro por separado (máximo actual por muerte: 5 × 10 000). El personaje
+no supera **1 000 000 000** de oro. El oro viaja en `Inventory` como `u32`, no en `Progress`: el botín
+cambia huecos y oro en la misma operación y el mensaje fiable mantiene ambos coherentes; `Progress`
+sigue siendo nivel, experiencia y vida. SQLite v7 añade `characters.gold` con valor inicial 0 y migra
+las bases anteriores.
+
+`LootGained` (tipo 29) lleva experiencia, oro y hasta 32 objetos con la marca `OnGround`. Es fiable y
+ordenado, se envía solo al dueño después del `Inventory` que ya refleja el cambio. Si no hubo ninguna
+recompensa efectiva, no se envía. Las métricas de simulación son `cambios_dueno`, `pnj_sin_dueno`,
+`oro_otorgado`, `botin_directo`, `botin_suelo_lleno`, `botin_lineas_recortadas` y
+`recogida_rech_reservada`; las de red `botin_msgs`/`botin_bytes`. Los bots contabilizan
+`botin_recibidos`, `botin_exp`, `botin_oro`, `botin_objetos`, `botin_al_suelo` y `oro_final`; equipan
+armas y armaduras al recibir el inventario, también cuando el objeto no necesitó recogida.
+
+La carga `fight` compara esos contadores con experiencia/oro de los bots, equipamiento, bytes y
+correcciones. I-25: build sin advertencias ni errores, **734/734** pruebas; carga de 50 bots/120 s,
+50/50 conectados, **0 correcciones**, tick p99 **0,039 ms**, peor tick **9,179 ms**, **25 638 577 B**
+enviados, 311 muertes/311 `botin_msgs`, 0 PNJ sin dueño, 577 objetos directos y 13 armas/77 armaduras
+equipadas. El servidor registró 1355 de oro y los bots 1353; también difieren en 18 XP y un mensaje
+(311 en servidor, 310 recibidos por bots). La última recompensa coincidió con el cierre escalonado de
+los bots (el servidor siguió hasta 160 s); la carga es consistente salvo ese mensaje final no observado
+por un bot. Sin `[corrección]` en los logs. Informe: `docs/agentes/informes/I-25.md`.
+
+**Trabajo futuro:** grupos con reparto estilo WoW (dueño = grupo, turnos o tiradas) y mostrar al
+cliente quién es el dueño de un PNJ. El cliente Unity no se actualizó: requiere I-25b para protocolo
+v18.
+
 ### Chat (I-07, protocolo v10)
 
 Hay un único canal de chat por zona. Un `ChatSend` válido se devuelve como `Chat` a **todos los
@@ -1897,6 +1942,6 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-13**, con persistencia SQLite en esquema v6 y protocolo v17.
-Quedan pendientes el cliente **I-13b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v7 y protocolo v18.
+Quedan pendientes el cliente **I-25b** y las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

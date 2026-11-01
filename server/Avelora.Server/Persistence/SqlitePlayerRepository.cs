@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using Avelora.Server.Items;
+using Avelora.Server.Entities;
 using Avelora.Server.Progression;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
@@ -23,7 +24,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 6;
+        public const int SchemaVersion = 7;
 
         private const string TimeFormat = "O";
 
@@ -142,24 +143,32 @@ namespace Avelora.Server.Persistence
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
+                        MigrateV6ToV7(connection);
                         break;
                     case 2:
                         MigrateV2ToV3(connection);
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
+                        MigrateV6ToV7(connection);
                         break;
                     case 3:
                         MigrateV3ToV4(connection);
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
+                        MigrateV6ToV7(connection);
                         break;
                     case 4:
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
+                        MigrateV6ToV7(connection);
                         break;
                     case 5:
                         MigrateV5ToV6(connection);
+                        MigrateV6ToV7(connection);
+                        break;
+                    case 6:
+                        MigrateV6ToV7(connection);
                         break;
                     case SchemaVersion:
                         break;
@@ -498,7 +507,7 @@ namespace Avelora.Server.Persistence
                 "level = @level, experience = @experience, health = @health, mana = @mana, " +
                 "zone_id = @zone, x = @x, y = @y, map_hash = @map, " +
                 "class_id = @class, alloc_str = @allocStr, alloc_dex = @allocDex, " +
-                "alloc_int = @allocInt, alloc_vit = @allocVit, updated_utc = @updated " +
+                "alloc_int = @allocInt, alloc_vit = @allocVit, gold = @gold, updated_utc = @updated " +
                 "WHERE id = @id AND account_id = @account AND deleted_utc IS NULL;";
             update.Parameters.AddWithValue("@level", character.Level);
             update.Parameters.AddWithValue("@experience", character.Experience);
@@ -513,6 +522,7 @@ namespace Avelora.Server.Persistence
             update.Parameters.AddWithValue("@allocDex", character.AllocDex);
             update.Parameters.AddWithValue("@allocInt", character.AllocInt);
             update.Parameters.AddWithValue("@allocVit", character.AllocVit);
+            update.Parameters.AddWithValue("@gold", character.Gold);
             update.Parameters.AddWithValue("@updated", FormatTime(character.UpdatedUtc));
             update.Parameters.AddWithValue("@id", character.Id);
             update.Parameters.AddWithValue("@account", character.AccountId);
@@ -650,6 +660,7 @@ CREATE TABLE characters (
     alloc_dex       INTEGER NOT NULL DEFAULT 0,
     alloc_int       INTEGER NOT NULL DEFAULT 0,
     alloc_vit       INTEGER NOT NULL DEFAULT 0,
+    gold            INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL
 );
@@ -857,7 +868,7 @@ CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE del
                     replace.ExecuteNonQuery();
                 }
 
-                SetUserVersion(connection, transaction, SchemaVersion);
+                SetUserVersion(connection, transaction, 6);
                 transaction.Commit();
             }
             finally
@@ -866,6 +877,18 @@ CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE del
                 pragma.CommandText = "PRAGMA foreign_keys=ON;";
                 pragma.ExecuteNonQuery();
             }
+        }
+
+        private static void MigrateV6ToV7(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                "ALTER TABLE characters ADD COLUMN gold INTEGER NOT NULL DEFAULT 0;";
+            command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, 7);
+            transaction.Commit();
         }
 
         private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
@@ -1053,7 +1076,7 @@ CREATE TABLE character_equipment (
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
                 "map_hash, created_utc, updated_utc, class_id, " +
-                "alloc_str, alloc_dex, alloc_int, alloc_vit " +
+                "alloc_str, alloc_dex, alloc_int, alloc_vit, gold " +
                 "FROM characters WHERE account_id = @account AND id = @id AND deleted_utc IS NULL LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@id", characterId);
@@ -1142,6 +1165,15 @@ CREATE TABLE character_equipment (
                 long rawAllocDex = reader.GetInt64(15);
                 long rawAllocInt = reader.GetInt64(16);
                 long rawAllocVit = reader.GetInt64(17);
+                long rawGold = reader.GetInt64(18);
+                int gold = rawGold < 0 ? 0 : rawGold > PlayerEntity.MaxGold
+                    ? PlayerEntity.MaxGold : (int)rawGold;
+                if (rawGold < 0 || rawGold > PlayerEntity.MaxGold)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió gold inválido del personaje " + reader.GetInt32(0) +
+                        " (" + rawGold + " → " + gold + ").");
+                }
                 long maxAllocated = (long)_levels.PointsPerLevel * level;
                 bool validAllocations = rawAllocStr >= 0 && rawAllocDex >= 0 && rawAllocInt >= 0 && rawAllocVit >= 0 &&
                     rawAllocStr <= int.MaxValue && rawAllocDex <= int.MaxValue && rawAllocInt <= int.MaxValue &&
@@ -1201,7 +1233,8 @@ CREATE TABLE character_equipment (
                     allocStr: allocStr,
                     allocDex: allocDex,
                     allocInt: allocInt,
-                    allocVit: allocVit);
+                    allocVit: allocVit,
+                    gold: gold);
 
             }
 

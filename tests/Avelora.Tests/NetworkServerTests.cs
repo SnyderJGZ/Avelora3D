@@ -871,6 +871,61 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Dueño_Recibe_Inventory_Y_Luego_LootGained_Fiable_Y_El_Otro_Jugador_No()
+        {
+            var npcs = new NpcCatalog
+            {
+                Types = new List<NpcType>
+                {
+                    new NpcType
+                    {
+                        Id = 2001, Name = "PNJ de red", Speed = 0, HalfWidth = 0.35f,
+                        HalfHeight = 0.35f, MaxHealth = 30, Experience = 20, Level = 1,
+                        RespawnSeconds = 10, AggroRadius = 0, LeashRadius = 8,
+                        AttackDamage = 1, AttackRange = 1, AttackCooldownSeconds = 1,
+                        GoldMin = 2, GoldMax = 2,
+                        Loot = new List<LootEntry> { new LootEntry { ItemId = 3001, Chance = 1, Min = 1, Max = 1 } },
+                    },
+                },
+                Spawners = new List<NpcSpawner>
+                {
+                    new NpcSpawner { TypeId = 2001, X = -1.5f, Y = -2.5f, Count = 1, WanderRadius = 1 },
+                },
+            };
+            using var harness = new Harness(withItems: true, npcs: npcs);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Connect(2);
+            harness.Handshake(2);
+            harness.Pump();
+            harness.Transport.Sent.Clear();
+
+            NpcEntity npc = Assert.IsType<NpcEntity>(harness.Zone.Entities.All.Single(entity => entity is NpcEntity));
+            npc.Health = 1;
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(new AttackMessage(npc.Id)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            int inventoryIndex = harness.Transport.Sent.FindIndex(sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.Gold == 2 && inventory.ItemIds.Contains((ushort)3001));
+            int lootIndex = harness.Transport.Sent.FindIndex(sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadLootGained(sent.Data, 0, sent.Data.Length, out LootGainedMessage loot) &&
+                loot.Gold == 2 && loot.Experience > 0 && loot.Items.Length == 1);
+
+            Assert.True(inventoryIndex >= 0, $"loot={lootIndex}, ataques={harness.Zone.AttacksOk}, rechObj={harness.Zone.RejectedAttackTarget}, rechDist={harness.Zone.RejectedAttackDistance}, hp={npc.Health}, owner={npc.LootOwnerId}, sinDueño={harness.Zone.NpcDeathsWithoutOwner}, mensajes={string.Join(',', harness.Transport.Sent.Select(s => s.Data[0]))}");
+            Assert.True(lootIndex > inventoryIndex);
+            Assert.Equal(DeliveryMode.ReliableOrdered, harness.Transport.Sent[lootIndex].Mode);
+            Assert.DoesNotContain(harness.Transport.Sent, sent => sent.ConnectionId == 2 &&
+                MessageCodec.TryReadLootGained(sent.Data, 0, sent.Data.Length, out _));
+            NetworkStats stats = harness.Server.Snapshot();
+            Assert.Equal(1, stats.LootGainedMessages);
+            Assert.Equal(harness.Transport.Sent[lootIndex].Data.Length, stats.LootGainedBytes);
+        }
+
+        [Fact]
         public void Repartir_Puntos_Se_Resuelve_En_El_Tick_Y_Devuelve_Stats()
         {
             using var harness = new Harness();

@@ -185,7 +185,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)17, ProtocolConstants.Version);
+            Assert.Equal((ushort)18, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -852,14 +852,93 @@ namespace Avelora.Tests
                 3,
                 new ushort[] { 3001, 0, 3002 },
                 new ushort[] { 99, 0, 1 },
-                equipment);
+                equipment,
+                123456);
             byte[] encodedInventory = MessageCodec.EncodeInventory(inventory);
             Assert.True(MessageCodec.TryReadInventory(
                 encodedInventory, 0, encodedInventory.Length, out InventoryMessage inventoryRead));
-            Assert.Equal(34, encodedInventory.Length);
+            Assert.Equal(38, encodedInventory.Length);
             Assert.Equal(inventory.ItemIds, inventoryRead.ItemIds);
             Assert.Equal(inventory.Counts, inventoryRead.Counts);
             Assert.Equal((ushort)3101, inventoryRead.Equipment[(int)EquipSlot.Weapon]);
+            Assert.Equal(123456u, inventoryRead.Gold);
+        }
+
+        [Fact]
+        public void LootGained_Admite_Cero_Y_32_Objetos_Y_Rechaza_Datos_Invalidos()
+        {
+            byte[] empty = MessageCodec.EncodeLootGained(new LootGainedMessage(12, 34, Array.Empty<LootItemEntry>()));
+            Assert.Equal(10, empty.Length);
+            Assert.True(MessageCodec.TryReadLootGained(empty, 0, empty.Length, out LootGainedMessage emptyRead));
+            Assert.Equal(12u, emptyRead.Experience);
+            Assert.Equal(34u, emptyRead.Gold);
+            Assert.Empty(emptyRead.Items);
+
+            var entries = new LootItemEntry[ProtocolConstants.MaxLootItemsPerMessage];
+            for (int i = 0; i < entries.Length; i++)
+            {
+                entries[i] = new LootItemEntry((ushort)(i + 1), ushort.MaxValue, i % 2 == 0);
+            }
+
+            byte[] full = MessageCodec.EncodeLootGained(new LootGainedMessage(123, 456, entries));
+            Assert.Equal(170, full.Length);
+            Assert.True(MessageCodec.TryReadLootGained(full, 0, full.Length, out LootGainedMessage fullRead));
+            Assert.Equal(entries.Length, fullRead.Items.Length);
+            Assert.Equal(ushort.MaxValue, fullRead.Items[0].Count);
+            Assert.True(fullRead.Items[0].OnGround);
+            Assert.False(fullRead.Items[1].OnGround);
+
+            byte[] invalid = (byte[])full.Clone();
+            invalid[9] = 33;
+            Assert.False(MessageCodec.TryReadLootGained(invalid, 0, invalid.Length, out _));
+            Assert.False(MessageCodec.TryReadLootGained(full, 0, full.Length - 1, out _));
+            var extraByte = new byte[full.Length + 1];
+            Array.Copy(full, extraByte, full.Length);
+            Assert.False(MessageCodec.TryReadLootGained(extraByte, 0, extraByte.Length, out _));
+            byte[] wrongType = new byte[10];
+            wrongType[0] = 28;
+            Assert.False(MessageCodec.TryReadLootGained(wrongType, 0, wrongType.Length, out _));
+
+            byte[] invalidItemId = (byte[])full.Clone();
+            invalidItemId[10] = 0;
+            invalidItemId[11] = 0;
+            Assert.False(MessageCodec.TryReadLootGained(invalidItemId, 0, invalidItemId.Length, out _));
+            byte[] invalidItemCount = (byte[])full.Clone();
+            invalidItemCount[12] = 0;
+            invalidItemCount[13] = 0;
+            Assert.False(MessageCodec.TryReadLootGained(invalidItemCount, 0, invalidItemCount.Length, out _));
+            byte[] invalidFlags = (byte[])full.Clone();
+            invalidFlags[14] = 2;
+            Assert.False(MessageCodec.TryReadLootGained(invalidFlags, 0, invalidFlags.Length, out _));
+
+            byte[] invalidGold = (byte[])empty.Clone();
+            invalidGold[5] = 0x01;
+            invalidGold[6] = 0x00;
+            invalidGold[7] = 0xCA;
+            invalidGold[8] = 0x9A;
+            Assert.False(MessageCodec.TryReadLootGained(invalidGold, 0, invalidGold.Length, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeLootGained(
+                new LootGainedMessage(0, 0, new LootItemEntry[33])));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeLootGained(
+                new LootGainedMessage(0, 0, new[] { new LootItemEntry(0, 1, false) })));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeLootGained(
+                new LootGainedMessage(0, ProtocolConstants.MaxGold + 1, Array.Empty<LootItemEntry>())));
+        }
+
+        [Fact]
+        public void Inventory_Rechaza_Oro_Que_Supera_El_Maximo()
+        {
+            Assert.Throws<ArgumentException>(() => MessageCodec.EncodeInventory(new InventoryMessage(
+                0, Array.Empty<ushort>(), Array.Empty<ushort>(), new ushort[ProtocolConstants.EquipSlotCount],
+                ProtocolConstants.MaxGold + 1)));
+
+            byte[] bytes = MessageCodec.EncodeInventory(new InventoryMessage(
+                0, Array.Empty<ushort>(), Array.Empty<ushort>(), new ushort[ProtocolConstants.EquipSlotCount]));
+            bytes[bytes.Length - 4] = 1;
+            bytes[bytes.Length - 3] = 0;
+            bytes[bytes.Length - 2] = 0xCA;
+            bytes[bytes.Length - 1] = 0x9A;
+            Assert.False(MessageCodec.TryReadInventory(bytes, 0, bytes.Length, out _));
         }
 
         [Fact]

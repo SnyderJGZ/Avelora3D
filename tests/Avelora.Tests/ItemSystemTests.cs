@@ -103,6 +103,25 @@ namespace Avelora.Tests
         private static PlayerEntity SpawnPlayer(Zone zone, float x = 5, float y = 5) =>
             zone.SpawnPlayer(1, new Vec2(x, y), new Vec2(0.4f, 0.4f), 8);
 
+        private static PlayerEntity FullLootOwner(Zone zone)
+        {
+            PlayerEntity owner = SpawnPlayer(zone);
+            for (int i = 0; i < owner.Inventory.Length; i++)
+            {
+                owner.Inventory[i] = new InventorySlot((ushort)(4000 + i), 1);
+            }
+
+            return owner;
+        }
+
+        private static void TagNpc(Zone zone, NpcEntity npc, PlayerEntity owner)
+        {
+            owner.LastAttackTick = -1;
+            var combat = new CombatSystem(new CombatSettings(0), Items());
+            combat.Tick(zone.Entities, new List<AttackIntent> { new AttackIntent(owner.Id, npc.Id) }, 0);
+            Assert.Equal(owner.Id, npc.LootOwnerId);
+        }
+
         private static GroundItemEntity[] GroundItems(Zone zone) =>
             zone.Entities.All.OfType<GroundItemEntity>().ToArray();
 
@@ -111,12 +130,16 @@ namespace Avelora.Tests
         {
             Zone first = NewZone(seed: 777, npcs: Npcs(2, Loot(min: 2, max: 3)));
             Zone second = NewZone(seed: 777, npcs: Npcs(2, Loot(min: 2, max: 3)));
+            PlayerEntity firstOwner = FullLootOwner(first);
+            PlayerEntity secondOwner = FullLootOwner(second);
             foreach (Zone zone in new[] { first, second })
             {
+                PlayerEntity owner = ReferenceEquals(zone, first) ? firstOwner : secondOwner;
                 for (int i = 0; i < zone.Entities.Count; i++)
                 {
                     if (zone.Entities[i] is NpcEntity npc)
                     {
+                        TagNpc(zone, npc, owner);
                         npc.Action = EntityAction.Dead;
                         npc.Health = 0;
                     }
@@ -158,8 +181,10 @@ namespace Avelora.Tests
                 },
             };
             Zone zone = NewZone(npcs: catalog, maxGroundItems: 1);
+            PlayerEntity owner = FullLootOwner(zone);
             NpcEntity npc = Assert.IsType<NpcEntity>(zone.Entities[0]);
             Assert.Equal(2, npc.LootRolls);
+            TagNpc(zone, npc, owner);
             npc.Action = EntityAction.Dead;
             npc.Health = 0;
 
@@ -177,11 +202,14 @@ namespace Avelora.Tests
                 npcs: Npcs(2, Loot()),
                 maxGroundItems: 1,
                 despawnTicks: 2);
+            PlayerEntity owner = FullLootOwner(zone);
             foreach (Entity entity in zone.Entities.All)
             {
                 if (entity is NpcEntity npc)
                 {
+                    TagNpc(zone, npc, owner);
                     npc.Action = EntityAction.Dead;
+                    npc.Health = 0;
                 }
             }
 
@@ -200,8 +228,9 @@ namespace Avelora.Tests
         public void Un_Pnj_Muerto_Deja_Un_Item_Visible_En_El_Area_De_Interes()
         {
             Zone zone = NewZone(npcs: Npcs(1, Loot(chance: 1)));
-            PlayerEntity player = SpawnPlayer(zone);
+            PlayerEntity player = FullLootOwner(zone);
             NpcEntity npc = Assert.IsType<NpcEntity>(zone.Entities.All[0]);
+            TagNpc(zone, npc, player);
             npc.Action = EntityAction.Dead;
             npc.Health = 0;
 

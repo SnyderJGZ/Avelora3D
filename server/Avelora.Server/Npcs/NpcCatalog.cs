@@ -56,6 +56,12 @@ namespace Avelora.Server.Npcs
         /// <summary>Experiencia que gana quien asesta el golpe mortal (0..1000000, I-06).</summary>
         public int Experience { get; set; } = -1;
 
+        /// <summary>Oro mínimo por tirada de botín (I-25).</summary>
+        public int GoldMin { get; set; }
+
+        /// <summary>Oro máximo por tirada de botín (I-25).</summary>
+        public int GoldMax { get; set; }
+
         /// <summary>Nivel del enemigo, obligatorio para escalar experiencia (I-08).</summary>
         public int Level { get; set; } = -1;
 
@@ -151,6 +157,10 @@ namespace Avelora.Server.Npcs
 
         /// <summary>Tope de enemigos por spawner.</summary>
         public const int MaxPerSpawner = 50;
+
+        public const int MaxGoldPerRoll = 10000;
+
+        public const int MaxLootEntries = 16;
 
         /// <summary>Velocidad máxima admitida para un tipo, en unidades por segundo.</summary>
         public const float MaxSpeed = 10f;
@@ -566,8 +576,22 @@ namespace Avelora.Server.Npcs
                 }
 
                 // Validar botín (I-04)
+                if (type.GoldMin < 0 || type.GoldMin > type.GoldMax || type.GoldMax > MaxGoldPerRoll)
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: " + where + " tiene goldMin=" + type.GoldMin + ", goldMax=" +
+                        type.GoldMax + "; debe ser 0 ≤ goldMin ≤ goldMax ≤ " + MaxGoldPerRoll + ".");
+                }
+
                 if (type.Loot != null)
                 {
+                    if (type.Loot.Count > MaxLootEntries)
+                    {
+                        throw new InvalidOperationException(
+                            "npcs.json: " + where + " tiene " + type.Loot.Count +
+                            " entradas de loot; máximo " + MaxLootEntries + ".");
+                    }
+
                     for (int l = 0; l < type.Loot.Count; l++)
                     {
                         LootEntry loot = type.Loot[l];

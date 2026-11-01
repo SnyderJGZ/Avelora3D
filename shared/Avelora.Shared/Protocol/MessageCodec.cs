@@ -42,6 +42,8 @@ namespace Avelora.Shared.Protocol
         private const int ProgressSize = 1 + 1 + 4 + 4 + 4;
         private const int CombatEventHeaderSize = 1 + 1;
         private const int CombatEventEntrySize = 4 + 4 + 2 + 1;
+        private const int LootGainedHeaderSize = 1 + 4 + 4 + 1;
+        private const int LootGainedEntrySize = 2 + 2 + 1;
         private const int StatsSize = 37;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
@@ -1319,7 +1321,12 @@ namespace Avelora.Shared.Protocol
                 }
             }
 
-            int size = 1 + 1 + (message.SlotCount * 4) + (ProtocolConstants.EquipSlotCount * 2);
+            if (message.Gold > ProtocolConstants.MaxGold)
+            {
+                throw new ArgumentException("El oro supera el máximo del protocolo.", nameof(message));
+            }
+
+            int size = 1 + 1 + (message.SlotCount * 4) + (ProtocolConstants.EquipSlotCount * 2) + 4;
             var buffer = new byte[size];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.Inventory);
@@ -1335,6 +1342,8 @@ namespace Avelora.Shared.Protocol
             {
                 writer.WriteUInt16(message.Equipment[i]);
             }
+
+            writer.WriteUInt32(message.Gold);
 
             return buffer;
         }
@@ -1367,7 +1376,7 @@ namespace Avelora.Shared.Protocol
                     return false;
                 }
 
-                int expectedSize = 1 + 1 + (slotCount * 4) + (ProtocolConstants.EquipSlotCount * 2);
+                int expectedSize = 1 + 1 + (slotCount * 4) + (ProtocolConstants.EquipSlotCount * 2) + 4;
                 if (length != expectedSize)
                 {
                     return false;
@@ -1397,12 +1406,18 @@ namespace Avelora.Shared.Protocol
                     equipment[i] = reader.ReadUInt16();
                 }
 
+                uint gold = reader.ReadUInt32();
+                if (gold > ProtocolConstants.MaxGold)
+                {
+                    return false;
+                }
+
                 if (reader.Remaining != 0)
                 {
                     return false;
                 }
 
-                message = new InventoryMessage(slotCount, itemIds, counts, equipment);
+                message = new InventoryMessage(slotCount, itemIds, counts, equipment, gold);
                 return true;
             }
             catch (ProtocolException)
@@ -1702,6 +1717,91 @@ namespace Avelora.Shared.Protocol
                 }
 
                 message = new CombatEventMessage(entries);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica el botín obtenido: 10 bytes fijos y 5 por objeto.</summary>
+        public static byte[] EncodeLootGained(in LootGainedMessage message)
+        {
+            LootItemEntry[] items = message.Items ?? Array.Empty<LootItemEntry>();
+            if (items.Length > ProtocolConstants.MaxLootItemsPerMessage ||
+                message.Gold > ProtocolConstants.MaxGold)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "LootGained excede sus límites.");
+            }
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (items[i].ItemId == 0 || items[i].Count == 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "LootGained contiene un objeto inválido.");
+                }
+            }
+
+            var buffer = new byte[LootGainedHeaderSize + (LootGainedEntrySize * items.Length)];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.LootGained);
+            writer.WriteUInt32(message.Experience);
+            writer.WriteUInt32(message.Gold);
+            writer.WriteByte((byte)items.Length);
+            for (int i = 0; i < items.Length; i++)
+            {
+                writer.WriteUInt16(items[i].ItemId);
+                writer.WriteUInt16(items[i].Count);
+                writer.WriteByte(items[i].OnGround ? (byte)1 : (byte)0);
+            }
+
+            return buffer;
+        }
+
+        /// <summary>Lee LootGained y valida cantidad, longitud, oro, objetos y banderas.</summary>
+        public static bool TryReadLootGained(
+            byte[] buffer, int offset, int length, out LootGainedMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.LootGained) || length < LootGainedHeaderSize)
+            {
+                return false;
+            }
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                uint experience = reader.ReadUInt32();
+                uint gold = reader.ReadUInt32();
+                int count = reader.ReadByte();
+                if (count > ProtocolConstants.MaxLootItemsPerMessage ||
+                    length != LootGainedHeaderSize + (LootGainedEntrySize * count) ||
+                    gold > ProtocolConstants.MaxGold)
+                {
+                    return false;
+                }
+
+                var items = new LootItemEntry[count];
+                for (int i = 0; i < count; i++)
+                {
+                    ushort itemId = reader.ReadUInt16();
+                    ushort itemCount = reader.ReadUInt16();
+                    byte flags = reader.ReadByte();
+                    if (itemId == 0 || itemCount == 0 || (flags & ~1) != 0)
+                    {
+                        return false;
+                    }
+
+                    items[i] = new LootItemEntry(itemId, itemCount, (flags & 1) != 0);
+                }
+
+                if (reader.Remaining != 0)
+                {
+                    return false;
+                }
+
+                message = new LootGainedMessage(experience, gold, items);
                 return true;
             }
             catch (ProtocolException)

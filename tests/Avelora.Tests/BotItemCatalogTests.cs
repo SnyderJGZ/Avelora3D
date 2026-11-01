@@ -88,6 +88,12 @@ namespace Avelora.Tests
             Assert.False(BotClient.IsAbusive(BotBehavior.Inventory));
             Assert.True(transport.PickupSent);
             Assert.True(transport.InventoryActionCount >= 1);
+            Assert.Equal(1, bot.LootMessages);
+            Assert.Equal(10, bot.LootExperience);
+            Assert.Equal(20, bot.LootGold);
+            Assert.Equal(2, bot.LootItems);
+            Assert.Equal(3, bot.LootOnGround);
+            Assert.Equal(123456u, bot.Gold);
         }
 
         [Fact]
@@ -601,7 +607,14 @@ namespace Avelora.Tests
                         1.5f, 10, 1.2f, 0.8f,
                         new[] { new ItemCatalogEntry(3001, ItemKind.Material, 99, 0, 0, 0, 0, "Colmillo") })));
                     _incoming.Enqueue(MessageCodec.EncodeInventory(new InventoryMessage(
-                        1, new ushort[] { 3001 }, new ushort[] { 2 })));
+                        1, new ushort[] { 3001 }, new ushort[] { 2 },
+                        new ushort[ProtocolConstants.EquipSlotCount], 123456)));
+                    _incoming.Enqueue(MessageCodec.EncodeLootGained(new LootGainedMessage(
+                        10, 20, new[]
+                        {
+                            new LootItemEntry(3001, 2, false),
+                            new LootItemEntry(3002, 3, true),
+                        })));
                     _incoming.Enqueue(MessageCodec.EncodeSnapshot(new SnapshotMessage(
                         1,
                         0,

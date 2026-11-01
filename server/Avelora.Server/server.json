@@ -17,6 +17,8 @@
   "classesPath": "classes.json",
   "inventorySlots": 20,
   "groundItemSeconds": 60,
+  "lootReserveSeconds": 30,
+  "lootTagSeconds": 10,
   "maxGroundItems": 500,
   "pickupRange": 1.5,
   "potionCooldownSeconds": 1.0,

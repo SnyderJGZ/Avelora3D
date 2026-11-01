@@ -143,6 +143,8 @@ namespace Avelora.Server.Net
         private long _combatEventEntriesSent;
         private long _combatEventBytes;
         private long _combatEventsTrimmed;
+        private long _lootGainedMessages;
+        private long _lootGainedBytes;
 
         public NetworkServer(
             Zone zone,
@@ -227,6 +229,7 @@ namespace Avelora.Server.Net
             _transport.Received += OnReceived;
             _zone.InventoryChanged += OnInventoryChanged;
             _zone.ProgressChanged += OnProgressChanged;
+            _zone.LootGained += OnLootGained;
             _zone.StatsChanged += OnStatsChanged;
         }
 
@@ -398,7 +401,9 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _combatEventMessages),
             Interlocked.Read(ref _combatEventEntriesSent),
             Interlocked.Read(ref _combatEventBytes),
-            Interlocked.Read(ref _combatEventsTrimmed));
+            Interlocked.Read(ref _combatEventsTrimmed),
+            Interlocked.Read(ref _lootGainedMessages),
+            Interlocked.Read(ref _lootGainedBytes));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -1547,7 +1552,8 @@ namespace Avelora.Server.Net
                 character.AllocDex,
                 character.AllocInt,
                 character.AllocVit,
-                character.Mana);
+                character.Mana,
+                character.Gold);
 
             for (int i = 0; i < character.InventoryItems.Length; i++)
             {
@@ -1731,6 +1737,7 @@ namespace Avelora.Server.Net
                 AllocVit = player.AllocVit,
                 Level = player.Level,
                 Experience = player.Experience,
+                Gold = player.Gold,
                 UpdatedUtc = DateTime.UtcNow,
             };
             if (_saves != null)
@@ -1775,6 +1782,18 @@ namespace Avelora.Server.Net
                     EncodeProgress(player),
                     DeliveryMode.ReliableOrdered,
                     disconnectAfter: false);
+            }
+        }
+
+        private void OnLootGained(PlayerEntity player, LootGainedMessage message)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
+                session.EntityId == player.Id)
+            {
+                byte[] bytes = MessageCodec.EncodeLootGained(message);
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _lootGainedMessages);
+                Interlocked.Add(ref _lootGainedBytes, bytes.Length);
             }
         }
 
@@ -2031,7 +2050,7 @@ namespace Avelora.Server.Net
             }
 
             return MessageCodec.EncodeInventory(new InventoryMessage(
-                (byte)count, itemIds, amounts, player.Equipment));
+                (byte)count, itemIds, amounts, player.Equipment, (uint)player.Gold));
         }
 
         private void ReleaseConnection(int connectionId)
@@ -2443,7 +2462,9 @@ namespace Avelora.Server.Net
             long combatEventMessages = 0,
             long combatEventEntries = 0,
             long combatEventBytes = 0,
-            long combatEventsTrimmed = 0)
+            long combatEventsTrimmed = 0,
+            long lootGainedMessages = 0,
+            long lootGainedBytes = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2473,6 +2494,8 @@ namespace Avelora.Server.Net
             CombatEventEntries = combatEventEntries;
             CombatEventBytes = combatEventBytes;
             CombatEventsTrimmed = combatEventsTrimmed;
+            LootGainedMessages = lootGainedMessages;
+            LootGainedBytes = lootGainedBytes;
             SaveLastError = saveLastError;
         }
 
@@ -2533,6 +2556,9 @@ namespace Avelora.Server.Net
         public long CombatEventEntries { get; }
         public long CombatEventBytes { get; }
         public long CombatEventsTrimmed { get; }
+
+        public long LootGainedMessages { get; }
+        public long LootGainedBytes { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

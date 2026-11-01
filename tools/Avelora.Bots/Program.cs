@@ -228,6 +228,12 @@ namespace Avelora.Bots
             long sentRangedAttacks = 0;
             long attacksSkippedLineOfSight = 0;
             long combatEventsReceived = 0;
+            long lootMessages = 0;
+            long lootExperience = 0;
+            long lootGold = 0;
+            long lootItems = 0;
+            long lootOnGround = 0;
+            long finalGold = 0;
             long deathsSeen = 0;
             long elitesSeen = 0;
             long ownDeaths = 0;
@@ -279,6 +285,12 @@ namespace Avelora.Bots
                 sentRangedAttacks += bot.SentRangedAttacks;
                 attacksSkippedLineOfSight += bot.AttacksSkippedLineOfSight;
                 combatEventsReceived += bot.CombatEventsReceived;
+                lootMessages += bot.LootMessages;
+                lootExperience += bot.LootExperience;
+                lootGold += bot.LootGold;
+                lootItems += bot.LootItems;
+                lootOnGround += bot.LootOnGround;
+                finalGold += bot.Gold;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
                 ownDeaths += bot.OwnDeaths;
@@ -353,7 +365,13 @@ namespace Avelora.Bots
                         "      combate: ataques=" + bot.SentAttacks +
                         " ataques_distancia_enviados=" + bot.SentRangedAttacks +
                         " ataques_omitidos_vision=" + bot.AttacksSkippedLineOfSight +
-                        " combate_recibidos=" + bot.CombatEventsReceived +
+                         " combate_recibidos=" + bot.CombatEventsReceived +
+                         " botin_recibidos=" + bot.LootMessages +
+                         " botin_exp=" + bot.LootExperience +
+                         " botin_oro=" + bot.LootGold +
+                         " botin_objetos=" + bot.LootItems +
+                         " botin_al_suelo=" + bot.LootOnGround +
+                         " oro_final=" + bot.Gold +
                         " muertes_vistas=" + bot.DeathsSeen +
                         " elites_vistos=" + bot.ElitesSeen +
                         " recogidas=" + bot.SentPickups +
@@ -423,6 +441,10 @@ namespace Avelora.Bots
                     "ataques_distancia_enviados=" + sentRangedAttacks + ", " +
                     "ataques_omitidos_vision=" + attacksSkippedLineOfSight + ", " +
                     "combate_recibidos=" + combatEventsReceived + ", " +
+                    "botin_recibidos=" + lootMessages + ", " +
+                    "botin_exp=" + lootExperience + ", botin_oro=" + lootGold + ", " +
+                    "botin_objetos=" + lootItems + ", botin_al_suelo=" + lootOnGround + ", " +
+                    "oro_final=" + finalGold + ", " +
                     deathsSeen + " muertes vistas, elites_vistos=" + elitesSeen + ", " +
                     sentPickups + " recogidas, " +
                     sentPotions + " pociones usadas, " + equipped + " armas equipadas, " +

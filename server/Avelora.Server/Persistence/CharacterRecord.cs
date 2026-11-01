@@ -33,7 +33,8 @@ namespace Avelora.Server.Persistence
             int allocDex = 0,
             int allocInt = 0,
             int allocVit = 0,
-            ushort[]? equipment = null)
+            ushort[]? equipment = null,
+            int gold = 0)
         {
             if (id <= 0)
             {
@@ -70,6 +71,7 @@ namespace Avelora.Server.Persistence
             AllocDex = allocDex;
             AllocInt = allocInt;
             AllocVit = allocVit;
+            Gold = gold;
         }
 
         public int Id { get; init; }
@@ -131,6 +133,7 @@ namespace Avelora.Server.Persistence
         public int AllocDex { get; init; }
         public int AllocInt { get; init; }
         public int AllocVit { get; init; }
+        public int Gold { get; init; }
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

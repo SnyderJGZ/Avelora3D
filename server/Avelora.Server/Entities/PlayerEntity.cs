@@ -31,6 +31,11 @@ namespace Avelora.Server.Entities
         /// <summary>Identificador del personaje (en la Etapa F vendrá de la base de datos).</summary>
         public int CharacterId { get; }
 
+        /// <summary>Oro del personaje.</summary>
+        public int Gold { get; set; }
+
+        public const int MaxGold = (int)ProtocolConstants.MaxGold;
+
         /// <summary>Nombre usado para identificar al personaje en avisos de reparación de equipo.</summary>
         public string CharacterName { get; set; } = string.Empty;
 

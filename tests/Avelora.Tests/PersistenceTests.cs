@@ -623,7 +623,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 Assert.Equal("ANA3", Assert.Single(migrated.ListCharacters(secondAccount)).Name);
                 Assert.Equal("Bad_Name", Assert.Single(migrated.ListCharacters(thirdAccount)).Name);
                 Assert.Equal("Ana2", Assert.Single(migrated.ListCharacters(fourthAccount)).Name);
-                Assert.Equal(6, QuerySchemaVersion());
+                Assert.Equal(7, QuerySchemaVersion());
             }
             finally
             {
@@ -651,7 +651,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 migrated.Initialize();
                 CharacterRecord character = Assert.Single(migrated.ListCharacters(accountId));
                 Assert.Equal("único", ReadNameKey(character.Id));
-                Assert.Equal(6, QuerySchemaVersion());
+                Assert.Equal(7, QuerySchemaVersion());
             }
 
             Assert.True(IndexIsPartialAndUnique());
@@ -730,6 +730,61 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             Assert.Equal(4, loaded.Level);
             Assert.Equal(275, loaded.Experience);
             Assert.Equal(SqlitePlayerRepository.SchemaVersion, QuerySchemaVersion());
+        }
+
+        [Fact]
+        public void Oro_Se_Guarda_Se_Carga_Y_Se_Recorta_Al_Rango_Permitido()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            int accountId = repository.Login("oro", "secreto1", "invita", "invita").AccountId;
+            CharacterRecord character = CreateOrLoadCharacterForTest(
+                repository, accountId, "Aureo", 1, new Vec2(1.5f, 1.5f), NewHash(76))!;
+
+            repository.SaveCharacter(character with { Gold = 12345 });
+            Assert.Equal(12345, Assert.Single(repository.ListCharacters(accountId)).Gold);
+
+            void SetGold(long gold)
+            {
+                using var connection = new SqliteConnection("Data Source=" + DatabasePath);
+                connection.Open();
+                using SqliteCommand update = connection.CreateCommand();
+                update.CommandText = "UPDATE characters SET gold=@gold WHERE id=@id;";
+                update.Parameters.AddWithValue("@gold", gold);
+                update.Parameters.AddWithValue("@id", character.Id);
+                update.ExecuteNonQuery();
+            }
+
+            SetGold(-1);
+            Assert.Equal(0, Assert.Single(repository.ListCharacters(accountId)).Gold);
+            SetGold((long)PlayerEntity.MaxGold + 1);
+            Assert.Equal(PlayerEntity.MaxGold, Assert.Single(repository.ListCharacters(accountId)).Gold);
+        }
+
+        [Fact]
+        public void Migracion_V6_A_V7_Añade_Oro_Cero_Y_Conserva_El_Personaje()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            int accountId = repository.Login("migrav6", "secreto1", "invita", "invita").AccountId;
+            CharacterRecord character = CreateOrLoadCharacterForTest(
+                repository, accountId, "Persistido", 1, new Vec2(1.5f, 1.5f), NewHash(77))!;
+            repository.SaveCharacter(character with { Level = 4, Gold = 2345 });
+
+            using (var connection = new SqliteConnection("Data Source=" + DatabasePath))
+            {
+                connection.Open();
+                using SqliteCommand downgrade = connection.CreateCommand();
+                downgrade.CommandText = "ALTER TABLE characters DROP COLUMN gold; PRAGMA user_version=6;";
+                downgrade.ExecuteNonQuery();
+            }
+
+            using var migrated = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            migrated.Initialize();
+            CharacterRecord restored = Assert.Single(migrated.ListCharacters(accountId));
+            Assert.Equal(4, restored.Level);
+            Assert.Equal(0, restored.Gold);
+            Assert.Equal(7, QuerySchemaVersion());
         }
 
         [Fact]
@@ -987,7 +1042,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(6, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(7, Convert.ToInt32(version.ExecuteScalar()));
             using SqliteCommand characters = verify.CreateCommand();
             characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
             characters.Parameters.AddWithValue("@id", characterId);
@@ -1049,7 +1104,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(6, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(7, Convert.ToInt32(version.ExecuteScalar()));
         }
 
         [Fact]
@@ -1119,7 +1174,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
             }
 
-            Assert.Equal(6, QuerySchemaVersion());
+            Assert.Equal(7, QuerySchemaVersion());
         }
 
         [Fact]
@@ -1155,7 +1210,7 @@ PRAGMA user_version = 4;";
             CharacterRecord loaded = CreateOrLoadCharacterForTest(migrated,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
 
-            Assert.Equal(6, QuerySchemaVersion());
+            Assert.Equal(7, QuerySchemaVersion());
             Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
             Assert.All(loaded.Equipment.Skip(1), itemId => Assert.Equal((ushort)0, itemId));
         }
@@ -1671,6 +1726,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             first.AllocInt = 2;
             first.Health = 75;
             first.Mana = 95;
+            first.Gold = 12345;
 
             harness.Connect(2);
             harness.Handshake(2, "dev", "avelora-dev", "dev");
@@ -1687,6 +1743,10 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             Assert.Equal(2, reconnected.AllocInt);
             Assert.Equal(75, reconnected.Health);
             Assert.Equal(95, reconnected.Mana);
+            Assert.Equal(12345, reconnected.Gold);
+            Assert.Contains(harness.Transport.Sent, sent => sent.ConnectionId == 2 &&
+                MessageCodec.TryReadInventory(sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
+                inventory.Gold == 12345);
             Assert.True(harness.Saves.TryGetLatest(first.CharacterId, out CharacterRecord latest));
             Assert.Equal((ushort)3101, latest.Equipment[(int)EquipSlot.Weapon]);
             Assert.Equal((ushort)3301, latest.Equipment[(int)EquipSlot.Head]);
@@ -1695,6 +1755,7 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
             Assert.Equal(275, latest.Experience);
             Assert.Equal(2, latest.ClassId);
             Assert.Equal(2, latest.AllocInt);
+            Assert.Equal(12345, latest.Gold);
         }
 
         private int QuerySchemaVersion()

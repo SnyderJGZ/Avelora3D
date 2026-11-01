@@ -6,6 +6,7 @@ using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Simulation
 {
@@ -18,7 +19,10 @@ namespace Avelora.Server.Simulation
         private readonly long _groundItemTicks;
         private readonly float _pickupRange;
         private readonly long _potionCooldownTicks;
+        private readonly long _lootReserveTicks;
         private readonly List<GroundItemEntity> _expired = new List<GroundItemEntity>(32);
+        private readonly List<LootItemEntry> _lootItems =
+            new List<LootItemEntry>(ProtocolConstants.MaxLootItemsPerMessage);
         private int _groundItemCount;
 
         public ItemSystem(
@@ -28,7 +32,8 @@ namespace Avelora.Server.Simulation
             long groundItemTicks,
             float pickupRange,
             float rangeTolerance,
-            long potionCooldownTicks)
+            long potionCooldownTicks,
+            long lootReserveTicks = 600)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
             _random = random ?? throw new ArgumentNullException(nameof(random));
@@ -36,6 +41,7 @@ namespace Avelora.Server.Simulation
             _groundItemTicks = groundItemTicks;
             _pickupRange = pickupRange + rangeTolerance;
             _potionCooldownTicks = potionCooldownTicks;
+            _lootReserveTicks = lootReserveTicks;
         }
 
         public long ItemsDropped { get; private set; }
@@ -84,6 +90,11 @@ namespace Avelora.Server.Simulation
         public long RejectedDestroyCount { get; private set; }
         public long RejectedDestroyItem { get; private set; }
         public int GroundItemCount => _groundItemCount;
+        public IReadOnlyList<LootItemEntry> LastLootItems => _lootItems;
+        public long ItemsLootedDirect { get; private set; }
+        public long ItemsLootedToGround { get; private set; }
+        public long LootLinesTrimmed { get; private set; }
+        public long RejectedPickupReserved { get; private set; }
 
         /// <summary>Procesa caducidades y acciones en el orden en que llegaron.</summary>
         public void Tick(Zone zone, List<ItemAction> actions, long tick, StatsSystem? stats = null)
@@ -111,7 +122,7 @@ namespace Avelora.Server.Simulation
                 ItemAction action = actions[i];
                 if (action.Kind == ItemActionKind.PickUp)
                 {
-                    ResolvePickup(zone, action.PlayerEntityId, action.ItemEntityId);
+                    ResolvePickup(zone, action.PlayerEntityId, action.ItemEntityId, tick);
                 }
                 else if (action.Kind == ItemActionKind.UseItem)
                 {
@@ -141,20 +152,44 @@ namespace Avelora.Server.Simulation
         }
 
         /// <summary>Tira el botín de un enemigo cuando su muerte se registra en este tick.</summary>
-        public void DropLoot(Zone zone, NpcEntity npc, long tick)
+        public int DropLoot(Zone zone, NpcEntity npc, PlayerEntity owner, long tick)
         {
-            if (zone.Npcs?.FindType(npc.TypeId) is not NpcType type || type.Loot == null)
+            _lootItems.Clear();
+            if (zone.Npcs?.FindType(npc.TypeId) is not NpcType type)
             {
-                return;
+                return 0;
             }
 
+            long gold = 0;
+            bool inventoryChanged = false;
             for (int roll = 0; roll < npc.LootRolls; roll++)
             {
+                if (type.GoldMax > 0)
+                {
+                    gold += _random.Next(type.GoldMin, type.GoldMax + 1);
+                }
+
+                if (type.Loot == null)
+                {
+                    continue;
+                }
+
                 for (int i = 0; i < type.Loot.Count; i++)
                 {
                     LootEntry loot = type.Loot[i];
                     if (_random.NextDouble() >= loot.Chance)
                     {
+                        continue;
+                    }
+
+                    int count = _random.Next(loot.Min, loot.Max + 1);
+                    ItemType? itemType = _catalog.Find(loot.ItemId);
+                    if (itemType != null && CanFit(owner.Inventory, loot.ItemId, count, itemType.MaxStack))
+                    {
+                        AddToInventory(owner.Inventory, loot.ItemId, count, itemType.MaxStack);
+                        ItemsLootedDirect++;
+                        inventoryChanged = true;
+                        AddLootLine(loot.ItemId, count, onGround: false);
                         continue;
                     }
 
@@ -164,7 +199,6 @@ namespace Avelora.Server.Simulation
                         continue;
                     }
 
-                    int count = _random.Next(loot.Min, loot.Max + 1);
                     var item = new GroundItemEntity(
                         zone.Ids.Allocate(),
                         loot.ItemId,
@@ -172,6 +206,8 @@ namespace Avelora.Server.Simulation
                         tick + _groundItemTicks)
                     {
                         MapId = zone.Id,
+                        OwnerPlayerId = owner.Id,
+                        ReservedUntilTick = tick + _lootReserveTicks,
                         Position = new Vec2(
                             npc.Position.X + ((float)_random.NextDouble() * 0.8f) - 0.4f,
                             npc.Position.Y + ((float)_random.NextDouble() * 0.8f) - 0.4f),
@@ -180,11 +216,46 @@ namespace Avelora.Server.Simulation
                     zone.AddEntity(item);
                     _groundItemCount++;
                     ItemsDropped++;
+                    ItemsLootedToGround++;
+                    AddLootLine(loot.ItemId, count, onGround: true);
                 }
+            }
+
+            int oldGold = owner.Gold;
+            owner.Gold = (int)Math.Min((long)oldGold + gold, PlayerEntity.MaxGold);
+            if (inventoryChanged || owner.Gold != oldGold)
+            {
+                zone.NotifyInventoryChanged(owner);
+            }
+
+            return owner.Gold - oldGold;
+        }
+
+        private void AddLootLine(int itemId, int count, bool onGround)
+        {
+            ushort id = (ushort)itemId;
+            for (int i = 0; i < _lootItems.Count; i++)
+            {
+                LootItemEntry current = _lootItems[i];
+                if (current.ItemId == id && current.OnGround == onGround)
+                {
+                    int total = Math.Min(ushort.MaxValue, current.Count + count);
+                    _lootItems[i] = new LootItemEntry(id, (ushort)total, onGround);
+                    return;
+                }
+            }
+
+            if (_lootItems.Count < ProtocolConstants.MaxLootItemsPerMessage)
+            {
+                _lootItems.Add(new LootItemEntry(id, (ushort)Math.Min(ushort.MaxValue, count), onGround));
+            }
+            else
+            {
+                LootLinesTrimmed++;
             }
         }
 
-        private void ResolvePickup(Zone zone, int playerId, int itemId)
+        private void ResolvePickup(Zone zone, int playerId, int itemId, long tick)
         {
             if (!zone.Entities.TryGet(playerId, out Entity? playerEntity) ||
                 playerEntity is not PlayerEntity player || player.IsDead || player.Health <= 0)
@@ -196,6 +267,12 @@ namespace Avelora.Server.Simulation
             if (!zone.Entities.TryGet(itemId, out Entity? itemEntity) || itemEntity is not GroundItemEntity item)
             {
                 RejectedPickupItem++;
+                return;
+            }
+
+            if (item.OwnerPlayerId > 0 && item.OwnerPlayerId != player.Id && tick < item.ReservedUntilTick)
+            {
+                RejectedPickupReserved++;
                 return;
             }
 

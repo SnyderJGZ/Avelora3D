@@ -19,7 +19,7 @@ namespace Avelora.Tests
             Assert.Equal((byte)7, (byte)EquipSlot.Ring);
             Assert.Equal((byte)8, (byte)EquipSlot.Neck);
             Assert.Equal((byte)9, (byte)EquipSlot.Accessory);
-            Assert.Equal((ushort)17, ProtocolConstants.Version);
+            Assert.Equal((ushort)18, ProtocolConstants.Version);
             Assert.Equal(10, ProtocolConstants.EquipSlotCount);
         }
 
@@ -73,7 +73,7 @@ namespace Avelora.Tests
             var message = new InventoryMessage(1, new ushort[] { 3001 }, new ushort[] { 2 }, equipment);
             byte[] bytes = MessageCodec.EncodeInventory(message);
 
-            Assert.Equal(26, bytes.Length);
+            Assert.Equal(30, bytes.Length);
             Assert.True(MessageCodec.TryReadInventory(bytes, 0, bytes.Length, out InventoryMessage decoded));
             Assert.Equal(equipment, decoded.Equipment);
             Assert.Equal((ushort)3101, decoded.Equipment[(int)EquipSlot.Weapon]);

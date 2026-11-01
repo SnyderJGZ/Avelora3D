@@ -79,6 +79,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Ataques acertados cuyo alcance base supera dos tiles.</summary>
         public long AttacksRanged { get; private set; }
 
+        /// <summary>Cambios de una marca de botín ya asignada a otro jugador.</summary>
+        public long LootOwnerChanges { get; private set; }
+
         /// <summary>Aplica las intenciones del tick y limpia las acciones que ya han caducado.</summary>
         /// <param name="entities">Entidades vivas de la zona.</param>
         /// <param name="intents">Ataques que la red dejó en la cola, en orden de llegada.</param>
@@ -188,6 +191,24 @@ namespace Avelora.Server.Simulation
             int defense = damageType == "physical" ? target.Defense : target.MagicResist;
             damage = CharacterStats.MitigateDamage(damage, defense);
             target.Health = Math.Max(0, target.Health - damage);
+
+            target.LastAttackerPlayerId = attacker.Id;
+            if (target.LootOwnerId == attacker.Id)
+            {
+                target.LootOwnerLastHitTick = tick;
+            }
+            else if (target.LootOwnerId <= 0 ||
+                tick - target.LootOwnerLastHitTick >= _settings.LootTagTimeoutTicks ||
+                !entities.TryGet(target.LootOwnerId, out Entity? ownerEntity) || ownerEntity is not PlayerEntity)
+            {
+                if (target.LootOwnerId > 0)
+                {
+                    LootOwnerChanges++;
+                }
+
+                target.LootOwnerId = attacker.Id;
+                target.LootOwnerLastHitTick = tick;
+            }
 
             if (target.Health == 0)
             {

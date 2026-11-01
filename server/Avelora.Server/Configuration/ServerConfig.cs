@@ -98,6 +98,12 @@ namespace Avelora.Server.Configuration
         /// <summary>Segundos que un objeto permanece en el suelo antes de caducar (I-04).</summary>
         public double GroundItemSeconds { get; set; } = 60d;
 
+        /// <summary>Segundos durante los que el botín caído queda reservado a su dueño (I-25).</summary>
+        public double LootReserveSeconds { get; set; } = 30d;
+
+        /// <summary>Segundos sin golpear para que cambie el dueño del botín (I-25).</summary>
+        public double LootTagSeconds { get; set; } = 10d;
+
         /// <summary>Máximo de objetos en el suelo por zona (I-04).</summary>
         public int MaxGroundItems { get; set; } = 500;
 
@@ -556,6 +562,19 @@ namespace Avelora.Server.Configuration
             {
                 throw new InvalidOperationException(
                     "groundItemSeconds debe estar entre 5 y 3600.");
+            }
+
+            if (!(LootTagSeconds >= 1d) || LootTagSeconds > 120d ||
+                double.IsNaN(LootTagSeconds) || double.IsInfinity(LootTagSeconds))
+            {
+                throw new InvalidOperationException("lootTagSeconds debe estar entre 1 y 120.");
+            }
+
+            if (!(LootReserveSeconds >= 0d) || LootReserveSeconds > GroundItemSeconds ||
+                double.IsNaN(LootReserveSeconds) || double.IsInfinity(LootReserveSeconds))
+            {
+                throw new InvalidOperationException(
+                    "lootReserveSeconds debe estar entre 0 y groundItemSeconds.");
             }
 
             if (MaxGroundItems < 1 || MaxGroundItems > 5000)

@@ -28,12 +28,18 @@ namespace Avelora.Shared.Protocol
         /// de acción de <c>EntityState</c> también transporta el rango de los PNJ; I-21 a 14 por
         /// trocear <c>ItemCatalog</c> y retirar <c>DropItem</c>; I-10 a 15 por el saludo sin
         /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel;
-        /// I-13 a 17 por CombatEvent.
+        /// I-13 a 17 por CombatEvent e I-25 a 18 por el oro del inventario y LootGained.
         /// </summary>
-        public const ushort Version = 17;
+        public const ushort Version = 18;
 
         /// <summary>Máximo de eventos de combate en un mensaje (I-13).</summary>
         public const int MaxCombatEventsPerMessage = 64;
+
+        /// <summary>Máximo de objetos que informa un mensaje LootGained (I-25).</summary>
+        public const int MaxLootItemsPerMessage = 32;
+
+        /// <summary>Máximo de oro que puede tener un personaje (I-25).</summary>
+        public const uint MaxGold = 1_000_000_000;
 
         /// <summary>Máximo de personajes que puede transportar una lista por cuenta (I-10).</summary>
         public const int MaxCharactersPerAccount = 10;

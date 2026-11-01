@@ -22,5 +22,11 @@ namespace Avelora.Server.Entities
 
         /// <summary>Primer tick en el que deja de existir.</summary>
         public long DespawnTick { get; }
+
+        /// <summary>Dueño temporal de un objeto caído por inventario lleno; -1 significa sin reserva.</summary>
+        public int OwnerPlayerId { get; init; } = -1;
+
+        /// <summary>Primer tick en el que otro jugador puede recoger el objeto.</summary>
+        public long ReservedUntilTick { get; init; }
     }
 }

@@ -767,16 +767,22 @@ namespace Avelora.Shared.Protocol
     public readonly struct InventoryMessage
     {
         public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts)
-            : this(slotCount, itemIds, counts, new ushort[ProtocolConstants.EquipSlotCount])
+            : this(slotCount, itemIds, counts, new ushort[ProtocolConstants.EquipSlotCount], 0)
         {
         }
 
         public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort[] equipment)
+            : this(slotCount, itemIds, counts, equipment, 0)
+        {
+        }
+
+        public InventoryMessage(byte slotCount, ushort[] itemIds, ushort[] counts, ushort[] equipment, uint gold)
         {
             SlotCount = slotCount;
             ItemIds = itemIds ?? Array.Empty<ushort>();
             Counts = counts ?? Array.Empty<ushort>();
             Equipment = equipment ?? Array.Empty<ushort>();
+            Gold = gold;
         }
 
         /// <summary>Número de huecos del inventario (≤ 60).</summary>
@@ -790,6 +796,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Objeto equipado por hueco, en orden de <see cref="EquipSlot"/>; 0 significa vacío.</summary>
         public ushort[] Equipment { get; }
+
+        /// <summary>Oro actual del personaje.</summary>
+        public uint Gold { get; }
     }
 
     /// <summary>Progreso del personaje (I-06), enviado de forma fiable y ordenada.</summary>
@@ -924,5 +933,35 @@ namespace Avelora.Shared.Protocol
         public CombatEventMessage(CombatEventEntry[] entries) => Entries = entries ?? Array.Empty<CombatEventEntry>();
 
         public CombatEventEntry[] Entries { get; }
+    }
+
+    /// <summary>Objeto incluido en el botín de una muerte.</summary>
+    public readonly struct LootItemEntry
+    {
+        public LootItemEntry(ushort itemId, ushort count, bool onGround)
+        {
+            ItemId = itemId;
+            Count = count;
+            OnGround = onGround;
+        }
+
+        public ushort ItemId { get; }
+        public ushort Count { get; }
+        public bool OnGround { get; }
+    }
+
+    /// <summary>Resumen de botín recibido por matar un PNJ.</summary>
+    public readonly struct LootGainedMessage
+    {
+        public LootGainedMessage(uint experience, uint gold, LootItemEntry[] items)
+        {
+            Experience = experience;
+            Gold = gold;
+            Items = items ?? Array.Empty<LootItemEntry>();
+        }
+
+        public uint Experience { get; }
+        public uint Gold { get; }
+        public LootItemEntry[] Items { get; }
     }
 }

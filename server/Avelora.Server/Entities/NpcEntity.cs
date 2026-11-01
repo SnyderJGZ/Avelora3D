@@ -176,6 +176,15 @@ namespace Avelora.Server.Entities
         /// <summary>Id del jugador que dio el golpe mortal, o -1 si no murió por combate de jugador.</summary>
         public int KillerPlayerId { get; internal set; } = -1;
 
+        /// <summary>Jugador que conserva la marca de botín del PNJ.</summary>
+        public int LootOwnerId { get; internal set; } = -1;
+
+        /// <summary>Último tick en que el dueño actual le acertó.</summary>
+        public long LootOwnerLastHitTick { get; internal set; }
+
+        /// <summary>Último jugador con un golpe aceptado, para resolver dueños ausentes.</summary>
+        public int LastAttackerPlayerId { get; internal set; } = -1;
+
         /// <summary>Estado actual de la IA (I-03).</summary>
         public NpcAiState AiState { get; set; } = NpcAiState.Wander;
 

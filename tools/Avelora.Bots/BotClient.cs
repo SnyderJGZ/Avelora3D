@@ -213,6 +213,11 @@ namespace Avelora.Bots
         private long _sentRangedAttacks;
         private long _attacksSkippedLineOfSight;
         private long _combatEventsReceived;
+        private long _lootMessages;
+        private long _lootExperience;
+        private long _lootGold;
+        private long _lootItems;
+        private long _lootOnGround;
         private long _sentChat;
         private long _receivedChat;
         private long _deathsSeen;
@@ -243,6 +248,7 @@ namespace Avelora.Bots
         private long _sentPotions;
         private long _equipped;
         private byte _level = 1;
+        private uint _gold;
         private bool _hasProgress;
         private long _levelUps;
         private byte _maxLevelReached = 1;
@@ -433,6 +439,13 @@ namespace Avelora.Bots
         public long AttacksSkippedLineOfSight => Interlocked.Read(ref _attacksSkippedLineOfSight);
 
         public long CombatEventsReceived => Interlocked.Read(ref _combatEventsReceived);
+
+        public long LootMessages => Interlocked.Read(ref _lootMessages);
+        public long LootExperience => Interlocked.Read(ref _lootExperience);
+        public long LootGold => Interlocked.Read(ref _lootGold);
+        public long LootItems => Interlocked.Read(ref _lootItems);
+        public long LootOnGround => Interlocked.Read(ref _lootOnGround);
+        public uint Gold => _gold;
 
         /// <summary>Mensajes de chat enviados por el comportamiento <c>chat</c> (I-07).</summary>
         public long SentChat => Interlocked.Read(ref _sentChat);
@@ -985,6 +998,7 @@ namespace Avelora.Bots
             _lastAttackTick = 0;
             _inventoryItemIds = Array.Empty<ushort>();
             _inventoryCounts = Array.Empty<ushort>();
+            _gold = 0;
             _equipmentItemIds = new ushort[ProtocolConstants.EquipSlotCount];
             _itemCatalog.Clear();
             _equippedItemId = 0;
@@ -1432,6 +1446,26 @@ namespace Avelora.Bots
 
         private void OnReceived(int connectionId, byte[] buffer, int offset, int length)
         {
+            if (MessageCodec.TryReadLootGained(buffer, offset, length, out LootGainedMessage loot))
+            {
+                Interlocked.Increment(ref _lootMessages);
+                Interlocked.Add(ref _lootExperience, loot.Experience);
+                Interlocked.Add(ref _lootGold, loot.Gold);
+                for (int i = 0; i < loot.Items.Length; i++)
+                {
+                    if (loot.Items[i].OnGround)
+                    {
+                        Interlocked.Add(ref _lootOnGround, loot.Items[i].Count);
+                    }
+                    else
+                    {
+                        Interlocked.Add(ref _lootItems, loot.Items[i].Count);
+                    }
+                }
+
+                return;
+            }
+
             if (MessageCodec.TryReadCombatEvent(buffer, offset, length, out _))
             {
                 Interlocked.Increment(ref _combatEventsReceived);
@@ -1592,6 +1626,7 @@ namespace Avelora.Bots
                 _inventoryCounts = inventory.Counts;
                 _equipmentItemIds = inventory.Equipment;
                 _equippedItemId = _equipmentItemIds[0];
+                _gold = inventory.Gold;
 
                 if (_pendingEquipItemId != 0)
                 {

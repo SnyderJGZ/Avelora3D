@@ -60,10 +60,22 @@ namespace Avelora.Tests
             Assert.Equal("classes.json", config.ClassesPath);
             Assert.Equal(20, config.InventorySlots);
             Assert.Equal(60d, config.GroundItemSeconds);
+            Assert.Equal(30d, config.LootReserveSeconds);
+            Assert.Equal(10d, config.LootTagSeconds);
             Assert.Equal(500, config.MaxGroundItems);
             Assert.Equal(1.5f, config.PickupRange);
             Assert.Equal(1d, config.PotionCooldownSeconds);
             Assert.Equal(1024, config.MaxQueuedItemActions);
+        }
+
+        [Fact]
+        public void Validate_Exige_Tiempos_De_Marca_Y_Reserva_De_Botin_Validos()
+        {
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LootTagSeconds = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LootTagSeconds = 121 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LootTagSeconds = double.NaN }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LootReserveSeconds = 60.1 }.Validate);
+            Assert.Throws<InvalidOperationException>(new ServerConfig { LootReserveSeconds = double.NaN }.Validate);
         }
 
         [Fact]

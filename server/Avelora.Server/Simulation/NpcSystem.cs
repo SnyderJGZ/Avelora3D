@@ -593,6 +593,8 @@ namespace Avelora.Server.Simulation
                 npc.AiState = NpcAiState.Wander;
                 npc.TargetEntityId = -1;
                 npc.Health = npc.MaxHealth;
+                npc.LootOwnerId = -1;
+                npc.LastAttackerPlayerId = -1;
                 npc.Action = EntityAction.None;
                 npc.DirectionX = 0;
                 npc.DirectionY = 0;

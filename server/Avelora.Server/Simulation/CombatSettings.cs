@@ -11,7 +11,7 @@ namespace Avelora.Server.Simulation
     /// </summary>
     public readonly struct CombatSettings
     {
-        public CombatSettings(float rangeTolerance)
+        public CombatSettings(float rangeTolerance, long lootTagTimeoutTicks = 200)
         {
             if (rangeTolerance < 0f || float.IsNaN(rangeTolerance) || float.IsInfinity(rangeTolerance))
             {
@@ -21,10 +21,19 @@ namespace Avelora.Server.Simulation
                     "La tolerancia no puede ser negativa.");
             }
 
+            if (lootTagTimeoutTicks < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(lootTagTimeoutTicks));
+            }
+
             RangeTolerance = rangeTolerance;
+            LootTagTimeoutTicks = lootTagTimeoutTicks;
         }
 
         /// <summary>Margen que se suma al alcance para compensar la interpolación del cliente.</summary>
         public float RangeTolerance { get; }
+
+        /// <summary>Ticks sin golpe del dueño para que la marca de botín pueda cambiar.</summary>
+        public long LootTagTimeoutTicks { get; }
     }
 }

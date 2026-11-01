@@ -6,6 +6,7 @@ using Avelora.Server.Items;
 using Avelora.Server.Npcs;
 using Avelora.Server.Progression;
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Simulation
 {
@@ -84,7 +85,8 @@ namespace Avelora.Server.Simulation
             float pickupRangeTolerance = 0.5f,
             long potionCooldownTicks = 20,
             LevelTable? levels = null,
-            ClassCatalog? classes = null)
+            ClassCatalog? classes = null,
+            long lootReserveTicks = 600)
         {
             if (map is null)
             {
@@ -168,7 +170,8 @@ namespace Avelora.Server.Simulation
                     groundItemTicks,
                     pickupRange,
                     pickupRangeTolerance,
-                    potionCooldownTicks);
+                    potionCooldownTicks,
+                    lootReserveTicks);
             }
 
             InventorySlots = inventorySlots;
@@ -244,6 +247,9 @@ namespace Avelora.Server.Simulation
         /// <summary>Notificación de atributos actualizados para enviar Stats por la red.</summary>
         public event Action<PlayerEntity>? StatsChanged;
 
+        /// <summary>Botín de una muerte, enviado solo al dueño.</summary>
+        public event Action<PlayerEntity, LootGainedMessage>? LootGained;
+
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
 
@@ -299,6 +305,8 @@ namespace Avelora.Server.Simulation
 
         public long AttacksRanged => _combat?.AttacksRanged ?? 0;
 
+        public long LootOwnerChanges => _combat?.LootOwnerChanges ?? 0;
+
         /// <summary>Enemigos muertos desde el arranque (I-02).</summary>
         public long NpcDeaths => _npcs?.Deaths ?? 0;
 
@@ -319,6 +327,10 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Experiencia otorgada por muertes desde el arranque.</summary>
         public long ExperienceGranted { get; private set; }
+
+        public long GoldGranted { get; private set; }
+
+        public long NpcDeathsWithoutOwner { get; private set; }
 
         /// <summary>Niveles subidos por los jugadores desde el arranque.</summary>
         public long LevelUps { get; private set; }
@@ -352,11 +364,15 @@ namespace Avelora.Server.Simulation
         public long ItemsPickedUp => _items?.ItemsPickedUp ?? 0;
         public long ItemsExpired => _items?.ItemsExpired ?? 0;
         public long ItemsDiscarded => _items?.ItemsDiscarded ?? 0;
+        public long ItemsLootedDirect => _items?.ItemsLootedDirect ?? 0;
+        public long ItemsLootedToGround => _items?.ItemsLootedToGround ?? 0;
+        public long LootLinesTrimmed => _items?.LootLinesTrimmed ?? 0;
         public int GroundItemCount => _items?.GroundItemCount ?? 0;
         public long RejectedPickupDead => _items?.RejectedPickupDead ?? 0;
         public long RejectedPickupItem => _items?.RejectedPickupItem ?? 0;
         public long RejectedPickupDistance => _items?.RejectedPickupDistance ?? 0;
         public long RejectedPickupFull => _items?.RejectedPickupFull ?? 0;
+        public long RejectedPickupReserved => _items?.RejectedPickupReserved ?? 0;
         public long RejectedUseDead => _items?.RejectedUseDead ?? 0;
         public long RejectedUseItem => _items?.RejectedUseItem ?? 0;
         public long RejectedUseFull => _items?.RejectedUseFull ?? 0;
@@ -417,7 +433,8 @@ namespace Avelora.Server.Simulation
             int allocDex = 0,
             int allocInt = 0,
             int allocVit = 0,
-            int initialMana = -1)
+            int initialMana = -1,
+            int gold = 0)
         {
             // Invariante de la zona: una entidad nunca aparece solapando una pared. Step rechaza
             // cualquier movimiento hacia una posición no caminable, así que nacer atrapado no
@@ -462,6 +479,7 @@ namespace Avelora.Server.Simulation
                 Health = health,
                 MaxMana = stats.MaxResource,
                 Mana = mana,
+                Gold = Math.Clamp(gold, 0, PlayerEntity.MaxGold),
             };
 
             Entities.Add(player);
@@ -592,17 +610,52 @@ namespace Avelora.Server.Simulation
 
         private void OnNpcDied(NpcEntity npc, long tick)
         {
-            _items?.DropLoot(this, npc, tick);
-
-            if (npc.KillerPlayerId > 0 &&
-                Entities.TryGet(npc.KillerPlayerId, out Entity? entity) && entity is PlayerEntity killer &&
-                killer.Level < _levels.MaxLevel)
+            PlayerEntity? owner = ResolveLootOwner(npc);
+            if (owner == null)
             {
-                int experience = CharacterStats.ScaleExperience(
-                    npc.ExperienceReward, npc.Level, killer.Level);
-                ExperienceGranted += experience;
-                LevelUps += _levels.AddExperience(killer, experience, _classes, _itemCatalog);
+                NpcDeathsWithoutOwner++;
+                return;
             }
+
+            int gold = _items?.DropLoot(this, npc, owner, tick) ?? 0;
+            int experience = 0;
+            if (owner.Level < _levels.MaxLevel)
+            {
+                experience = CharacterStats.ScaleExperience(npc.ExperienceReward, npc.Level, owner.Level);
+                ExperienceGranted += experience;
+                LevelUps += _levels.AddExperience(owner, experience, _classes, _itemCatalog);
+            }
+
+            GoldGranted += gold;
+            IReadOnlyList<LootItemEntry> loot = _items?.LastLootItems ?? Array.Empty<LootItemEntry>();
+            if (experience > 0 || gold > 0 || loot.Count > 0)
+            {
+                var items = new LootItemEntry[loot.Count];
+                for (int i = 0; i < loot.Count; i++)
+                {
+                    items[i] = loot[i];
+                }
+
+                LootGained?.Invoke(owner, new LootGainedMessage((uint)experience, (uint)gold, items));
+            }
+        }
+
+        private PlayerEntity? ResolveLootOwner(NpcEntity npc)
+        {
+            if (npc.LootOwnerId > 0 && Entities.TryGet(npc.LootOwnerId, out Entity? ownerEntity) &&
+                ownerEntity is PlayerEntity owner)
+            {
+                return owner;
+            }
+
+            if (npc.LastAttackerPlayerId > 0 &&
+                Entities.TryGet(npc.LastAttackerPlayerId, out Entity? attackerEntity) &&
+                attackerEntity is PlayerEntity attacker)
+            {
+                return attacker;
+            }
+
+            return null;
         }
 
         private void PublishProgressChanges()

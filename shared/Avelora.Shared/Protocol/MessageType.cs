@@ -93,5 +93,8 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: eventos cosméticos de combate del snapshot (I-13).</summary>
         CombatEvent = 28,
+
+        /// <summary>Servidor → cliente: experiencia, oro y objetos obtenidos al matar un PNJ (I-25).</summary>
+        LootGained = 29,
     }
 }
