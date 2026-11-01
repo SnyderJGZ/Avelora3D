@@ -174,6 +174,11 @@ namespace Avelora.Client
         private int _entityId;
         private ushort[] _inventoryIds = new ushort[0];
         private uint _gold;
+        private ZoneInfo[] _zones = new ZoneInfo[0];
+        private ushort _zoneId;
+        private ZoneKind _zoneKind = ZoneKind.Normal;
+        private Texture2D _minimapTexture;
+        private bool _minimapDirty = true;
         // Objeto equipado por hueco, en el orden de EquipSlot (I-14); 0 = vacío.
         private ushort[] _equipment = new ushort[ProtocolConstants.EquipSlotCount];
 
@@ -316,6 +321,12 @@ namespace Avelora.Client
                 Destroy(_remoteRoot.gameObject);
                 _remoteRoot = null;
             }
+
+            if (_minimapTexture != null)
+            {
+                Destroy(_minimapTexture);
+                _minimapTexture = null;
+            }
         }
 
         /// <summary>Abre una conexión nueva. Se puede llamar con R tras un rechazo o un timeout.</summary>
@@ -351,6 +362,10 @@ namespace Avelora.Client
             _ownDead = false;
             _inventoryIds = new ushort[0];
             _gold = 0;
+            _zones = new ZoneInfo[0];
+            _zoneId = 0;
+            _zoneKind = ZoneKind.Normal;
+            _minimapDirty = true;
             _inventoryCounts = new ushort[0];
             System.Array.Clear(_equipment, 0, _equipment.Length);
             _catalog.Clear();
@@ -1201,6 +1216,26 @@ namespace Avelora.Client
                     }
 
                     break;
+
+                case MessageType.ZoneList:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadZoneList(buffer, offset, length, out ZoneListMessage zoneList))
+                    {
+                        _zones = zoneList.Zones;
+                        _minimapDirty = true;
+                    }
+
+                    break;
+
+                case MessageType.ZoneChanged:
+                    if (_welcomeReceived &&
+                        MessageCodec.TryReadZoneChanged(buffer, offset, length, out ZoneChangedMessage zoneChanged))
+                    {
+                        _zoneId = zoneChanged.ZoneId;
+                        _zoneKind = zoneChanged.Kind;
+                    }
+
+                    break;
             }
         }
 
@@ -1395,6 +1430,10 @@ namespace Avelora.Client
             _lastReject = null;
             _accumulator = 0;
             _lastDirectionX = 0;
+            _zones = new ZoneInfo[0];
+            _zoneId = 0;
+            _zoneKind = ZoneKind.Normal;
+            _minimapDirty = true;
 
             var halfSize = new Vec2(welcome.HalfWidth, welcome.HalfHeight);
             _prediction = new ClientPrediction(

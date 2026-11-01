@@ -93,7 +93,140 @@ namespace Avelora.Client
             {
                 _dropTarget = -1;
                 DrawOwnHealth();
+                DrawZoneLabel();
+                DrawMinimap();
                 DrawChat();
+            }
+        }
+
+        private void DrawZoneLabel()
+        {
+            string text;
+            Color color;
+            if (_zoneKind == ZoneKind.Safe)
+            {
+                text = "Zona segura";
+                color = new Color(0.45f, 0.9f, 0.5f);
+            }
+            else if (_zoneKind == ZoneKind.Pvp)
+            {
+                text = "Zona PvP";
+                color = new Color(1f, 0.4f, 0.35f);
+            }
+            else
+            {
+                return;
+            }
+
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.Label(
+                new Rect((Screen.width - 240f) / 2f, Screen.height - 150f, 240f, 22f),
+                text,
+                _damageNumberStyle);
+            GUI.color = previous;
+        }
+
+        private void DrawMinimap()
+        {
+            if (_map == null || _map.Grid == null)
+            {
+                return;
+            }
+
+            MapCollisionGrid grid = _map.Grid;
+            if (_minimapDirty || _minimapTexture == null)
+            {
+                if (_minimapTexture != null)
+                {
+                    Destroy(_minimapTexture);
+                }
+
+                _minimapTexture = new Texture2D(grid.Width, grid.Height, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Point,
+                    wrapMode = TextureWrapMode.Clamp,
+                };
+
+                var pixels = new Color32[grid.Width * grid.Height];
+                var wallColor = new Color32(20, 20, 24, 255);
+                var floorColor = new Color32(70, 82, 70, 255);
+                for (int y = 0; y < grid.Height; y++)
+                {
+                    for (int x = 0; x < grid.Width; x++)
+                    {
+                        int worldX = grid.OriginX + x;
+                        int worldY = grid.OriginY + y;
+                        pixels[y * grid.Width + x] = grid.IsTileBlocked(worldX, worldY)
+                            ? wallColor
+                            : floorColor;
+                    }
+                }
+
+                var pvpColor = new Color32(170, 60, 55, 255);
+                var safeColor = new Color32(70, 170, 90, 255);
+                for (int kindPass = 0; kindPass < 2; kindPass++)
+                {
+                    ZoneKind kind = kindPass == 0 ? ZoneKind.Pvp : ZoneKind.Safe;
+                    Color32 color = kindPass == 0 ? pvpColor : safeColor;
+                    for (int zoneIndex = 0; zoneIndex < _zones.Length; zoneIndex++)
+                    {
+                        ZoneInfo zone = _zones[zoneIndex];
+                        if (zone.Kind != kind)
+                        {
+                            continue;
+                        }
+
+                        ZoneRect[] rects = zone.Rects;
+                        for (int rectIndex = 0; rectIndex < rects.Length; rectIndex++)
+                        {
+                            ZoneRect zoneRect = rects[rectIndex];
+                            int startX = Mathf.Max(0, zoneRect.X - grid.OriginX);
+                            int startY = Mathf.Max(0, zoneRect.Y - grid.OriginY);
+                            int endX = Mathf.Min(grid.Width, zoneRect.X + zoneRect.Width - grid.OriginX);
+                            int endY = Mathf.Min(grid.Height, zoneRect.Y + zoneRect.Height - grid.OriginY);
+                            for (int y = startY; y < endY; y++)
+                            {
+                                for (int x = startX; x < endX; x++)
+                                {
+                                    int worldX = grid.OriginX + x;
+                                    int worldY = grid.OriginY + y;
+                                    if (!grid.IsTileBlocked(worldX, worldY))
+                                    {
+                                        pixels[y * grid.Width + x] = color;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                _minimapTexture.SetPixels32(pixels);
+                _minimapTexture.Apply(false);
+                _minimapDirty = false;
+            }
+
+            float scale = Mathf.Min(200f / grid.Width, 150f / grid.Height);
+            var rect = new Rect(
+                Screen.width - grid.Width * scale - 12f,
+                12f,
+                grid.Width * scale,
+                grid.Height * scale);
+            GUI.Box(new Rect(rect.x - 4f, rect.y - 4f, rect.width + 8f, rect.height + 8f), GUIContent.none);
+            GUI.DrawTexture(rect, _minimapTexture);
+
+            if (TryGetEntityPosition(_entityId, out Vector3 self))
+            {
+                Color previous = GUI.color;
+                GUI.color = Color.white;
+                GUI.DrawTexture(
+                    new Rect(
+                        rect.x + (self.x - grid.OriginX) * scale - 2f,
+                        rect.yMax - (self.y - grid.OriginY) * scale - 2f,
+                        4f,
+                        4f),
+                    Texture2D.whiteTexture);
+                GUI.color = previous;
             }
         }
 
