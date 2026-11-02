@@ -71,6 +71,9 @@ namespace Avelora.Server.Npcs
         /// <summary>Resistencia mágica del tipo (0..100000, I-08).</summary>
         public int MagicResist { get; set; }
 
+        /// <summary>Tipo de daño del ataque: físico o mágico.</summary>
+        public string DamageType { get; set; } = "physical";
+
         /// <summary>Segundos que tarda el spawner en reponer un enemigo muerto (0,5..3600).</summary>
         public float RespawnSeconds { get; set; }
 
@@ -523,6 +526,12 @@ namespace Avelora.Server.Npcs
                 {
                     throw new InvalidOperationException(
                         "npcs.json: el tipo " + type.Id + " tiene magicResist; debe estar entre 0 y 100000.");
+                }
+
+                if (type.DamageType != "physical" && type.DamageType != "magical")
+                {
+                    throw new InvalidOperationException(
+                        "npcs.json: el tipo " + type.Id + " tiene damageType inválido; debe ser physical o magical.");
                 }
 
                 if (!(type.RespawnSeconds >= MinRespawnSeconds) ||

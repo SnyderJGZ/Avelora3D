@@ -149,6 +149,9 @@ namespace Avelora.Server.Entities
         /// <summary>Vida que quita cada golpe del PNJ.</summary>
         public int AttackDamage { get; }
 
+        /// <summary>Tipo de daño de ataque del PNJ.</summary>
+        public string AttackDamageType { get; set; } = "physical";
+
         /// <summary>Alcance del golpe, en tiles, medido entre centros.</summary>
         public float AttackRange { get; }
 

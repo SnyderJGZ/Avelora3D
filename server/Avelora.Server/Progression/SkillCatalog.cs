@@ -134,6 +134,12 @@ namespace Avelora.Server.Progression
                     throw new InvalidOperationException("skills.json: " + where + ".damage debe estar entre 0 y 10000.");
                 }
 
+                if (skill.WeaponPercent < 0 || skill.WeaponPercent > 1000)
+                {
+                    throw new InvalidOperationException(
+                        "skills.json: " + where + ".weaponPercent debe estar entre 0 y 1000.");
+                }
+
                 if (skill.DamageType != "physical" && skill.DamageType != "magical")
                 {
                     throw new InvalidOperationException(
@@ -260,6 +266,7 @@ namespace Avelora.Server.Progression
         public double CooldownSeconds { get; set; } = double.NaN;
         public float Range { get; set; } = float.NaN;
         public int Damage { get; set; } = -1;
+        public int WeaponPercent { get; set; }
         public string DamageType { get; set; } = string.Empty;
         public string Effect { get; set; } = "damage";
         public float Radius { get; set; }

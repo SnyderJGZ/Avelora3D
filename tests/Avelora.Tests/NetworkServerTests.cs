@@ -300,7 +300,7 @@ namespace Avelora.Tests
         {
             var classes = new ClassCatalog
             {
-                BaseHealth = 50, DamagePerPoint = 0.5m,
+                BaseHealth = 50, PowerPerPoint = 0,
                 Classes = new List<CharacterClass>
                 {
                     new CharacterClass
@@ -400,10 +400,10 @@ namespace Avelora.Tests
             var chunks = harness.Transport.Sent.Where(sent => sent.ConnectionId == 1 &&
                 MessageCodec.TryReadItemCatalog(sent.Data, 0, sent.Data.Length, out _)).ToArray();
 
-            Assert.Equal(18, items.Items.Count);
+            Assert.Equal(23, items.Items.Count);
             SentMessage chunk = Assert.Single(chunks);
-            Assert.Equal(983, chunk.Data.Length);
-            Assert.Equal(417, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
+            Assert.Equal(1253, chunk.Data.Length);
+            Assert.Equal(147, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
         }
 
 
@@ -921,7 +921,7 @@ namespace Avelora.Tests
                 harness.Transport.Sent[1].Data.Length,
                 out ItemCatalogMessage catalog));
             Assert.Equal(harness.Config.PickupRange, catalog.PickupRange);
-            Assert.Equal(12u, catalog.FistDamage); // guerrero: 10 + ⌊FUE 4 × 0,5⌋
+            Assert.Equal(6u, catalog.FistDamage); // unarmed: ⌊6 × (100 + 4 × 2) / 100⌋
             Assert.Equal(1.7f, catalog.FistRange);
             Assert.Equal(1.3f, catalog.FistCooldownSeconds);
             Assert.Empty(catalog.Items);
@@ -940,7 +940,7 @@ namespace Avelora.Tests
             Assert.Equal((byte)1, progress.Level);
             Assert.Equal(0u, progress.Experience);
             Assert.Equal(100u, progress.ExperienceToNext);
-            Assert.Equal(100u, progress.MaxHealth);
+            Assert.Equal(120u, progress.MaxHealth);
             Assert.True(MessageCodec.TryReadStats(
                 harness.Transport.Sent[4].Data,
                 0,
@@ -949,8 +949,8 @@ namespace Avelora.Tests
             Assert.Equal((byte)1, stats.ClassId);
             Assert.Equal((byte)1, stats.Level);
             Assert.Equal((ushort)3, stats.FreePoints);
-            Assert.Equal((uint)100, stats.MaxHealth);
-            Assert.Equal((ushort)12, stats.AttackDamage);
+            Assert.Equal((uint)120, stats.MaxHealth);
+            Assert.Equal((ushort)6, stats.AttackDamage);
             Assert.Equal((byte)0, stats.DamageType);
             Assert.Equal((byte)1, stats.FreeReset);
             Assert.Empty(harness.Transport.DisconnectedConnections);
@@ -1311,7 +1311,7 @@ namespace Avelora.Tests
             Assert.True(MessageCodec.TryReadStats(sent.Data, 0, sent.Data.Length, out StatsMessage stats));
             Assert.Equal((ushort)2, stats.AllocVit);
             Assert.Equal((ushort)1, stats.FreePoints);
-            Assert.Equal((uint)110, stats.MaxHealth);
+            Assert.Equal((uint)132, stats.MaxHealth);
             Assert.Equal(1, harness.Zone.StatsAllocations);
             Assert.Equal(2, harness.Zone.StatsPointsAllocated);
         }
@@ -1330,7 +1330,7 @@ namespace Avelora.Tests
                         Speed = 2f,
                         HalfWidth = 0.35f,
                         HalfHeight = 0.35f,
-                        MaxHealth = 10,
+                        MaxHealth = 5,
                         Experience = 20,
                         Level = 1,
                         RespawnSeconds = 10f,
@@ -1459,7 +1459,7 @@ namespace Avelora.Tests
                 sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
                 inventory.Equipment[(int)EquipSlot.Weapon] == 3101);
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
-                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 16);
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 15);
 
             harness.Transport.Sent.Clear();
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeUnequip(new UnequipMessage()));
@@ -1471,7 +1471,7 @@ namespace Avelora.Tests
                 sent.Data, 0, sent.Data.Length, out InventoryMessage inventory) &&
                 inventory.Equipment[(int)EquipSlot.Weapon] == 0);
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
-                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 12);
+                sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 6);
         }
 
         [Fact]
@@ -2310,13 +2310,13 @@ namespace Avelora.Tests
             Assert.Equal((byte)70, wounded.HealthPercent);
             Assert.Equal(EntityAction.None, wounded.Action);
 
-            // El ataque cruza la red; los puños del guerrero hacen 12 y dejan 9/30 = 30 %.
+            // El ataque cruza la red; el golpe sin arma deja 15/30 = 50 %.
             harness.Transport.RaiseReceived(1, MessageCodec.EncodeAttack(new AttackMessage(100)));
             SendSnapshots(harness);
 
             SnapshotMessage afterAttack = SnapshotFor(harness, 1);
             EntityState hit = Assert.Single(afterAttack.Entities, e => e.Id == 100);
-            Assert.Equal((byte)30, hit.HealthPercent);
+            Assert.Equal((byte)50, hit.HealthPercent);
             Assert.Equal(EntityAction.None, hit.Action);
 
             EntityState attacker = Assert.Single(afterAttack.Entities, e => e.Id == player.Id);
@@ -2387,7 +2387,7 @@ namespace Avelora.Tests
 
             SnapshotMessage snapshot = SnapshotFor(harness, 1);
             EntityState hurt = Assert.Single(snapshot.Entities, e => e.Id == player.Id);
-            Assert.Equal((byte)92, hurt.HealthPercent);
+            Assert.Equal((byte)77, hurt.HealthPercent);
             Assert.Equal(EntityAction.None, hurt.Action);
 
             EntityState attacker = Assert.Single(snapshot.Entities, e => e.Id == 100);

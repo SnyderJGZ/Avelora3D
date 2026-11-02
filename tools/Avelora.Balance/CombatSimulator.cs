@@ -45,7 +45,7 @@ namespace Avelora.Balance
                 throw new InvalidOperationException("No existe la clase " + classId + " en classes.json.");
             ushort[] equipped = CreateEquipment(characterClass, level, equipment);
             int points = checked(_levels.PointsPerLevel * level);
-            int allocPrimary = build == "puro" ? points : points / 2;
+            int allocPrimary = build == "puro" ? points : points * 2 / 3;
             int allocVit = build == "puro" ? 0 : points - allocPrimary;
             int allocStr = characterClass.Primary == "str" ? allocPrimary : 0;
             int allocDex = characterClass.Primary == "dex" ? allocPrimary : 0;
@@ -156,9 +156,10 @@ namespace Avelora.Balance
                 SkillDefinition skill = _skills.Skills[i];
                 if (skill.ClassId != classId || skill.RequiredLevel > level || !skill.IsDamage)
                     continue;
-                int damage = CombatMath.GetAttackDamage(_classes, classId, level, allocStr, allocDex,
-                    allocInt, allocVit, skill.Damage, out string damageType, _items, equipment,
-                    skill.DamageType);
+                ItemType? weapon = _items.Find(equipment[(int)EquipSlot.Weapon]);
+                int damage = CombatMath.GetSkillAmount(_classes, classId, level, allocStr, allocDex,
+                    allocInt, allocVit, skill.Damage, skill.WeaponPercent, weapon?.Damage, _items, equipment);
+                string damageType = skill.DamageType;
                 double priority = skill.ResourceCost == 0
                     ? double.PositiveInfinity
                     : (double)damage / skill.ResourceCost;
@@ -265,7 +266,8 @@ namespace Avelora.Balance
 
                 if (tick >= nextNpcTick)
                 {
-                    playerHealth -= CombatMath.MitigateDamage(npc.AttackDamage, stats.Defense);
+                    int defense = npc.DamageType == "magical" ? stats.MagicResist : stats.Defense;
+                    playerHealth -= CombatMath.MitigateDamage(npc.AttackDamage, defense);
                     nextNpcTick = tick + npc.AttackCooldownTicks;
                     if (playerHealth <= 0)
                         elapsedTicks = tick + 1;

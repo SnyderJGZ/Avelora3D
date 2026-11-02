@@ -23,7 +23,7 @@ namespace Avelora.Server.Progression
         public static ClassCatalog Default => Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
 
         public int BaseHealth { get; set; } = -1;
-        public decimal DamagePerPoint { get; set; } = decimal.MinValue;
+        public int PowerPerPoint { get; set; } = -1;
         public List<CharacterClass>? Classes { get; set; }
 
         /// <summary>Carga y valida el catálogo de clases.</summary>
@@ -53,9 +53,9 @@ namespace Avelora.Server.Progression
                 throw new InvalidOperationException("classes.json: baseHealth debe estar entre 1 y 100000.");
             }
 
-            if (DamagePerPoint < 0m || DamagePerPoint > 100m)
+            if (PowerPerPoint < 0 || PowerPerPoint > 100)
             {
-                throw new InvalidOperationException("classes.json: damagePerPoint debe estar entre 0 y 100.");
+                throw new InvalidOperationException("classes.json: powerPerPoint debe estar entre 0 y 100.");
             }
 
             if (Classes == null || Classes.Count == 0)
@@ -108,6 +108,24 @@ namespace Avelora.Server.Progression
                 {
                     throw new InvalidOperationException(
                         "classes.json: " + where + ".healthPerVit debe estar entre 1 y 1000.");
+                }
+
+                if (characterClass.HealthPerLevel < 0 || characterClass.HealthPerLevel > 1000)
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + ".healthPerLevel debe estar entre 0 y 1000.");
+                }
+
+                if (characterClass.DefensePerLevel < 0 || characterClass.DefensePerLevel > 1000)
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + ".defensePerLevel debe estar entre 0 y 1000.");
+                }
+
+                if (characterClass.MagicResistPerLevel < 0 || characterClass.MagicResistPerLevel > 1000)
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + ".magicResistPerLevel debe estar entre 0 y 1000.");
                 }
 
                 ValidateDefense(characterClass.Defense, where + ".defense");
@@ -303,9 +321,12 @@ namespace Avelora.Server.Progression
         public string Name { get; set; } = string.Empty;
         public string Primary { get; set; } = string.Empty;
         public CharacterAttributes? Base { get; set; }
+        public int HealthPerLevel { get; set; }
         public int HealthPerVit { get; set; } = -1;
         public int Defense { get; set; }
+        public int DefensePerLevel { get; set; }
         public int MagicResist { get; set; }
+        public int MagicResistPerLevel { get; set; }
         public CharacterResource? Resource { get; set; }
         public UnarmedAttack? Unarmed { get; set; }
         public List<string>? WeaponTypes { get; set; }

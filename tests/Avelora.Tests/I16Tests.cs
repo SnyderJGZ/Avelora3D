@@ -206,8 +206,8 @@ namespace Avelora.Tests
                 : characterClass.Primary == "dex"
                     ? stats.Dex
                     : stats.Int;
-            int bonus = (int)decimal.Floor(primary * classes.DamagePerPoint);
-            return CharacterStats.MitigateDamage(baseDamage + bonus, defenseOrResistance);
+            int bruto = baseDamage * (100 + primary * classes.PowerPerPoint) / 100;
+            return CharacterStats.MitigateDamage(bruto, defenseOrResistance);
         }
 
         private static NpcCatalog SingleNpcCatalog(int maxHealth = 20)
@@ -431,7 +431,7 @@ namespace Avelora.Tests
             Use(zone, warrior, npc.Id, WarriorSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, warrior, 22, 50);
+            int expected = ExpectedDamage(zone.Classes, warrior, 6 + 6 * 150 / 100, 50);
             Assert.Equal(1000 - expected, npc.Health);
             Assert.Equal(manaBefore - 30, warrior.Mana);
             Assert.Equal(new[] { WarriorSkill }, used);
@@ -453,7 +453,7 @@ namespace Avelora.Tests
             Use(zone, mage, npc.Id, MageSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, mage, 18, 100);
+            int expected = ExpectedDamage(zone.Classes, mage, 5 + 8 * 100 / 100, 100);
             Assert.Equal(1000 - expected, npc.Health);
             Assert.Equal(CombatEventFlags.Ranged | CombatEventFlags.Magical, zone.CombatEvents[0].Flags);
         }

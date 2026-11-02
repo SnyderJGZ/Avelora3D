@@ -11,7 +11,7 @@ namespace Avelora.Tests
         private const string ClassesJson = """
             {
               "baseHealth": 50,
-              "damagePerPoint": 0.5,
+              "powerPerPoint": 2,
               "classes": [
                 { "id": 1, "name": "Guerrero", "primary": "str", "base": { "str": 4, "dex": 3, "int": 1, "vit": 10 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Furia", "base": 100, "perInt": 0 }, "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 }, "weaponTypes": ["TestBlade"] },
                 { "id": 2, "name": "Mago", "primary": "int", "base": { "str": 1, "dex": 3, "int": 8, "vit": 6 }, "healthPerVit": 5, "defense": 0, "magicResist": 0, "resource": { "name": "Maná", "base": 60, "perInt": 4 }, "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 }, "weaponTypes": [] },
@@ -50,8 +50,8 @@ namespace Avelora.Tests
         [Theory]
         [InlineData("\"baseHealth\": 50", "\"baseHealth\": 0", "baseHealth")]
         [InlineData("\"baseHealth\": 50", "\"baseHealth\": 100001", "baseHealth")]
-        [InlineData("\"damagePerPoint\": 0.5", "\"damagePerPoint\": 101", "damagePerPoint")]
-        [InlineData("\"damagePerPoint\": 0.5", "\"damagePerPoint\": -0.1", "damagePerPoint")]
+        [InlineData("\"powerPerPoint\": 2", "\"powerPerPoint\": 101", "powerPerPoint")]
+        [InlineData("\"powerPerPoint\": 2", "\"powerPerPoint\": -1", "powerPerPoint")]
         [InlineData("\"id\": 2", "\"id\": 256", "id")]
         [InlineData("\"id\": 2", "\"id\": 0", "id")]
         [InlineData("\"primary\": \"str\"", "\"primary\": \"vit\"", "primary")]
@@ -99,7 +99,7 @@ namespace Avelora.Tests
             Assert.Contains(
                 "al menos una clase",
                 Assert.Throws<InvalidOperationException>(() => Load(
-                    "{ \"baseHealth\": 50, \"damagePerPoint\": 0.5, \"classes\": [] }")).Message);
+                    "{ \"baseHealth\": 50, \"powerPerPoint\": 2, \"classes\": [] }")).Message);
 
             ClassCatalog catalog = Load(ClassesJson.Replace("\"id\": 4", "\"id\": 255"));
             Assert.NotNull(catalog.Find(255));
@@ -163,10 +163,10 @@ namespace Avelora.Tests
         };
 
         [Theory]
-        [InlineData(1, 100, 12, 100)]
-        [InlineData(2, 80, 14, 92)]
-        [InlineData(3, 90, 13, 100)]
-        [InlineData(4, 90, 13, 88)]
+        [InlineData(1, 100, 10, 100)]
+        [InlineData(2, 80, 11, 92)]
+        [InlineData(3, 90, 11, 100)]
+        [InlineData(4, 90, 11, 88)]
         public void Atributos_Derivados_Respetan_Vida_Daño_Y_Recurso_Por_Clase(
             int classId,
             int maxHealth,
@@ -212,8 +212,8 @@ namespace Avelora.Tests
                 catalog, 1, 1, 0, 0, 0, 0, weaponDamage: 14, out string damageType);
 
             Assert.Equal(120, vitality.MaxHealth);
-            Assert.Equal(14, strengthDamage);
-            Assert.Equal(16, swordDamage);
+            Assert.Equal(11, strengthDamage);
+            Assert.Equal(15, swordDamage);
             Assert.Equal("physical", damageType);
         }
 
@@ -222,14 +222,14 @@ namespace Avelora.Tests
         {
             ClassCatalog catalog = Load();
             DerivedCharacterStats stats = CharacterStats.Calculate(catalog, 2, 1, 0, 0, 0, 0);
-            int bonus = checked((int)decimal.Floor(stats.Int * catalog.DamagePerPoint));
+            int expected = 10 * (100 + stats.Int * catalog.PowerPerPoint) / 100;
 
             int damage = CharacterStats.GetAttackDamage(
                 catalog, 2, 1, 0, 0, 0, 0, weaponDamage: 10, out string damageType,
                 weaponDamageType: "magical");
 
             Assert.Equal("magical", damageType);
-            Assert.Equal(10 + bonus, damage);
+            Assert.Equal(expected, damage);
         }
 
         [Fact]
@@ -237,14 +237,14 @@ namespace Avelora.Tests
         {
             ClassCatalog catalog = Load();
             DerivedCharacterStats stats = CharacterStats.Calculate(catalog, 1, 1, 0, 0, 0, 0);
-            int bonus = checked((int)decimal.Floor(stats.Str * catalog.DamagePerPoint));
+            int expected = 10 * (100 + stats.Str * catalog.PowerPerPoint) / 100;
 
             int damage = CharacterStats.GetAttackDamage(
                 catalog, 1, 1, 0, 0, 0, 0, weaponDamage: 10, out string damageType,
                 weaponDamageType: "physical");
 
             Assert.Equal("physical", damageType);
-            Assert.Equal(10 + bonus, damage);
+            Assert.Equal(expected, damage);
         }
 
         [Theory]

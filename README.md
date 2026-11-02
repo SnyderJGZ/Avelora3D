@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-26 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-27 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -1134,6 +1134,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
 | **I-26** | Fórmulas compartidas en `CombatMath` y simulador `tools/Avelora.Balance` (sin cambio de protocolo ni esquema) | ✅ servidor, herramienta y pruebas |
+| **I-27** | Modelo de daño, vida y defensa (§2.2–§2.3 del plan); datos de franjas 1 y 5 y orcos (sin cambio de protocolo ni esquema) | ✅ servidor, datos y pruebas |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1410,11 +1411,11 @@ sube la versión actual a **v11**.
 
 `levels.json` contiene `pointsPerLevel` (0–100; defecto 3) y los **24 umbrales** hasta el nivel máximo
 25: `100, 150, 225, 340, 500, 750, 1100, 1650, 2500, 3500, 4700, 6200, 8000, 10000, 12500, 15500,
-19000, 23000, 27500, 32500, 38000, 44000, 51000, 59000`. `healthPerLevel` y `damagePerLevel` ya no
-se aceptan: ambas reglas viven en `classes.json`. El jugador que da el golpe mortal recibe experiencia;
+19000, 23000, 27500, 32500, 38000, 44000, 51000, 59000`. El jugador que da el golpe mortal recibe experiencia;
 I-08 la escala en décimas enteras según el nivel del PNJ y del jugador, con multiplicador entre 0,1 y
-1,3 y mínimo de 1. Al subir de nivel se rellena la vida; el nivel por sí solo **no** aumenta vida ni
-daño, porque los atributos no crecen automáticamente. En nivel 25 la experiencia queda en 0.
+1,3 y mínimo de 1. Al subir de nivel se rellena la vida; I-27 añade crecimiento por nivel a vida máxima,
+defensa y resistencia mágica. El daño no aumenta automáticamente con el nivel porque los atributos no
+crecen solos. En nivel 25 la experiencia queda en 0.
 
 La información detallada de atributos, clases, mitigación y el esquema actual está en [I-08](#clases-y-atributos-i-08).
 La verificación histórica de la carga de I-06 fue p99 **0,054 ms**, **5845** de experiencia y **32**
@@ -1442,23 +1443,24 @@ selección de clase queda para I-10 y el reparto se describe en I-09.
 Los atributos efectivos son `base + alloc_*` (el equipo suma 0 hasta I-14). No hay columna de puntos
 libres: se derivan como `pointsPerLevel × nivel − (alloc_str + alloc_dex + alloc_int + alloc_vit)`;
 desde I-09 el jugador puede repartirlos y reajustarlos.
-Fórmulas enteras:
+Fórmulas enteras (I-27):
 
-- vida máxima = `baseHealth + VIT × healthPerVit`;
-- daño bruto = daño del arma o `unarmed.damage` + `floor(atributo principal × damagePerPoint)`;
+- vida máxima = `baseHealth + nivel × healthPerLevel + VIT × healthPerVit`;
+- golpe básico = `floor((daño de arma o unarmed.damage + bonus) × (100 + primario × powerPerPoint) / 100)`;
+- habilidad = `floor((skill.damage + floor(daño de arma o unarmed.damage × weaponPercent / 100) + bonus) × (100 + primario × powerPerPoint) / 100)`; `powerPerPoint` es 2 y el bonus no se aplica a curas ni escudos;
 - recurso máximo = `resource.base + INT × resource.perInt` (el valor actual se persiste en `mana`);
+- defensa/resistencia = valor de clase + `nivel × defensePerLevel`/`nivel × magicResistPerLevel` + equipo + bonus;
 - daño mitigado = `max(1, floor(daño bruto × 100 / (100 + defensa/resistencia)))`.
 
-Las armas actuales son físicas; los puños usan el `damageType` de la clase. Los PNJ declaran `level`
-(obligatorio), `defense` y `magicResist` opcionales (0 por defecto). Orco 2001 es nivel 1 y orco
-guerrero 2002 nivel 3. La defensa física se aplica tanto al daño de PNJ contra jugador como al daño
-del jugador contra PNJ; la resistencia mágica se usa para ataques mágicos. Con defensa 0 se conserva
-el daño bruto (con mínimo 1).
+Las armas declaran su tipo de daño y los puños usan el `damageType` de la clase. Los PNJ declaran
+`damageType` (`physical` por defecto o `magical`): sus ataques se mitigan con defensa o resistencia
+mágica del jugador, respectivamente. Contra PNJ, el daño del jugador usa la defensa o resistencia
+declarada para ese tipo. Con defensa 0 se conserva el daño bruto (con mínimo 1).
 
-Valores nivel 1 de los datos iniciales: vida máxima **100/80/90/90** (guerrero/mago/ranger/sanador),
-daño sin arma **12/14/13/13**, espada corta del guerrero **16**, recurso máximo **100/92/100/88**.
-VIT +4 añade 20 de vida; FUE +4 añade 2 de daño del guerrero. Los personajes existentes se migran
-a guerrero con todos los puntos sin gastar; al subir de nivel ganan 3 puntos repartibles.
+Valores originales de I-08, anteriores al reequilibrio I-27: vida máxima **100/80/90/90**
+(guerrero/mago/ranger/sanador), daño sin arma **12/14/13/13**, espada corta del guerrero **16** y
+recurso máximo **100/92/100/88**. Los personajes existentes se migran a guerrero con todos los puntos
+sin gastar; al subir de nivel ganan 3 puntos repartibles.
 
 SQLite está en **esquema v4**. La migración v3→v4, transaccional, agrega `class_id` (defecto 1) y
 `alloc_str`, `alloc_dex`, `alloc_int`, `alloc_vit` (defecto 0); una base nueva se crea directamente en
@@ -2087,6 +2089,10 @@ dotnet run --project tools/Avelora.Balance -- --niveles 1,5,10,25 --build puro -
 
 Opciones: `--niveles`, `--build puro|equilibrado`, `--equipo ninguno|franja`, `--sin-habilidades`, `--datos <carpeta>` y `--salida <archivo>`. La suite suma **977/977** pruebas; la tabla de referencia sin habilidades coincide con §1 del [plan de combate](docs/diseno/plan-combate-equilibrio.md). Informe: [I-26](docs/agentes/informes/I-26.md).
 
+#### Modelo de daño, vida y defensa (I-27)
+
+La vida y las defensas derivadas de clase crecen por nivel; el daño usa un multiplicador entero de `powerPerPoint` y las habilidades suman su porcentaje del arma (`weaponPercent`). El bonus se añade a la base del daño antes del multiplicador. Los ataques de PNJ seleccionan defensa o resistencia mágica mediante `damageType`. Protocolo v23 y esquema v8 no cambian; **996/996** pruebas.
+
 
 ### Chat (I-07, protocolo v10)
 
@@ -2177,7 +2183,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-26**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
+El servidor ya implementa **I-04 a I-27**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
 El cliente usa v21 (I-17b/I-18b pendientes; incompatible con el servidor v23) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

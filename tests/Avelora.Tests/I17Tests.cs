@@ -138,8 +138,8 @@ namespace Avelora.Tests
                 : characterClass.Primary == "dex"
                     ? stats.Dex
                     : stats.Int;
-            int bonus = (int)decimal.Floor(primary * classes.DamagePerPoint);
-            return CharacterStats.MitigateDamage(baseDamage + bonus, defenseOrResistance);
+            int bruto = baseDamage * (100 + primary * classes.PowerPerPoint) / 100;
+            return CharacterStats.MitigateDamage(bruto, defenseOrResistance);
         }
 
 

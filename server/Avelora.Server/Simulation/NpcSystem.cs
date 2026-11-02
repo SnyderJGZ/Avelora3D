@@ -381,6 +381,7 @@ namespace Avelora.Server.Simulation
                 MapId = _zoneId,
                 Position = state.Spawner.Position,
                 HalfSize = state.Type.HalfSize,
+                AttackDamageType = state.Type.DamageType,
             };
 
             if (rank > 0)
@@ -575,7 +576,8 @@ namespace Avelora.Server.Simulation
                 target.AllocVit,
                 _items,
                 target.Equipment);
-            int damage = CombatMath.MitigateDamage(npc.AttackDamage, targetStats.Defense + target.Statuses.Bonus);
+            int defense = npc.AttackDamageType == "magical" ? targetStats.MagicResist : targetStats.Defense;
+            int damage = CombatMath.MitigateDamage(npc.AttackDamage, defense + target.Statuses.Bonus);
             int absorbed = target.Statuses.Absorb(damage);
             damage -= absorbed;
             _shieldAbsorbed += absorbed;

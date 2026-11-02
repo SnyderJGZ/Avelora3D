@@ -56,9 +56,9 @@ namespace Avelora.Tests
         {
             Items = new List<ItemType>
             {
-                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 14, Range = 1.2f, CooldownSeconds = 0.8d },
-                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", WeaponType = "Hacha", MaxStack = 1, Damage = 22, Range = 1.3f, CooldownSeconds = 1.2d },
-                new ItemType { Id = 3104, Name = "Bastón de roble", Kind = "weapon", DamageType = "magical", Damage = 10, Range = 5f, CooldownSeconds = 1.0d, WeaponType = "Bastón", MaxStack = 1 },
+                new ItemType { Id = 3101, Name = "Espada corta", Kind = "weapon", WeaponType = "Espada", MaxStack = 1, Damage = 10, Range = 1.2f, CooldownSeconds = 0.8d },
+                new ItemType { Id = 3102, Name = "Hacha de orco", Kind = "weapon", WeaponType = "Hacha", MaxStack = 1, Damage = 18, Range = 1.3f, CooldownSeconds = 1.2d },
+                new ItemType { Id = 3104, Name = "Bastón de roble", Kind = "weapon", DamageType = "magical", Damage = 13, Range = 5f, CooldownSeconds = 1.1d, WeaponType = "Bastón", MaxStack = 1 },
             },
         };
 
@@ -213,7 +213,7 @@ namespace Avelora.Tests
 
             Assert.Equal(1, inside.AttacksOk);
             Assert.Equal(0, inside.RejectedAttackDistance);
-            Assert.Equal(18, target.Health);
+            Assert.Equal(24, target.Health);
 
             Zone outside = NewZone(range: 1.25f);
             PlayerEntity farAttacker = outside.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -253,11 +253,11 @@ namespace Avelora.Tests
             zone.Tick();
 
             Assert.Equal(2, zone.AttacksOk);
-            Assert.Equal(976, npc.Health);
+            Assert.Equal(988, npc.Health);
         }
 
         [Fact]
-        public void Espada_Hace_14_Da_Alcance_1_2_Mas_Tolerancia_Y_Recarga_16_Ticks()
+        public void Espada_De_10_De_Daño_Respeta_Alcance_Y_Recarga_16_Ticks()
         {
             Zone zone = NewZone(range: 1f, tolerance: 0.8f, items: WeaponCatalog());
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -266,7 +266,7 @@ namespace Avelora.Tests
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(984, npc.Health);
+            Assert.Equal(990, npc.Health);
             Assert.Equal(1, zone.AttacksWithWeapon);
 
             for (int tick = 1; tick <= 15; tick++)
@@ -278,12 +278,12 @@ namespace Avelora.Tests
             Assert.Equal(15, zone.RejectedAttackCooldown);
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(968, npc.Health);
+            Assert.Equal(980, npc.Health);
             Assert.Equal(2, zone.AttacksWithWeapon);
         }
 
         [Fact]
-        public void Hacha_Hace_22_Y_Recarga_24_Ticks()
+        public void Hacha_De_18_De_Daño_Respeta_Recarga_24_Ticks()
         {
             Zone zone = NewZone(range: 1f, tolerance: 0.7f, items: WeaponCatalog());
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
@@ -292,7 +292,7 @@ namespace Avelora.Tests
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(976, npc.Health);
+            Assert.Equal(981, npc.Health);
 
             for (int tick = 1; tick <= 23; tick++)
             {
@@ -303,7 +303,7 @@ namespace Avelora.Tests
             Assert.Equal(23, zone.RejectedAttackCooldown);
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(952, npc.Health);
+            Assert.Equal(962, npc.Health);
             Assert.Equal(2, zone.AttacksWithWeapon);
         }
 
@@ -326,7 +326,7 @@ namespace Avelora.Tests
             NpcEntity swordTarget = AddNpc(armedZone, 100, new Vec2(11f, 10f), maxHealth: 1000);
             Attack(armedZone, armed, swordTarget);
             armedZone.Tick();
-            Assert.Equal(984, swordTarget.Health);
+            Assert.Equal(990, swordTarget.Health);
 
             Zone fistsZone = NewZone(levels: levels);
             PlayerEntity fists = fistsZone.SpawnPlayer(
@@ -334,13 +334,13 @@ namespace Avelora.Tests
             NpcEntity fistTarget = AddNpc(fistsZone, 100, new Vec2(11f, 10f), maxHealth: 1000);
             Attack(fistsZone, fists, fistTarget);
             fistsZone.Tick();
-            Assert.Equal(988, fistTarget.Health);
+            Assert.Equal(994, fistTarget.Health);
         }
 
         [Fact]
         public void El_Dueño_De_Botin_Recibe_Experiencia_Aunque_Otro_De_El_Golpe_Mortal()
         {
-            Zone zone = NewZone(Catalog(maxHealth: 20));
+            Zone zone = NewZone(Catalog(maxHealth: 12));
             PlayerEntity first = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             PlayerEntity killer = zone.SpawnPlayer(2, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             NpcEntity npc = OnlyNpc(zone);
@@ -389,7 +389,7 @@ namespace Avelora.Tests
         [Fact]
         public void Muertes_De_Jugadores_Distintos_En_Un_Tick_Publican_Un_Cambio_Por_Jugador()
         {
-            Zone zone = NewZone(Catalog(count: 2, maxHealth: 10));
+            Zone zone = NewZone(Catalog(count: 2, maxHealth: 6));
             PlayerEntity first = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             PlayerEntity second = zone.SpawnPlayer(2, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
             NpcEntity? firstNpc = null;
@@ -456,7 +456,7 @@ namespace Avelora.Tests
             Attack(zone, attacker, npc);
             zone.Tick();
 
-            Assert.Equal(988, npc.Health);
+            Assert.Equal(994, npc.Health);
             Assert.Equal(0, zone.AttacksWithWeapon);
         }
 
@@ -469,7 +469,7 @@ namespace Avelora.Tests
             NpcEntity armored = AddNpc(physicalZone, 100, new Vec2(11, 10), defense: 20);
             Attack(physicalZone, warrior, armored);
             physicalZone.Tick();
-            Assert.Equal(20, armored.Health); // floor(12 × 100 / 120) = 10
+            Assert.Equal(25, armored.Health); // floor(6 × 100 / 120) = 5
 
             Zone magicalZone = NewZone();
             PlayerEntity mage = magicalZone.SpawnPlayer(
@@ -478,7 +478,7 @@ namespace Avelora.Tests
                 magicalZone, 100, new Vec2(11, 10), magicResist: 20);
             Attack(magicalZone, mage, resistant);
             magicalZone.Tick();
-            Assert.Equal(19, resistant.Health); // floor(14 × 100 / 120) = 11
+            Assert.Equal(23, resistant.Health); // floor(9 × 100 / 120) = 7
         }
 
         [Fact]
@@ -533,18 +533,18 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Un_Orco_De_30_De_Vida_Muere_Al_Tercer_Golpe_Y_Desaparece_A_Los_30_Ticks()
+        public void Un_Orco_De_18_De_Vida_Muere_Al_Tercer_Golpe_Y_Desaparece_A_Los_30_Ticks()
         {
-            Zone zone = NewZone(Catalog());
+            Zone zone = NewZone(Catalog(maxHealth: 18));
             PlayerEntity attacker = zone.SpawnPlayer(1, new Vec2(11f, 10.5f), new Vec2(0.4f, 0.4f), 8);
             NpcEntity npc = OnlyNpc(zone);
             int originalId = npc.Id;
 
-            Assert.Equal(30, npc.Health);
+            Assert.Equal(18, npc.Health);
 
             Attack(zone, attacker, npc);
             zone.Tick();
-            Assert.Equal(18, npc.Health);
+            Assert.Equal(12, npc.Health);
             Assert.NotEqual(EntityAction.Dead, npc.Action);
 
             Advance(zone, 15);
@@ -557,7 +557,7 @@ namespace Avelora.Tests
             Attack(zone, attacker, npc);
             zone.Tick();
 
-            // Tercer golpe justo: 30 − 10 − 10 − 10 = 0.
+            // Tercer golpe justo: 18 − 6 − 6 − 6 = 0.
             Assert.Equal(0, npc.Health);
             Assert.Equal(EntityAction.Dead, npc.Action);
             Assert.Equal(0, npc.HealthPercent);
@@ -605,7 +605,7 @@ namespace Avelora.Tests
             NpcEntity respawned = OnlyNpc(zone);
             Assert.NotEqual(originalId, respawned.Id);
             Assert.True(respawned.Id > originalId);
-            Assert.Equal(30, respawned.Health);
+            Assert.Equal(18, respawned.Health);
             Assert.Equal(100, respawned.HealthPercent);
             Assert.Equal(EntityAction.None, respawned.Action);
             Assert.Equal(respawned.Home, respawned.Position);

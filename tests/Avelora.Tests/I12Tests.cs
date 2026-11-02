@@ -439,7 +439,7 @@ namespace Avelora.Tests
             File.WriteAllText(path, """
                 {
                   "baseHealth": 50,
-                  "damagePerPoint": 0,
+                  "powerPerPoint": 0,
                   "classes": [
                     { "id": 1, "name": "Clase Uno", "primary": "str",
                       "base": { "str": 1, "dex": 1, "int": 1, "vit": 1 },
@@ -534,7 +534,7 @@ namespace Avelora.Tests
             classes: new ClassCatalog
             {
                 BaseHealth = 50,
-                DamagePerPoint = 0.5m,
+                PowerPerPoint = 0,
                 Classes = new List<CharacterClass>
                 {
                     new CharacterClass

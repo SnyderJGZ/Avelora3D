@@ -40,7 +40,7 @@ namespace Avelora.Tests.Balance
         public void Guerrero_Nivel_Uno_Reproduce_Dps_De_Referencia()
         {
             double dps = CreateSimulator().Simulate(1, 1, "puro", "ninguno", false).DamagePerSecond;
-            Assert.InRange(dps, 21.15, 21.25);
+            Assert.InRange(dps, 13.70, 13.80);
         }
 
         [Theory]
@@ -87,7 +87,7 @@ namespace Avelora.Tests.Balance
             var result = simulator.Simulate(1, 1, "puro", "ninguno", false);
             Assert.Equal(7, result.BasicCooldownTicks);
             Assert.NotEqual(0, 60 * SimulationConstants.TickRate % result.BasicCooldownTicks);
-            int damage = CombatMath.GetAttackDamage(classes, 1, 1, 3, 0, 0, 0, 14, out _, items);
+            int damage = CombatMath.GetAttackDamage(classes, 1, 1, 3, 0, 0, 0, 10, out _, items);
             Assert.Equal(damage * (double)SimulationConstants.TickRate / 7, result.DamagePerSecond, 6);
         }
 

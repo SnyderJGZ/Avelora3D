@@ -199,15 +199,15 @@ namespace Avelora.Tests
             Assert.Equal(1, table.AddExperience(player, 100, ClassCatalog.Default));
             Assert.Equal(2, player.Level);
             Assert.Equal(0, player.Experience);
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(130, player.MaxHealth);
+            Assert.Equal(130, player.Health);
 
             Assert.Equal(0, table.AddExperience(player, 149, ClassCatalog.Default));
             Assert.Equal(149, player.Experience);
             Assert.Equal(1, table.AddExperience(player, 10, ClassCatalog.Default));
             Assert.Equal(3, player.Level);
             Assert.Equal(9, player.Experience);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(140, player.Health);
         }
 
         [Fact]
@@ -222,8 +222,8 @@ namespace Avelora.Tests
             Assert.Equal(2, table.AddExperience(player, 400, ClassCatalog.Default));
             Assert.Equal(3, player.Level);
             Assert.Equal(0, player.Experience);
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(140, player.MaxHealth);
+            Assert.Equal(140, player.Health);
             Assert.Equal(0, table.AddExperience(player, 50, ClassCatalog.Default));
             Assert.Equal(0, player.Experience);
         }

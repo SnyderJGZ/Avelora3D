@@ -2017,6 +2017,7 @@ namespace Avelora.Server.Net
             string? weaponDamageType = weapon?.IsWeapon == true
                 ? weapon.DamageType
                 : null;
+            int bonus = player.Statuses.Bonus;
             int attackDamage = CombatMath.GetAttackDamage(
                 _zone.Classes,
                 player.ClassId,
@@ -2029,9 +2030,8 @@ namespace Avelora.Server.Net
                 out string damageType,
                 _zone.Items,
                 player.Equipment,
-                weaponDamageType);
-            int bonus = player.Statuses.Bonus;
-            attackDamage += bonus;
+                weaponDamageType,
+                bonus);
 
             return MessageCodec.EncodeStats(new StatsMessage(
                 checked((byte)player.ClassId),

@@ -131,7 +131,8 @@ namespace Avelora.Tests
                 player.AllocStr, player.AllocDex, player.AllocInt, player.AllocVit);
             CharacterClass characterClass = classes.Find(player.ClassId)!;
             int primary = characterClass.Primary == "str" ? stats.Str : characterClass.Primary == "dex" ? stats.Dex : stats.Int;
-            return CharacterStats.MitigateDamage(baseDamage + (int)decimal.Floor(primary * classes.DamagePerPoint), defense);
+            int bruto = baseDamage * (100 + primary * classes.PowerPerPoint) / 100;
+            return CharacterStats.MitigateDamage(bruto, defense);
         }
 
         [Fact]

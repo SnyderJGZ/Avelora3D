@@ -40,8 +40,8 @@ namespace Avelora.Server.Progression
             int intelligence = checked(baseAttributes.Int + allocInt);
             int vit = checked(baseAttributes.Vit + allocVit);
 
-            int defense = characterClass.Defense;
-            int magicResist = characterClass.MagicResist;
+            int defense = checked(characterClass.Defense + checked(level * characterClass.DefensePerLevel));
+            int magicResist = checked(characterClass.MagicResist + checked(level * characterClass.MagicResistPerLevel));
             if (equipment != null)
             {
                 if (equipment.Length != Avelora.Shared.Protocol.ProtocolConstants.EquipSlotCount)
@@ -66,7 +66,8 @@ namespace Avelora.Server.Progression
                 }
             }
 
-            int maxHealth = checked(catalog.BaseHealth + checked(vit * characterClass.HealthPerVit));
+            int maxHealth = checked(catalog.BaseHealth + checked(level * characterClass.HealthPerLevel) +
+                checked(vit * characterClass.HealthPerVit));
             int maxResource = checked(characterClass.Resource!.Base + checked(intelligence * characterClass.Resource.PerInt));
 
             return new DerivedCharacterStats(

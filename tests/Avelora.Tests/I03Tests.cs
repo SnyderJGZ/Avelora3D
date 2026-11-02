@@ -127,8 +127,8 @@ namespace Avelora.Tests
             zone.Tick();
             Tick(zone, 10);
 
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(140, player.MaxHealth);
+            Assert.Equal(140, player.Health);
             Assert.False(player.IsDead);
 
             player.Health = 99;
@@ -310,7 +310,7 @@ namespace Avelora.Tests
 
             Tick(zone, 3);
 
-            Assert.Equal(94, player.Health); // floor(8 × 100 / 120) = 6
+            Assert.Equal(114, player.Health); // floor(8 × 100 / 122) = 6
         }
 
         [Fact]
@@ -389,18 +389,18 @@ namespace Avelora.Tests
 
             Tick(zone, 1); // Wander -> Chase
             Tick(zone, 1); // Chase -> Attack; el primer golpe se programa al tick siguiente
-            Assert.Equal(100, player.Health);
+            Assert.Equal(120, player.Health);
 
             Tick(zone, 1); // golpe en el tick 2
-            Assert.Equal(92, player.Health);
+            Assert.Equal(113, player.Health);
             Assert.Equal(EntityAction.Attacking, OnlyNpc(zone).Action);
 
             // 29 ticks después todavía no ha vuelto a golpear: la recarga es de 30 exactos.
             Tick(zone, 29);
-            Assert.Equal(92, player.Health);
+            Assert.Equal(113, player.Health);
 
             Tick(zone, 1);
-            Assert.Equal(84, player.Health);
+            Assert.Equal(106, player.Health);
         }
 
         [Fact]
@@ -466,7 +466,7 @@ namespace Avelora.Tests
             Tick(zone, 1);
             Assert.Equal(EntityAction.None, player.Action);
             Assert.Equal(new Vec2(5f, 5f), player.Position);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(120, player.Health);
             Assert.Equal(-1L, player.DeathTick);
         }
 
@@ -481,20 +481,20 @@ namespace Avelora.Tests
 
             Zone zone = NewZone(vitals: vitals);
             PlayerEntity player = zone.SpawnPlayer(1, new Vec2(10f, 10f), new Vec2(0.4f, 0.4f), 8);
-            player.Health = 99;
+            player.Health = 119;
             player.LastDamageTick = 0;
 
             // Tick 0: aún no ha pasado el retraso de un tick.
             Tick(zone, 1);
-            Assert.Equal(99, player.Health);
+            Assert.Equal(119, player.Health);
 
-            // Tick 1: ya regenera; con 100/s suma 5 y el tope lo deja en 100.
+            // Tick 1: ya regenera; con 100/s suma 5 y el tope lo deja en 120.
             Tick(zone, 1);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(120, player.Health);
 
             // Sigue lleno: no se pasa del máximo.
             Tick(zone, 5);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(120, player.Health);
         }
 
         // ------------------------------------------------------------------ determinismo

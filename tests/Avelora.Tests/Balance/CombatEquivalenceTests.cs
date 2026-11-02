@@ -87,7 +87,7 @@ namespace Avelora.Tests.Balance
                     player.EquippedWeaponId = 3101;
                     break;
                 case 2:
-                    if (level >= 3) player.EquippedWeaponId = 3104;
+                    if (level >= 1) player.EquippedWeaponId = 3104;
                     break;
                 case 3:
                     player.EquippedWeaponId = 3103;

@@ -22,17 +22,23 @@ namespace Avelora.Server.Progression
             out string damageType,
             ItemCatalog? items = null,
             ushort[]? equipment = null,
-            string? weaponDamageType = null)
+            string? weaponDamageType = null,
+            int bonus = 0)
         {
             if (catalog == null)
             {
                 throw new ArgumentNullException(nameof(catalog));
             }
 
+            if (bonus < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bonus));
+            }
+
             CharacterClass characterClass = CharacterStats.RequireClass(catalog, classId);
             DerivedCharacterStats stats = CharacterStats.Calculate(
                 catalog, classId, level, allocStr, allocDex, allocInt, allocVit, items, equipment);
-            int baseDamage = weaponDamage ?? characterClass.Unarmed!.Damage;
+            int baseDamage = checked((weaponDamage ?? characterClass.Unarmed!.Damage) + bonus);
             damageType = weaponDamage.HasValue
                 ? weaponDamageType ?? "physical"
                 : characterClass.Unarmed!.DamageType;
@@ -42,8 +48,29 @@ namespace Avelora.Server.Progression
                 : characterClass.Primary == "dex"
                     ? stats.Dex
                     : stats.Int;
-            int bonus = checked((int)decimal.Floor(primary * catalog.DamagePerPoint));
-            return checked(baseDamage + bonus);
+            return checked((int)((long)baseDamage * (100L + (long)primary * catalog.PowerPerPoint) / 100L));
+        }
+
+        /// <summary>Calcula el daño de una habilidad según su potencia y el porcentaje del arma.</summary>
+        public static int GetSkillAmount(
+            ClassCatalog catalog,
+            int classId,
+            int level,
+            int allocStr,
+            int allocDex,
+            int allocInt,
+            int allocVit,
+            int skillAmount,
+            int weaponPercent,
+            int? weaponDamage,
+            ItemCatalog? items = null,
+            ushort[]? equipment = null,
+            int bonus = 0)
+        {
+            CharacterClass characterClass = CharacterStats.RequireClass(catalog, classId);
+            int weaponPart = checked((weaponDamage ?? characterClass.Unarmed!.Damage) * weaponPercent) / 100;
+            return GetAttackDamage(catalog, classId, level, allocStr, allocDex, allocInt, allocVit,
+                checked(skillAmount + weaponPart), out _, items, equipment, null, bonus);
         }
 
         /// <summary>Aplica la mitigación entera definida por la defensa o resistencia elegida.</summary>

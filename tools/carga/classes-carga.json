@@ -1,17 +1,20 @@
 {
   "baseHealth": 50,
-  "damagePerPoint": 0.5,
+  "powerPerPoint": 2,
   "classes": [
     {
       "id": 1,
       "name": "Guerrero",
       "primary": "str",
       "base": { "str": 4, "dex": 3, "int": 1, "vit": 10 },
-      "healthPerVit": 5,
+      "healthPerLevel": 10,
+      "healthPerVit": 6,
       "defense": 0,
+      "defensePerLevel": 2,
       "magicResist": 0,
+      "magicResistPerLevel": 0,
       "resource": { "name": "Furia", "base": 100, "perInt": 0, "regenPerSecond": 4 },
-      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
+      "unarmed": { "damage": 6, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
       "weaponTypes": ["Espada", "Hacha"]
     },
     {
@@ -19,11 +22,14 @@
       "name": "Mago",
       "primary": "int",
       "base": { "str": 1, "dex": 3, "int": 8, "vit": 6 },
-      "healthPerVit": 5,
+      "healthPerLevel": 6,
+      "healthPerVit": 4,
       "defense": 0,
+      "defensePerLevel": 0,
       "magicResist": 0,
+      "magicResistPerLevel": 2,
       "resource": { "name": "Maná", "base": 60, "perInt": 4, "regenPerSecond": 3 },
-      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
+      "unarmed": { "damage": 8, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
       "weaponTypes": ["Bastón"]
     },
     {
@@ -31,11 +37,14 @@
       "name": "Ranger",
       "primary": "dex",
       "base": { "str": 2, "dex": 6, "int": 2, "vit": 8 },
+      "healthPerLevel": 8,
       "healthPerVit": 5,
       "defense": 0,
+      "defensePerLevel": 1,
       "magicResist": 0,
+      "magicResistPerLevel": 1,
       "resource": { "name": "Energía", "base": 100, "perInt": 0, "regenPerSecond": 6 },
-      "unarmed": { "damage": 10, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
+      "unarmed": { "damage": 6, "damageType": "physical", "range": 1.2, "cooldownSeconds": 0.8 },
       "weaponTypes": ["Arco"]
     },
     {
@@ -43,11 +52,14 @@
       "name": "Sanador",
       "primary": "int",
       "base": { "str": 1, "dex": 2, "int": 7, "vit": 8 },
+      "healthPerLevel": 7,
       "healthPerVit": 5,
       "defense": 0,
+      "defensePerLevel": 1,
       "magicResist": 0,
+      "magicResistPerLevel": 2,
       "resource": { "name": "Maná", "base": 60, "perInt": 4, "regenPerSecond": 3 },
-      "unarmed": { "damage": 10, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
+      "unarmed": { "damage": 8, "damageType": "magical", "range": 1.2, "cooldownSeconds": 1.0 },
       "weaponTypes": ["Maza"]
     }
   ]

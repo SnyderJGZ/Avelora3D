@@ -47,8 +47,8 @@ namespace Avelora.Tests
             zone.ItemActions!.TryEnqueue(ItemAction.AllocatePoints(player.Id, 0, 0, 0, 2));
             zone.Tick();
 
-            Assert.Equal(originalMaxHealth + 10, player.MaxHealth);
-            Assert.Equal(90, player.Health);
+            Assert.Equal(originalMaxHealth + 12, player.MaxHealth);
+            Assert.Equal(92, player.Health);
             Assert.Equal(1, CharacterStats.GetFreePoints(3, 1, player.AllocStr, player.AllocDex, player.AllocInt, player.AllocVit));
             Assert.Equal(1, zone.StatsAllocations);
             Assert.Equal(2, zone.StatsPointsAllocated);
@@ -96,7 +96,7 @@ namespace Avelora.Tests
             zone.Tick();
 
             Assert.Equal(0, player.AllocVit);
-            Assert.Equal(100, player.MaxHealth);
+            Assert.Equal(210, player.MaxHealth);
             Assert.Equal(75, player.Health);
             Assert.Equal(1, zone.PointResets);
             Assert.Equal(0, zone.RejectedResetItem);
@@ -124,8 +124,8 @@ namespace Avelora.Tests
 
             Assert.Equal(0, player.AllocVit);
             Assert.Equal(new InventorySlot(3201, 1), player.Inventory[0]);
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(220, player.MaxHealth);
+            Assert.Equal(220, player.Health);
             Assert.Equal(1, inventoryChanges);
             Assert.Equal(1, zone.PointResets);
         }

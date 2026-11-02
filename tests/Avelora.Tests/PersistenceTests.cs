@@ -929,7 +929,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
 
             Assert.Equal(1, loaded.ClassId);
             Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
-            Assert.Equal(100, loaded.Health);
+            Assert.Equal(120, loaded.Health);
             Assert.Equal(0, loaded.Mana);
         }
 

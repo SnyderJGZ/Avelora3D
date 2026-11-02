@@ -346,7 +346,7 @@ namespace Avelora.Tests
 
             zone.Tick();
 
-            Assert.Equal(100, player.Health);
+            Assert.Equal(110, player.Health);
             Assert.Equal(new InventorySlot(0, 0), player.Inventory[1]);
             Assert.Equal(1, zone.PotionsUsed);
         }
@@ -367,8 +367,8 @@ namespace Avelora.Tests
 
             zone.Tick();
 
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(140, player.MaxHealth);
+            Assert.Equal(120, player.Health);
         }
 
         [Fact]
@@ -559,15 +559,15 @@ namespace Avelora.Tests
 
             zone.ItemActions!.TryEnqueue(ItemAction.Equip(player.Id, 0));
             zone.Tick();
-            Assert.Equal(110, player.MaxHealth);
+            Assert.Equal(132, player.MaxHealth);
             Assert.Equal(70, player.Health);
             Assert.Equal(12, ReadStats(zone, player).Vit);
 
-            player.Health = 108;
+            player.Health = 130;
             zone.ItemActions!.TryEnqueue(ItemAction.Unequip(player.Id, (byte)EquipSlot.Ring, byte.MaxValue));
             zone.Tick();
-            Assert.Equal(100, player.MaxHealth);
-            Assert.Equal(100, player.Health);
+            Assert.Equal(120, player.MaxHealth);
+            Assert.Equal(120, player.Health);
         }
 
         [Fact]

@@ -181,6 +181,14 @@ namespace Avelora.Server.Simulation
             }
         }
 
+        private int? WeaponDamage(PlayerEntity player)
+        {
+            ItemType? weapon = player.EquippedWeaponId != 0
+                ? _catalog?.Find(player.EquippedWeaponId)
+                : null;
+            return weapon?.IsWeapon == true ? weapon.Damage : null;
+        }
+
         private void Resolve(EntityStore entities, in AttackIntent intent, long tick)
         {
             // Regla 1: el atacante tiene que ser un jugador de la zona. Un mensaje de una conexión
@@ -281,8 +289,8 @@ namespace Avelora.Server.Simulation
                 out string damageType,
                 _catalog,
                 attacker.Equipment,
-                hasWeapon ? weapon!.DamageType : null);
-            damage += attacker.Statuses.Bonus;
+                hasWeapon ? weapon!.DamageType : null,
+                attacker.Statuses.Bonus);
 
             ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType, baseRange > RangedMinRange, tick);
 
@@ -405,7 +413,7 @@ namespace Avelora.Server.Simulation
             if (skill.IsDamage)
             {
                 int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
-                int damage = CombatMath.GetAttackDamage(
+                int damage = CombatMath.GetSkillAmount(
                     _classes,
                     caster.ClassId,
                     caster.Level,
@@ -414,11 +422,12 @@ namespace Avelora.Server.Simulation
                     caster.AllocInt,
                     caster.AllocVit,
                     skill.Damage,
-                    out string damageType,
+                    skill.WeaponPercent,
+                    WeaponDamage(caster),
                     _catalog,
                     caster.Equipment,
-                    skill.DamageType);
-                damage += caster.Statuses.Bonus;
+                    caster.Statuses.Bonus);
+                string damageType = skill.DamageType;
 
                 ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
 
@@ -521,8 +530,9 @@ namespace Avelora.Server.Simulation
             }
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
-            int raw = CombatMath.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
-                caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, out _, _catalog, caster.Equipment, skill.DamageType);
+            int raw = CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, skill.WeaponPercent,
+                WeaponDamage(caster), _catalog, caster.Equipment);
             int healed = Math.Min(raw, healTarget.MaxHealth - healTarget.Health);
             healTarget.Health += healed;
             HealsDone++;
@@ -580,9 +590,9 @@ namespace Avelora.Server.Simulation
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
             int amount = skill.StatusKind == StatusKind.Shield
-                ? CombatMath.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
-                    caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount, out _, _catalog,
-                    caster.Equipment, skill.DamageType)
+                ? CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                    caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount,
+                    skill.WeaponPercent, WeaponDamage(caster), _catalog, caster.Equipment)
                 : skill.StatusAmount;
             bool applied = target!.Statuses.Apply(skill.StatusKind, (ushort)skill.Id, caster.Id, amount,
                 tick + skill.StatusTicks);
