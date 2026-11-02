@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-25 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-26 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -1110,7 +1110,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **F** | Persistencia mínima (cuenta, personaje, mapa, posición) | ✅ cerrada |
 | **G** | Bots y pruebas de carga | ✅ cerrada (pendiente: resistencia de varias horas) |
 | **H** | Seguridad reforzada y (opcional) gateway | ⏳ H-01 y H-02 hechas |
-| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat, selección de personaje y zonas | ⏳ I-01 a I-25 de servidor hechas; I-15b e I-15pb hechos; pendientes los clientes anteriores de la hoja de ruta |
+| **I** | Enemigos, combate, botín, equipo, experiencia, niveles, clases, atributos, chat, selección de personaje y zonas | ⏳ I-01 a I-26 de servidor hechas; I-15b e I-15pb hechos; pendientes los clientes anteriores de la hoja de ruta |
 | **I-03c** | Tipo de entidad en el snapshot (v6), segundo enemigo | ✅ cerrada |
 | **I-04** | Botín, objetos en el suelo, inventario y pociones (protocolo v7) | ✅ servidor; I-04b implementa el cliente |
 | **I-05** | Armas, equipo y catálogo (protocolo v8; esquema SQLite v3) | ✅ servidor; I-05b implementa el cliente |
@@ -1133,6 +1133,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
+| **I-26** | Fórmulas compartidas en `CombatMath` y simulador `tools/Avelora.Balance` (sin cambio de protocolo ni esquema) | ✅ servidor, herramienta y pruebas |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -2076,6 +2077,16 @@ cambian, sin duración. Ninguno modifica el snapshot. Métricas: `est_bonus`, `e
 y `est_lento_msgs`. Suite: **933/933** pruebas. El cliente compatible queda pendiente de I-18b.
 No hay estados en área, periódicos, aturdimiento ni desplazamiento forzado.
 
+#### Simulador de equilibrio (I-26)
+
+El simulador reutiliza los catálogos del servidor y presenta DPS de objetivo único, TTK y vida perdida contra cada tipo de PNJ:
+
+```powershell
+dotnet run --project tools/Avelora.Balance -- --niveles 1,5,10,25 --build puro --equipo ninguno
+```
+
+Opciones: `--niveles`, `--build puro|equilibrado`, `--equipo ninguno|franja`, `--sin-habilidades`, `--datos <carpeta>` y `--salida <archivo>`. La suite suma **977/977** pruebas; la tabla de referencia sin habilidades coincide con §1 del [plan de combate](docs/diseno/plan-combate-equilibrio.md). Informe: [I-26](docs/agentes/informes/I-26.md).
+
 
 ### Chat (I-07, protocolo v10)
 
@@ -2166,7 +2177,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
+El servidor ya implementa **I-04 a I-26**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
 El cliente usa v21 (I-17b/I-18b pendientes; incompatible con el servidor v23) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

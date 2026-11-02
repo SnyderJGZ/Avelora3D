@@ -2017,7 +2017,7 @@ namespace Avelora.Server.Net
             string? weaponDamageType = weapon?.IsWeapon == true
                 ? weapon.DamageType
                 : null;
-            int attackDamage = CharacterStats.GetAttackDamage(
+            int attackDamage = CombatMath.GetAttackDamage(
                 _zone.Classes,
                 player.ClassId,
                 player.Level,
@@ -2207,7 +2207,7 @@ namespace Avelora.Server.Net
             // marcar el ritmo del ataque automático, así que tiene que ser el mismo que valida el combate.
             UnarmedAttack unarmed = zone.Classes.Find(player.ClassId)!.Unarmed!;
             CharacterClass characterClass = zone.Classes.Find(player.ClassId)!;
-            int unarmedDamage = CharacterStats.GetAttackDamage(
+            int unarmedDamage = CombatMath.GetAttackDamage(
                 zone.Classes,
                 player.ClassId,
                 player.Level,

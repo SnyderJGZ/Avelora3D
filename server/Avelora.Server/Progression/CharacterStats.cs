@@ -95,43 +95,16 @@ namespace Avelora.Server.Progression
             ushort[]? equipment = null,
             string? weaponDamageType = null)
         {
-            if (catalog == null)
-            {
-                throw new ArgumentNullException(nameof(catalog));
-            }
-
-            CharacterClass characterClass = RequireClass(catalog, classId);
-            DerivedCharacterStats stats = Calculate(
-                catalog, classId, level, allocStr, allocDex, allocInt, allocVit, items, equipment);
-            int baseDamage = weaponDamage ?? characterClass.Unarmed!.Damage;
-            damageType = weaponDamage.HasValue
-                ? weaponDamageType ?? "physical"
-                : characterClass.Unarmed!.DamageType;
-
-            int primary = characterClass.Primary == "str"
-                ? stats.Str
-                : characterClass.Primary == "dex"
-                    ? stats.Dex
-                    : stats.Int;
-            int bonus = checked((int)decimal.Floor(primary * catalog.DamagePerPoint));
-            return checked(baseDamage + bonus);
+            // delega en CombatMath; se mantiene por compatibilidad con las pruebas
+            return CombatMath.GetAttackDamage(catalog, classId, level, allocStr, allocDex, allocInt, allocVit,
+                weaponDamage, out damageType, items, equipment, weaponDamageType);
         }
 
         /// <summary>Aplica la mitigación entera definida por la defensa o resistencia elegida.</summary>
         public static int MitigateDamage(int damage, int defenseOrResistance)
         {
-            if (damage < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(damage));
-            }
-
-            if (defenseOrResistance < 0 || defenseOrResistance > 100_000)
-            {
-                throw new ArgumentOutOfRangeException(nameof(defenseOrResistance));
-            }
-
-            long mitigated = checked((long)damage * 100L) / (100L + defenseOrResistance);
-            return (int)Math.Max(1L, mitigated);
+            // delega en CombatMath; se mantiene por compatibilidad con las pruebas
+            return CombatMath.MitigateDamage(damage, defenseOrResistance);
         }
 
         /// <summary>Puntos libres derivados; nunca se almacenan como una columna.</summary>
@@ -178,7 +151,7 @@ namespace Avelora.Server.Progression
             return (int)Math.Max(1L, scaled);
         }
 
-        private static CharacterClass RequireClass(ClassCatalog catalog, int classId) =>
+        internal static CharacterClass RequireClass(ClassCatalog catalog, int classId) =>
             catalog.Find(classId) ?? throw new InvalidOperationException(
                 "No existe la clase " + classId + " en classes.json.");
     }

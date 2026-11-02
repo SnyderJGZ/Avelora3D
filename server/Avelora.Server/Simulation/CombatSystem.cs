@@ -261,15 +261,15 @@ namespace Avelora.Server.Simulation
             long lastAttackTick = attacker.LastAttackTick;
 
             long cooldownTicks = hasWeapon
-                ? Math.Max(1L, (long)Math.Ceiling(weapon!.CooldownSeconds * SimulationConstants.TickRate))
-                : Math.Max(1L, (long)Math.Ceiling(characterClass.Unarmed!.CooldownSeconds * SimulationConstants.TickRate));
+                ? CombatMath.AttackCooldownTicks(weapon!.CooldownSeconds)
+                : CombatMath.AttackCooldownTicks(characterClass.Unarmed!.CooldownSeconds);
             if (lastAttackTick >= 0 && tick - lastAttackTick < cooldownTicks)
             {
                 RejectedCooldown++;
                 return;
             }
 
-            int damage = CharacterStats.GetAttackDamage(
+            int damage = CombatMath.GetAttackDamage(
                 _classes,
                 attacker.ClassId,
                 attacker.Level,
@@ -405,7 +405,7 @@ namespace Avelora.Server.Simulation
             if (skill.IsDamage)
             {
                 int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
-                int damage = CharacterStats.GetAttackDamage(
+                int damage = CombatMath.GetAttackDamage(
                     _classes,
                     caster.ClassId,
                     caster.Level,
@@ -521,7 +521,7 @@ namespace Avelora.Server.Simulation
             }
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
-            int raw = CharacterStats.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+            int raw = CombatMath.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
                 caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, out _, _catalog, caster.Equipment, skill.DamageType);
             int healed = Math.Min(raw, healTarget.MaxHealth - healTarget.Health);
             healTarget.Health += healed;
@@ -580,7 +580,7 @@ namespace Avelora.Server.Simulation
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
             int amount = skill.StatusKind == StatusKind.Shield
-                ? CharacterStats.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                ? CombatMath.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
                     caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount, out _, _catalog,
                     caster.Equipment, skill.DamageType)
                 : skill.StatusAmount;
@@ -749,7 +749,7 @@ namespace Avelora.Server.Simulation
                 defense = damageType == "physical" ? targetNpc.Defense : targetNpc.MagicResist;
             }
 
-            damage = CharacterStats.MitigateDamage(damage, defense);
+            damage = CombatMath.MitigateDamage(damage, defense);
             int absorbed = target.Statuses.Absorb(damage);
             damage -= absorbed;
             ShieldAbsorbed += absorbed;

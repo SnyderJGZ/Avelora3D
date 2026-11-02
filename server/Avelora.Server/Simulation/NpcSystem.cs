@@ -575,7 +575,7 @@ namespace Avelora.Server.Simulation
                 target.AllocVit,
                 _items,
                 target.Equipment);
-            int damage = CharacterStats.MitigateDamage(npc.AttackDamage, targetStats.Defense + target.Statuses.Bonus);
+            int damage = CombatMath.MitigateDamage(npc.AttackDamage, targetStats.Defense + target.Statuses.Bonus);
             int absorbed = target.Statuses.Absorb(damage);
             damage -= absorbed;
             _shieldAbsorbed += absorbed;
