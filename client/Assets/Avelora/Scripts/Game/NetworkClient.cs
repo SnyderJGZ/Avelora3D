@@ -131,6 +131,7 @@ namespace Avelora.Client
             public string Text;
             public bool OnSelf;
             public bool Heal;
+            public bool Absorbed;
         }
 
         private struct LootText
@@ -188,6 +189,11 @@ namespace Avelora.Client
         private ZoneKind _zoneKind = ZoneKind.Normal;
         private SkillCatalogMessage _skillCatalog;
         private bool _skillCatalogReceived;
+        private readonly StatusEffectEntry[] _ownStatuses = new StatusEffectEntry[ProtocolConstants.MaxStatusEffects];
+        private int _ownStatusCount;
+        private float _ownStatusReceivedAt;
+        private float _welcomeSpeed;
+        private readonly Dictionary<int, byte> _statusMasks = new Dictionary<int, byte>();
         private ResourceStatusMessage _resource;
         private bool _resourceReceived;
         private readonly Dictionary<ushort, float> _skillReadyAt = new Dictionary<ushort, float>();
@@ -395,6 +401,8 @@ namespace Avelora.Client
             _zoneKind = ZoneKind.Normal;
             _skillCatalog = default;
             _skillCatalogReceived = false;
+            _ownStatusCount = 0;
+            _statusMasks.Clear();
             _resource = default;
             _resourceReceived = false;
             _skillReadyAt.Clear();
@@ -928,7 +936,7 @@ namespace Avelora.Client
                 ShowHint("nivel insuficiente");
                 return;
             }
-            if (skill.Effect == 1 && (target == null || target.Kind != EntityKind.Player))
+            if (IsFriendly(skill) && (target == null || target.Kind != EntityKind.Player))
             {
                 if (!SkillReady(skill)) return;
                 byte[] selfBytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, _entityId));
@@ -938,6 +946,11 @@ namespace Avelora.Client
             if (target == null)
             {
                 ShowHint("sin objetivo: haz clic en un enemigo o jugador PvP");
+                return;
+            }
+            if (skill.StatusKind == StatusKind.Taunt && target.Kind != EntityKind.Npc)
+            {
+                ShowHint("provocar solo vale con enemigos");
                 return;
             }
             if (!SkillReady(skill)) return;
@@ -955,6 +968,9 @@ namespace Avelora.Client
             byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, target.EntityId));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
+
+        private static bool IsFriendly(SkillCatalogEntry skill) => skill.Effect == 1 ||
+            skill.StatusKind == StatusKind.Bonus || skill.StatusKind == StatusKind.Shield;
 
         private bool SkillReady(SkillCatalogEntry skill)
         {
@@ -1532,6 +1548,35 @@ namespace Avelora.Client
                     }
                     break;
 
+                case MessageType.StatusEffects:
+                    if (_welcomeReceived && MessageCodec.TryReadStatusEffects(buffer, offset, length, out StatusEffectsMessage statusEffects))
+                    {
+                        StatusEffectEntry[] effects = statusEffects.Effects;
+                        _ownStatusCount = Mathf.Min(effects.Length, _ownStatuses.Length);
+                        Array.Copy(effects, _ownStatuses, _ownStatusCount);
+                        _ownStatusReceivedAt = Time.unscaledTime;
+                        if (_prediction != null)
+                        {
+                            _prediction.SetSpeed(statusEffects.SpeedPercent == 100
+                                ? _welcomeSpeed
+                                : _welcomeSpeed * statusEffects.SpeedPercent / 100f);
+                        }
+                    }
+                    break;
+
+                case MessageType.StatusEvent:
+                    if (_welcomeReceived && MessageCodec.TryReadStatusEvent(buffer, offset, length, out StatusEventMessage statusEvent))
+                    {
+                        StatusEventEntry[] entries = statusEvent.Entries;
+                        for (int i = 0; i < entries.Length; i++)
+                        {
+                            StatusEventEntry statusEntry = entries[i];
+                            if (statusEntry.Mask == 0) _statusMasks.Remove(statusEntry.EntityId);
+                            else _statusMasks[statusEntry.EntityId] = statusEntry.Mask;
+                        }
+                    }
+                    break;
+
                 case MessageType.SkillUsed:
                     if (_welcomeReceived && MessageCodec.TryReadSkillUsed(buffer, offset, length, out SkillUsedMessage skillUsed) &&
                         TryGetSkill(skillUsed.SkillId, out SkillCatalogEntry entry))
@@ -1587,6 +1632,7 @@ namespace Avelora.Client
                 }
 
                 if ((entry.Flags & CombatEventFlags.Heal) == 0 &&
+                    (entry.Flags & CombatEventFlags.Absorbed) == 0 &&
                     (entry.Flags & CombatEventFlags.Ranged) != 0 &&
                     TryGetEntityPosition(entry.AttackerId, out Vector3 attackerPosition))
                 {
@@ -1663,9 +1709,11 @@ namespace Avelora.Client
                 Position = position,
                 StartTime = Time.unscaledTime,
                 Text = (flags & CombatEventFlags.Heal) != 0 ? "+" + damage
+                    : (flags & CombatEventFlags.Absorbed) != 0 ? "(" + damage + ")"
                     : damage.ToString() + ((flags & CombatEventFlags.Killed) != 0 ? "!" : string.Empty),
                 OnSelf = targetId == _entityId,
                 Heal = (flags & CombatEventFlags.Heal) != 0,
+                Absorbed = (flags & CombatEventFlags.Absorbed) != 0,
             });
         }
 
@@ -1758,6 +1806,7 @@ namespace Avelora.Client
             }
 
             _entityId = welcome.EntityId;
+            _welcomeSpeed = welcome.Speed;
             _connecting = false;
             _selectionActive = false;
             _characterSelectionPending = false;
@@ -1769,6 +1818,8 @@ namespace Avelora.Client
             _zoneKind = ZoneKind.Normal;
             _skillCatalog = default;
             _skillCatalogReceived = false;
+            _ownStatusCount = 0;
+            _statusMasks.Clear();
             _resource = default;
             _resourceReceived = false;
             _skillReadyAt.Clear();
@@ -1951,6 +2002,7 @@ namespace Avelora.Client
                 }
 
                 _remoteViews.Remove(id);
+                _statusMasks.Remove(id);
                 Debug.Log("[Avelora] Entidad remota " + id + " retirada.", this);
             }
         }

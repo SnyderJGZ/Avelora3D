@@ -50,6 +50,11 @@ namespace Avelora.Client
         // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
         private readonly Dictionary<ushort, Texture2D> _itemIcons = new Dictionary<ushort, Texture2D>();
         private GUIStyle _barStyle;
+        private static readonly string[] StatusMaskTexts =
+        {
+            "", "B", "E", "B E", "L", "B L", "E L", "B E L",
+            "P", "B P", "E P", "B E P", "L P", "B L P", "E L P", "B E L P",
+        };
 
         private void OnGUI()
         {
@@ -100,9 +105,11 @@ namespace Avelora.Client
             {
                 _dropTarget = -1;
                 DrawOwnHealth();
+                DrawOwnStatuses();
                 DrawZoneLabel();
                 DrawPvpStatus();
                 DrawPvpMarks();
+                DrawStatusMarks();
                 DrawMinimap();
                 DrawChat();
             }
@@ -239,6 +246,41 @@ namespace Avelora.Client
                     new Rect(screen.x - 24f, Screen.height - screen.y - 12f, 48f, 18f),
                     "PvP",
                     _damageNumberStyle);
+            }
+
+            GUI.color = previousColor;
+        }
+
+        private void DrawStatusMarks()
+        {
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            Color previousColor = GUI.color;
+            GUI.color = new Color(0.6f, 0.9f, 1f);
+            foreach (KeyValuePair<int, RemotePlayerView> pair in _remoteViews)
+            {
+                RemotePlayerView view = pair.Value;
+                if (view == null || view.IsDead || !_statusMasks.TryGetValue(pair.Key, out byte mask) ||
+                    mask >= StatusMaskTexts.Length)
+                {
+                    continue;
+                }
+
+                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 1.2f);
+                if (screen.z < 0f) continue;
+                GUI.Label(new Rect(screen.x - 32f, Screen.height - screen.y - 9f, 64f, 18f),
+                    StatusMaskTexts[mask], _damageNumberStyle);
+            }
+
+            if (_statusMasks.TryGetValue(_entityId, out byte ownMask) && ownMask < StatusMaskTexts.Length)
+            {
+                Vector3 screen = cam.WorldToScreenPoint(transform.position + Vector3.up * 1.2f);
+                if (screen.z >= 0f)
+                {
+                    GUI.Label(new Rect(screen.x - 32f, Screen.height - screen.y - 9f, 64f, 18f),
+                        StatusMaskTexts[ownMask], _damageNumberStyle);
+                }
             }
 
             GUI.color = previousColor;
@@ -462,6 +504,7 @@ namespace Avelora.Client
 
                 Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
                 Color color = number.Heal ? new Color(0.35f, 1f, 0.4f)
+                    : number.Absorbed ? new Color(0.45f, 0.85f, 1f)
                     : (number.OnSelf ? new Color(1f, 0.35f, 0.3f) : Color.white);
                 color.a = 1f - elapsed / 0.9f;
                 GUI.color = color;
@@ -1013,9 +1056,28 @@ namespace Avelora.Client
 
         private static string SkillKindText(SkillCatalogEntry skill)
         {
-            if (skill.Effect == 1) return "cura";
-            if (skill.Radius > 0f) return "área " + skill.Radius.ToString("0.#") + " m";
-            return "un objetivo";
+            string kind = skill.Effect == 1 ? "cura"
+                : skill.Effect == 2 ? string.Empty
+                : skill.Radius > 0f ? "área " + skill.Radius.ToString("0.#") + " m"
+                : "un objetivo";
+            string status = StatusText(skill);
+            if (kind.Length == 0) return status;
+            if (status.Length == 0) return kind;
+            return kind + " + " + status;
+        }
+
+        private static string StatusText(SkillCatalogEntry skill)
+        {
+            if (skill.StatusKind == StatusKind.None) return string.Empty;
+            string seconds = (skill.StatusTicks / (float)SimulationConstants.TickRate).ToString("0.#");
+            switch (skill.StatusKind)
+            {
+                case StatusKind.Bonus: return "bonus +" + skill.StatusAmount + " · " + seconds + " s";
+                case StatusKind.Shield: return "escudo " + skill.StatusAmount + "+ · " + seconds + " s";
+                case StatusKind.Slow: return "ralentiza " + skill.StatusAmount + " % · " + seconds + " s";
+                case StatusKind.Taunt: return "provoca · " + seconds + " s";
+                default: return string.Empty;
+            }
         }
 
         private void DrawSkillOnSlot(Rect slot, int index, SkillCatalogEntry skill)
@@ -1835,6 +1897,64 @@ namespace Avelora.Client
                 GUI.Box(box, GUIContent.none);
                 GUI.Label(new Rect(box.x + 16f, box.y + 10f, 300f, 44f),
                     "Has muerto. Reapareces en " + Mathf.CeilToInt(left) + " s.", _overlayStyle);
+            }
+        }
+
+        private void DrawOwnStatuses()
+        {
+            int visibleCount = 0;
+            for (int i = 0; i < _ownStatusCount; i++)
+            {
+                float left = _ownStatuses[i].RemainingTicks / (float)SimulationConstants.TickRate -
+                    (Time.unscaledTime - _ownStatusReceivedAt);
+                if (left > 0f) visibleCount++;
+            }
+
+            if (visibleCount == 0) return;
+            const float width = 120f;
+            const float height = 20f;
+            const float gap = 4f;
+            float x = (Screen.width - visibleCount * width - (visibleCount - 1) * gap) / 2f;
+            float y = Screen.height - 146f;
+            for (int i = 0; i < _ownStatusCount; i++)
+            {
+                StatusEffectEntry entry = _ownStatuses[i];
+                float left = Mathf.Max(0f, entry.RemainingTicks / (float)SimulationConstants.TickRate -
+                    (Time.unscaledTime - _ownStatusReceivedAt));
+                if (left <= 0f) continue;
+
+                string text;
+                Color color;
+                switch (entry.Kind)
+                {
+                    case StatusKind.Bonus:
+                        text = "Bonus +" + entry.Amount + " · " + left.ToString("0") + " s";
+                        color = new Color(1f, 0.85f, 0.25f);
+                        break;
+                    case StatusKind.Shield:
+                        text = "Escudo " + entry.Amount + " · " + left.ToString("0") + " s";
+                        color = new Color(0.45f, 0.85f, 1f);
+                        break;
+                    case StatusKind.Slow:
+                        text = "Lento " + entry.Amount + " % · " + left.ToString("0") + " s";
+                        color = new Color(0.45f, 0.65f, 1f);
+                        break;
+                    case StatusKind.Taunt:
+                        text = "Provocado · " + left.ToString("0") + " s";
+                        color = new Color(1f, 0.4f, 0.4f);
+                        break;
+                    default:
+                        continue;
+                }
+
+                var box = new Rect(x, y, width, height);
+                Color previousColor = GUI.color;
+                GUI.color = new Color(0.08f, 0.08f, 0.1f, 0.88f);
+                GUI.DrawTexture(box, Texture2D.whiteTexture);
+                GUI.color = color;
+                GUI.Label(new Rect(box.x + 3f, box.y, box.width - 6f, box.height), text, _damageNumberStyle);
+                GUI.color = previousColor;
+                x += width + gap;
             }
         }
     }
