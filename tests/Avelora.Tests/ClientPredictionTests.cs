@@ -265,5 +265,72 @@ namespace Avelora.Tests
 
             Assert.Throws<ArgumentOutOfRangeException>(() => prediction.AddInput(2, 0));
         }
+
+        [Fact]
+        public void SetSpeed_Valida_Y_Afecta_Los_Inputs_Nuevos()
+        {
+            ClientPrediction prediction = NuevaPrediccion();
+            Assert.Throws<ArgumentOutOfRangeException>(() => prediction.SetSpeed(-1f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => prediction.SetSpeed(float.NaN));
+            Assert.Throws<ArgumentOutOfRangeException>(() => prediction.SetSpeed(float.PositiveInfinity));
+            prediction.SetSpeed(2f);
+            prediction.AddInput(1, 0);
+            Assert.Equal(2f, prediction.Speed);
+            CasiIgual(Spawn.X + 2f * SimulationConstants.FixedDt, prediction.Position.X);
+            CasiIgual(Spawn.Y, prediction.Position.Y);
+        }
+
+        [Fact]
+        public void Ralentizacion_Retardada_Reconcilia_Dos_Cambios_Sin_Saltos()
+        {
+            const int delay = 3;
+            var map = MapCollisionGrid.AllWalkable(1000, 10);
+            var prediction = new ClientPrediction(map, HalfSize, 4f, SimulationConstants.FixedDt);
+            Vec2 start = new Vec2(2.5f, 2.5f);
+            prediction.Reset(start);
+            Vec2 server = start;
+            float serverSpeed = 4f;
+            float correctionLimit = 1.6f * (delay + 1) * SimulationConstants.FixedDt +
+                2 * ProtocolConstants.MaxQuantizationError + 1e-4f;
+            long correctionsBeforeSteadyState = 0;
+
+            for (int i = 1; i <= 120; i++)
+            {
+                prediction.AddInput(1, 0);
+                if (i > delay)
+                {
+                    uint sequence = (uint)(i - delay);
+                    if (sequence == 40)
+                    {
+                        serverSpeed = 2.4f;
+                        prediction.SetSpeed(serverSpeed);
+                    }
+                    else if (sequence == 80)
+                    {
+                        serverSpeed = 4f;
+                        prediction.SetSpeed(serverSpeed);
+                    }
+
+                    server = MovementSimulator.Step(server, 1, 0, serverSpeed,
+                        SimulationConstants.FixedDt, HalfSize, map);
+                    Vec2 quantized = new Vec2(
+                        ProtocolConstants.DequantizePosition(ProtocolConstants.QuantizePosition(server.X)),
+                        ProtocolConstants.DequantizePosition(ProtocolConstants.QuantizePosition(server.Y)));
+                    long correctionsBefore = prediction.Corrections;
+                    prediction.Reconcile(quantized, sequence);
+                    if (prediction.Corrections > correctionsBefore)
+                    {
+                        Assert.Equal(correctionsBefore + 1, prediction.Corrections);
+                        Assert.True(MathF.Abs(prediction.LastCorrectionDelta.X) <= correctionLimit);
+                        Assert.True(MathF.Abs(prediction.LastCorrectionDelta.Y) <= correctionLimit);
+                    }
+                }
+                if (i == 90) correctionsBeforeSteadyState = prediction.Corrections;
+            }
+
+            Assert.Equal(2, prediction.Corrections);
+            Assert.Equal(0, prediction.Snaps);
+            Assert.Equal(correctionsBeforeSteadyState, prediction.Corrections);
+        }
     }
 }

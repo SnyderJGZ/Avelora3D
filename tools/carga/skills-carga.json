@@ -9,6 +9,17 @@
     { "id": 4004, "name": "Castigo", "classId": 4, "requiredLevel": 1, "resourceCost": 20,
       "cooldownSeconds": 5, "range": 5, "damage": 14, "damageType": "magical" },
     { "id": 4005, "name": "Bola de fuego", "classId": 2, "requiredLevel": 1, "resourceCost": 35, "cooldownSeconds": 8, "range": 6, "damage": 14, "damageType": "magical", "radius": 2.5, "maxTargets": 6 },
-    { "id": 4006, "name": "Curación", "classId": 4, "requiredLevel": 1, "resourceCost": 25, "cooldownSeconds": 3, "range": 6, "damage": 20, "damageType": "magical", "effect": "heal" }
+    { "id": 4006, "name": "Curación", "classId": 4, "requiredLevel": 1, "resourceCost": 25, "cooldownSeconds": 3, "range": 6, "damage": 20, "damageType": "magical", "effect": "heal" },
+    { "id": 4007, "name": "Provocar", "classId": 1, "requiredLevel": 1, "resourceCost": 20, "cooldownSeconds": 10,
+      "range": 5, "damage": 0, "damageType": "physical", "effect": "none", "status": "taunt", "statusSeconds": 4,
+      "statusAmount": 0 },
+    { "id": 4008, "name": "Rayo helado", "classId": 2, "requiredLevel": 1, "resourceCost": 25, "cooldownSeconds": 7,
+      "range": 6, "damage": 10, "damageType": "magical", "status": "slow", "statusSeconds": 3, "statusAmount": 40 },
+    { "id": 4009, "name": "Escudo arcano", "classId": 2, "requiredLevel": 1, "resourceCost": 30, "cooldownSeconds": 15,
+      "range": 6, "damage": 0, "damageType": "magical", "effect": "none", "status": "shield", "statusSeconds": 10,
+      "statusAmount": 25 },
+    { "id": 4010, "name": "Bendición", "classId": 4, "requiredLevel": 1, "resourceCost": 30, "cooldownSeconds": 20,
+      "range": 6, "damage": 0, "damageType": "magical", "effect": "none", "status": "bonus", "statusSeconds": 15,
+      "statusAmount": 4 }
   ]
 }

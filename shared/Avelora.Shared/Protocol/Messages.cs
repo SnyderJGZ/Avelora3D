@@ -914,6 +914,7 @@ namespace Avelora.Shared.Protocol
         Magical = 2,
         Killed = 4,
         Heal = 8,
+        Absorbed = 16,
     }
 
     /// <summary>Un daño resuelto por el servidor.</summary>
@@ -939,6 +940,16 @@ namespace Avelora.Shared.Protocol
         public CombatEventMessage(CombatEventEntry[] entries) => Entries = entries ?? Array.Empty<CombatEventEntry>();
 
         public CombatEventEntry[] Entries { get; }
+    }
+
+    /// <summary>Tipos de estado temporal del protocolo (I-18).</summary>
+    public enum StatusKind : byte
+    {
+        None = 0,
+        Bonus = 1,
+        Shield = 2,
+        Slow = 3,
+        Taunt = 4,
     }
 
     /// <summary>Objeto incluido en el botín de una muerte.</summary>
@@ -1141,10 +1152,14 @@ namespace Avelora.Shared.Protocol
             ushort cooldownTicks,
             float range,
             ushort damage,
-            string name, byte effect = 0, float radius = 0f)
+            string name, byte effect = 0, float radius = 0f,
+            StatusKind statusKind = StatusKind.None, ushort statusTicks = 0, ushort statusAmount = 0)
         {
             Effect = effect;
             Radius = radius;
+            StatusKind = statusKind;
+            StatusTicks = statusTicks;
+            StatusAmount = statusAmount;
             Id = id;
             RequiredLevel = requiredLevel;
             DamageType = damageType;
@@ -1156,8 +1171,11 @@ namespace Avelora.Shared.Protocol
         }
 
         public ushort Id { get; }
-        public byte Effect { get; } // 0 daño, 1 cura
+        public byte Effect { get; } // 0 daño, 1 cura, 2 solo estado
         public float Radius { get; }
+        public StatusKind StatusKind { get; }
+        public ushort StatusTicks { get; }
+        public ushort StatusAmount { get; }
         public byte RequiredLevel { get; }
         public byte DamageType { get; }
         public ushort ResourceCost { get; }
@@ -1212,5 +1230,56 @@ namespace Avelora.Shared.Protocol
 
         public ushort Current { get; }
         public ushort Max { get; }
+    }
+
+    /// <summary>Un estado temporal activo enviado a su dueño (I-18).</summary>
+    public readonly struct StatusEffectEntry
+    {
+        public StatusEffectEntry(StatusKind kind, ushort skillId, ushort remainingTicks, ushort amount)
+        {
+            Kind = kind;
+            SkillId = skillId;
+            RemainingTicks = remainingTicks;
+            Amount = amount;
+        }
+
+        public StatusKind Kind { get; }
+        public ushort SkillId { get; }
+        public ushort RemainingTicks { get; }
+        public ushort Amount { get; }
+    }
+
+    /// <summary>Estados propios activos y porcentaje de velocidad actual (I-18).</summary>
+    public readonly struct StatusEffectsMessage
+    {
+        public StatusEffectsMessage(byte speedPercent, StatusEffectEntry[] effects)
+        {
+            SpeedPercent = speedPercent;
+            Effects = effects ?? Array.Empty<StatusEffectEntry>();
+        }
+
+        public byte SpeedPercent { get; }
+        public StatusEffectEntry[] Effects { get; }
+    }
+
+    /// <summary>Máscara de estados de una entidad visible (I-18).</summary>
+    public readonly struct StatusEventEntry
+    {
+        public StatusEventEntry(int entityId, byte mask)
+        {
+            EntityId = entityId;
+            Mask = mask;
+        }
+
+        public int EntityId { get; }
+        public byte Mask { get; }
+    }
+
+    /// <summary>Cambios de máscara de estado de entidades visibles (I-18).</summary>
+    public readonly struct StatusEventMessage
+    {
+        public StatusEventMessage(StatusEventEntry[] entries) => Entries = entries ?? Array.Empty<StatusEventEntry>();
+
+        public StatusEventEntry[] Entries { get; }
     }
 }

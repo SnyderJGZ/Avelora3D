@@ -19,7 +19,7 @@ namespace Avelora.Tests
             Assert.Equal((byte)7, (byte)EquipSlot.Ring);
             Assert.Equal((byte)8, (byte)EquipSlot.Neck);
             Assert.Equal((byte)9, (byte)EquipSlot.Accessory);
-            Assert.Equal((ushort)22, ProtocolConstants.Version);
+            Assert.Equal((ushort)23, ProtocolConstants.Version);
             Assert.Equal(10, ProtocolConstants.EquipSlotCount);
         }
 

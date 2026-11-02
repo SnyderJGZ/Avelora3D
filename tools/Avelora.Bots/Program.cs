@@ -273,6 +273,9 @@ namespace Avelora.Bots
             long skillsOk = 0;
             long skillsRejected = 0;
             long resourceMessages = 0;
+            long statusSkillsSent = 0;
+            long statusMessages = 0;
+            long slowMessages = 0;
             var responses = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
             bool abusive = BotClient.IsAbusive(options.Behavior);
@@ -316,6 +319,9 @@ namespace Avelora.Bots
                 skillsOk += bot.SkillsOk;
                 skillsRejected += bot.SkillsRejected;
                 resourceMessages += bot.ResourceMessages;
+                statusSkillsSent += bot.StatusSkillsSent;
+                statusMessages += bot.StatusMessages;
+                slowMessages += bot.SlowMessages;
                 finalGold += bot.Gold;
                 deathsSeen += bot.DeathsSeen;
                 elitesSeen += bot.ElitesSeen;
@@ -390,8 +396,11 @@ namespace Avelora.Bots
                       " hab_enviadas=" + bot.SkillsSent +
                       " hab_curas_enviadas=" + bot.HealsSent +
                       " hab_ok=" + bot.SkillsOk +
-                      " hab_rechazadas=" + bot.SkillsRejected +
-                      " recurso_msgs=" + bot.ResourceMessages);
+                       " hab_rechazadas=" + bot.SkillsRejected +
+                       " recurso_msgs=" + bot.ResourceMessages +
+                       " est_enviadas=" + bot.StatusSkillsSent +
+                       " est_msgs=" + bot.StatusMessages +
+                       " est_lento_msgs=" + bot.SlowMessages);
 
                 if (options.Behavior == BotBehavior.Fight)
                 {
@@ -482,7 +491,10 @@ namespace Avelora.Bots
                 ", hab_curas_enviadas=" + healsSent +
                 ", hab_ok=" + skillsOk +
                 ", hab_rechazadas=" + skillsRejected +
-                ", recurso_msgs=" + resourceMessages);
+                ", recurso_msgs=" + resourceMessages +
+                ", est_enviadas=" + statusSkillsSent +
+                ", est_msgs=" + statusMessages +
+                ", est_lento_msgs=" + slowMessages);
 
             if (options.Behavior == BotBehavior.Fight)
             {

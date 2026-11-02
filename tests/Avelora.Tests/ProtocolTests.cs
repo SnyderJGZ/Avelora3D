@@ -186,7 +186,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)22, ProtocolConstants.Version);
+            Assert.Equal((ushort)23, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -682,9 +682,9 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Protocolo_Pvp_Usa_La_Version_20()
+        public void El_Protocolo_Pvp_Usa_La_Version_23()
         {
-            Assert.Equal((ushort)22, ProtocolConstants.Version);
+            Assert.Equal((ushort)23, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -941,6 +941,12 @@ namespace Avelora.Tests
             Assert.Equal(one.Entries[0].TargetId, oneRead.Entries[0].TargetId);
             Assert.Equal(ushort.MaxValue, oneRead.Entries[0].Damage);
             Assert.Equal((CombatEventFlags)7, oneRead.Entries[0].Flags);
+            byte[] absorbed = MessageCodec.EncodeCombatEvent(new CombatEventMessage(new[]
+            {
+                new CombatEventEntry(12, 34, 5, CombatEventFlags.Absorbed),
+            }));
+            Assert.True(MessageCodec.TryReadCombatEvent(absorbed, 0, absorbed.Length, out CombatEventMessage absorbedRead));
+            Assert.Equal(CombatEventFlags.Absorbed, absorbedRead.Entries[0].Flags);
 
             var manyEntries = new CombatEventEntry[ProtocolConstants.MaxCombatEventsPerMessage];
             for (int i = 0; i < manyEntries.Length; i++)
@@ -963,14 +969,14 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 27, 1 }, 0, 2, out _));
 
             byte[] invalidFlags = (byte[])oneBytes.Clone();
-            invalidFlags[12] = 16;
+            invalidFlags[12] = 32;
             Assert.False(MessageCodec.TryReadCombatEvent(invalidFlags, 0, invalidFlags.Length, out _));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(Array.Empty<CombatEventEntry>())));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(new CombatEventEntry[65])));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
-                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)16) })));
+                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)32) })));
         }
 
         [Fact]
@@ -1853,20 +1859,138 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadSkillCatalog(zeroCooldown, 0, zeroCooldown.Length, out _));
 
             byte[] emptyName = (byte[])bytes.Clone();
-            emptyName[entryStart + 19] = 0;
-            emptyName[entryStart + 20] = 0;
+            emptyName[entryStart + 24] = 0;
+            emptyName[entryStart + 25] = 0;
             Assert.False(MessageCodec.TryReadSkillCatalog(emptyName, 0, emptyName.Length, out _));
         }
 
         [Fact]
-        public void El_Protocolo_De_Habilidades_Usa_La_Version_22()
+        public void El_Protocolo_De_Habilidades_Usa_La_Version_23()
         {
-            Assert.Equal((ushort)22, ProtocolConstants.Version);
+            Assert.Equal((ushort)23, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);
             Assert.Equal((byte)38, (byte)MessageType.SkillRejected);
             Assert.Equal((byte)39, (byte)MessageType.ResourceStatus);
+            Assert.Equal((byte)40, (byte)MessageType.StatusEffects);
+            Assert.Equal((byte)41, (byte)MessageType.StatusEvent);
+        }
+
+        [Fact]
+        public void StatusEffects_Va_Y_Vuelve_Con_Cero_Y_Cuatro_Estados_Y_Rechaza_Invalidos()
+        {
+            byte[] empty = MessageCodec.EncodeStatusEffects(new StatusEffectsMessage(100, Array.Empty<StatusEffectEntry>()));
+            Assert.Equal(3, empty.Length);
+            Assert.True(MessageCodec.TryReadStatusEffects(empty, 0, empty.Length, out StatusEffectsMessage emptyRead));
+            Assert.Empty(emptyRead.Effects);
+
+            var original = new StatusEffectsMessage(60, new[]
+            {
+                new StatusEffectEntry(StatusKind.Bonus, 4010, 10, 4),
+                new StatusEffectEntry(StatusKind.Shield, 4009, 20, 25),
+                new StatusEffectEntry(StatusKind.Slow, 4008, 30, 40),
+                new StatusEffectEntry(StatusKind.Taunt, 4007, 40, 0),
+            });
+            byte[] bytes = MessageCodec.EncodeStatusEffects(original);
+            Assert.Equal(31, bytes.Length);
+            Assert.True(MessageCodec.TryReadStatusEffects(bytes, 0, bytes.Length, out StatusEffectsMessage decoded));
+            Assert.Equal(60, decoded.SpeedPercent);
+            Assert.Equal(4, decoded.Effects.Length);
+            Assert.Equal(StatusKind.Slow, decoded.Effects[2].Kind);
+            Assert.Equal((ushort)30, decoded.Effects[2].RemainingTicks);
+            Assert.Equal((ushort)40, decoded.Effects[2].Amount);
+
+            byte[] invalid = (byte[])bytes.Clone();
+            invalid[2] = 5;
+            Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, bytes.Length, out _));
+            foreach (byte kind in new byte[] { 0, 5 })
+            {
+                invalid = (byte[])bytes.Clone();
+                invalid[3] = kind;
+                Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
+            }
+            invalid = (byte[])bytes.Clone();
+            invalid[10] = invalid[3]; // segundo estado repite el primero
+            Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
+            foreach (byte speed in new byte[] { 0, 101 })
+            {
+                invalid = (byte[])bytes.Clone();
+                invalid[1] = speed;
+                Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
+            }
+            invalid = (byte[])bytes.Clone();
+            invalid[6] = invalid[7] = 0; // remainingTicks del primer estado
+            Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeStatusEffects(
+                new StatusEffectsMessage(0, Array.Empty<StatusEffectEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeStatusEffects(
+                new StatusEffectsMessage(100, new[] { original.Effects[0], original.Effects[0] })));
+        }
+
+        [Fact]
+        public void StatusEvent_Va_Y_Vuelve_Y_Rechaza_Cantidad_Mascara_E_Id_Invalidos()
+        {
+            var original = new StatusEventMessage(new[] { new StatusEventEntry(123, 0x0F) });
+            byte[] bytes = MessageCodec.EncodeStatusEvent(original);
+            Assert.Equal(7, bytes.Length);
+            Assert.True(MessageCodec.TryReadStatusEvent(bytes, 0, bytes.Length, out StatusEventMessage decoded));
+            Assert.Equal(123, decoded.Entries[0].EntityId);
+            Assert.Equal((byte)0x0F, decoded.Entries[0].Mask);
+
+            Assert.False(MessageCodec.TryReadStatusEvent(new byte[] { (byte)MessageType.StatusEvent, 0 }, 0, 2, out _));
+            Assert.False(MessageCodec.TryReadStatusEvent(new byte[] { (byte)MessageType.StatusEvent, 65 }, 0, 2, out _));
+            byte[] invalid = (byte[])bytes.Clone();
+            invalid[6] = 0x10;
+            Assert.False(MessageCodec.TryReadStatusEvent(invalid, 0, invalid.Length, out _));
+            invalid = (byte[])bytes.Clone();
+            Array.Clear(invalid, 2, 4);
+            Assert.False(MessageCodec.TryReadStatusEvent(invalid, 0, invalid.Length, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeStatusEvent(
+                new StatusEventMessage(Array.Empty<StatusEventEntry>())));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeStatusEvent(
+                new StatusEventMessage(new[] { new StatusEventEntry(0, 0) })));
+        }
+
+        [Fact]
+        public void SkillCatalog_Valida_Campos_De_Estado_Y_Acepta_Efecto_Solo_Estado()
+        {
+            var original = new SkillCatalogMessage("Maná", new[]
+            {
+                new SkillCatalogEntry(4008, 1, 1, 25, 140, 6f, 10, "Rayo", 0, 0,
+                    StatusKind.Slow, 60, 40),
+                new SkillCatalogEntry(4009, 1, 1, 30, 300, 6f, 0, "Escudo", 2, 0,
+                    StatusKind.Shield, 200, 25),
+            });
+            byte[] bytes = MessageCodec.EncodeSkillCatalog(original);
+            Assert.True(MessageCodec.TryReadSkillCatalog(bytes, 0, bytes.Length, out SkillCatalogMessage decoded));
+            Assert.Equal(StatusKind.Slow, decoded.Skills[0].StatusKind);
+            Assert.Equal((ushort)60, decoded.Skills[0].StatusTicks);
+            Assert.Equal((ushort)40, decoded.Skills[0].StatusAmount);
+            Assert.Equal(StatusKind.Shield, decoded.Skills[1].StatusKind);
+            Assert.Equal((byte)2, decoded.Skills[1].Effect);
+
+            int entryStart = 1 + 2 + 5 + 1;
+            foreach (Action<byte[]> corrupt in new Action<byte[]>[]
+            {
+                b => b[entryStart + 14] = 3, // effect > 2
+                b => b[entryStart + 19] = 5, // statusKind > 4
+                b => { b[entryStart + 19] = 0; b[entryStart + 20] = 1; }, // none con ticks
+                b => { b[entryStart + 19] = 3; b[entryStart + 20] = 0; b[entryStart + 21] = 0; }, // estado sin ticks
+            })
+            {
+                byte[] invalid = (byte[])bytes.Clone();
+                corrupt(invalid);
+                Assert.False(MessageCodec.TryReadSkillCatalog(invalid, 0, invalid.Length, out _));
+            }
+            byte[] noStatusForNone = (byte[])bytes.Clone();
+            noStatusForNone[entryStart + 19] = 0;
+            noStatusForNone[entryStart + 20] = noStatusForNone[entryStart + 21] = 0;
+            noStatusForNone[entryStart + 22] = noStatusForNone[entryStart + 23] = 0;
+            noStatusForNone[entryStart + 14] = 2;
+            Assert.False(MessageCodec.TryReadSkillCatalog(noStatusForNone, 0, noStatusForNone.Length, out _));
+            Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillCatalog(
+                new SkillCatalogMessage("Maná", new[] { new SkillCatalogEntry(1, 1, 0, 0, 1, 1, 0, "X", 2) })));
         }
 
         [Fact]

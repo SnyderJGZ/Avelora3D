@@ -1,5 +1,6 @@
 #nullable enable
 using Avelora.Shared;
+using Avelora.Shared.Protocol;
 
 namespace Avelora.Server.Entities
 {
@@ -56,6 +57,12 @@ namespace Avelora.Server.Entities
         /// simulación para apagar la acción cuando ya ha pasado el golpe.
         /// </summary>
         public long ActionUntilTick { get; set; }
+
+        /// <summary>Estados temporales no persistidos de esta entidad (I-18).</summary>
+        public StatusEffects Statuses { get; } = new StatusEffects();
+
+        /// <summary>Última máscara de estado enviada a observadores.</summary>
+        internal byte StatusMaskSent { get; set; }
 
         /// <summary>
         /// Celda de la grilla espacial, para el área de interés. La mantiene

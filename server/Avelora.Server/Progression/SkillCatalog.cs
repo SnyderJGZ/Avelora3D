@@ -140,8 +140,8 @@ namespace Avelora.Server.Progression
                         "skills.json: " + where + ".damageType debe ser physical o magical.");
                 }
 
-                if (skill.Effect != "damage" && skill.Effect != "heal")
-                    throw new InvalidOperationException("skills.json: " + where + ".effect debe ser damage o heal.");
+                if (skill.Effect != "damage" && skill.Effect != "heal" && skill.Effect != "none")
+                    throw new InvalidOperationException("skills.json: " + where + ".effect debe ser damage, heal o none.");
                 if (!float.IsFinite(skill.Radius) || (skill.Radius != 0 && (skill.Radius < 0.5f || skill.Radius > 8f)))
                     throw new InvalidOperationException("skills.json: " + where + ".radius debe ser 0 o estar entre 0.5 y 8.");
                 if (skill.Radius == 0 && skill.MaxTargets != 0)
@@ -152,6 +152,42 @@ namespace Avelora.Server.Progression
                     throw new InvalidOperationException("skills.json: " + where + ".radius: la curación en área no existe todavía.");
                 if (skill.IsHeal && skill.Damage < 1)
                     throw new InvalidOperationException("skills.json: " + where + ".damage de una cura debe ser al menos 1.");
+
+                string status = skill.Status ?? string.Empty;
+                if (status != string.Empty && status != "bonus" && status != "shield" && status != "slow" && status != "taunt")
+                    throw new InvalidOperationException("skills.json: " + where + ".status debe ser bonus, shield, slow o taunt.");
+                if (status == string.Empty && (skill.StatusSeconds != 0 || skill.StatusAmount != 0))
+                    throw new InvalidOperationException("skills.json: " + where + ".statusSeconds y .statusAmount solo valen con status.");
+                if (status != string.Empty && (double.IsNaN(skill.StatusSeconds) || double.IsInfinity(skill.StatusSeconds) ||
+                    skill.StatusSeconds < 0.5 || skill.StatusSeconds > 30))
+                    throw new InvalidOperationException("skills.json: " + where + ".statusSeconds debe estar entre 0.5 y 30.");
+                if (skill.Effect == "none" && status == string.Empty)
+                    throw new InvalidOperationException("skills.json: " + where + ".effect none necesita status.");
+                if (skill.Effect == "none" && skill.Damage != 0)
+                    throw new InvalidOperationException("skills.json: " + where + ".damage debe ser 0 con effect none.");
+                if (skill.IsHeal && status != string.Empty)
+                    throw new InvalidOperationException("skills.json: " + where + ".status no vale en una cura.");
+                if ((status == "bonus" || status == "shield" || status == "taunt") && skill.Effect != "none")
+                    throw new InvalidOperationException("skills.json: " + where + ".status " + status + " necesita effect none.");
+                if (status != string.Empty && skill.Radius > 0)
+                    throw new InvalidOperationException("skills.json: " + where + ".status: los estados en área no existen todavía.");
+                if ((status == "slow" && (skill.StatusAmount < 10 || skill.StatusAmount > 80)) ||
+                    (status == "shield" && (skill.StatusAmount < 1 || skill.StatusAmount > 10000)) ||
+                    (status == "bonus" && (skill.StatusAmount < 1 || skill.StatusAmount > 1000)) ||
+                    (status == "taunt" && skill.StatusAmount != 0))
+                    throw new InvalidOperationException("skills.json: " + where + ".statusAmount fuera de rango para " + status + ".");
+
+                skill.StatusKind = status switch
+                {
+                    "bonus" => StatusKind.Bonus,
+                    "shield" => StatusKind.Shield,
+                    "slow" => StatusKind.Slow,
+                    "taunt" => StatusKind.Taunt,
+                    _ => StatusKind.None,
+                };
+                skill.StatusTicks = status == string.Empty
+                    ? 0
+                    : (int)Math.Ceiling(skill.StatusSeconds * SimulationConstants.TickRate);
 
                 skill.CooldownTicks = Math.Max(1, (int)Math.Ceiling(skill.CooldownSeconds * SimulationConstants.TickRate));
                 _byId[skill.Id] = skill;
@@ -228,8 +264,19 @@ namespace Avelora.Server.Progression
         public string Effect { get; set; } = "damage";
         public float Radius { get; set; }
         public int MaxTargets { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public double StatusSeconds { get; set; }
+        public int StatusAmount { get; set; }
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsHeal => Effect == "heal";
+        [System.Text.Json.Serialization.JsonIgnore]
+        public StatusKind StatusKind { get; internal set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public int StatusTicks { get; internal set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsDamage => Effect == "damage";
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsBeneficial => StatusKind == StatusKind.Bonus || StatusKind == StatusKind.Shield;
 
         /// <summary>Ticks de recarga calculados en <see cref="SkillCatalog.Validate"/>.</summary>
         [System.Text.Json.Serialization.JsonIgnore]

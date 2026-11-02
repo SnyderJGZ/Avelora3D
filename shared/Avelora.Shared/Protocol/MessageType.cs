@@ -126,5 +126,11 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>Servidor → cliente: estado del recurso (actual y máximo) (I-16).</summary>
         ResourceStatus = 39,
+
+        /// <summary>Servidor → cliente: estados y velocidad del propio jugador (I-18).</summary>
+        StatusEffects = 40,
+
+        /// <summary>Servidor → cliente: máscara de estados de entidades visibles (I-18).</summary>
+        StatusEvent = 41,
     }
 }

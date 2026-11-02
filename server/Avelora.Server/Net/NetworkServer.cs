@@ -117,6 +117,7 @@ namespace Avelora.Server.Net
         private readonly List<Entity> _visibleBuffer = new List<Entity>(64);
         private readonly List<Entity> _deferredItems = new List<Entity>(64);
         private readonly List<CombatEventEntry> _combatEventEntries = new List<CombatEventEntry>(64);
+        private readonly List<StatusEventEntry> _statusEventEntries = new List<StatusEventEntry>(64);
 
         private Thread? _netThread;
         private volatile bool _stopping;
@@ -157,6 +158,10 @@ namespace Avelora.Server.Net
         private long _skillRejectedMessages;
         private long _resourceMessages;
         private long _resourceBytes;
+        private long _statusMessages;
+        private long _statusBytes;
+        private long _statusEventMessages;
+        private long _statusEventBytes;
 
         public NetworkServer(
             Zone zone,
@@ -248,6 +253,7 @@ namespace Avelora.Server.Net
             _zone.SkillUsed += OnSkillUsed;
             _zone.SkillRejected += OnSkillRejected;
             _zone.ResourceChanged += OnResourceChanged;
+            _zone.StatusEffectsChanged += OnStatusEffectsChanged;
             _zone.StatsChanged += OnStatsChanged;
             if (_zone.Zones.Zones.Length > 0)
             {
@@ -367,6 +373,7 @@ namespace Avelora.Server.Net
             if (_sessions.Count == 0)
             {
                 zone.CombatEvents.Clear();
+                zone.StatusEvents.Clear();
                 return;
             }
 
@@ -388,9 +395,11 @@ namespace Avelora.Server.Net
                 Enqueue(session.ConnectionId, snapshot, DeliveryMode.Sequenced, disconnectAfter: false);
                 Interlocked.Increment(ref _snapshotsSent);
                 SendCombatEvents(zone, recipient, session.ConnectionId);
+                SendStatusEvents(zone, recipient, session.ConnectionId);
             }
 
             zone.CombatEvents.Clear();
+            zone.StatusEvents.Clear();
         }
 
         /// <summary>Cifras para los informes. Se pueden leer desde otro hilo.</summary>
@@ -435,7 +444,11 @@ namespace Avelora.Server.Net
             Interlocked.Read(ref _skillUsedMessages),
             Interlocked.Read(ref _skillRejectedMessages),
             Interlocked.Read(ref _resourceMessages),
-            Interlocked.Read(ref _resourceBytes));
+            Interlocked.Read(ref _resourceBytes),
+            Interlocked.Read(ref _statusMessages),
+            Interlocked.Read(ref _statusBytes),
+            Interlocked.Read(ref _statusEventMessages),
+            Interlocked.Read(ref _statusEventBytes));
 
         // ---------------------------------------------------------------- hilo de red
 
@@ -1943,6 +1956,29 @@ namespace Avelora.Server.Net
             }
         }
 
+        private void OnStatusEffectsChanged(PlayerEntity player)
+        {
+            if (_sessions.TryGetValue(player.ConnectionId, out Session? session) && session.EntityId == player.Id)
+            {
+                var entries = new List<StatusEffectEntry>(ProtocolConstants.MaxStatusEffects);
+                long tick = _zone.TickCount;
+                for (int i = 0; i < ProtocolConstants.MaxStatusEffects; i++)
+                {
+                    StatusKind kind = (StatusKind)(i + 1);
+                    if (!player.Statuses.IsActive(kind)) continue;
+                    ActiveStatus status = player.Statuses.Get(kind);
+                    ushort remainingTicks = (ushort)Math.Clamp(status.ExpiresAtTick - tick, 1, ushort.MaxValue);
+                    ushort amount = (ushort)Math.Min(status.Amount, ushort.MaxValue);
+                    entries.Add(new StatusEffectEntry(kind, status.SkillId, remainingTicks, amount));
+                }
+                byte[] bytes = MessageCodec.EncodeStatusEffects(new StatusEffectsMessage(
+                    (byte)player.Statuses.SpeedPercent, entries.ToArray()));
+                Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                Interlocked.Increment(ref _statusMessages);
+                Interlocked.Add(ref _statusBytes, bytes.Length);
+            }
+        }
+
         private void OnStatsChanged(PlayerEntity player)
         {
             if (_sessions.TryGetValue(player.ConnectionId, out Session? session) &&
@@ -1994,6 +2030,8 @@ namespace Avelora.Server.Net
                 _zone.Items,
                 player.Equipment,
                 weaponDamageType);
+            int bonus = player.Statuses.Bonus;
+            attackDamage += bonus;
 
             return MessageCodec.EncodeStats(new StatsMessage(
                 checked((byte)player.ClassId),
@@ -2016,8 +2054,8 @@ namespace Avelora.Server.Net
                 checked((uint)derived.MaxHealth),
                 checked((ushort)attackDamage),
                 damageType == "magical" ? (byte)1 : (byte)0,
-                checked((ushort)derived.Defense),
-                checked((ushort)derived.MagicResist),
+                checked((ushort)(derived.Defense + bonus)),
+                checked((ushort)(derived.MagicResist + bonus)),
                 checked((ushort)player.Mana),
                 checked((ushort)player.MaxMana),
                 player.Level <= _zone.Levels.FreeResetMaxLevel ? (byte)1 : (byte)0));
@@ -2052,7 +2090,9 @@ namespace Avelora.Server.Net
                         checked((ushort)skill.CooldownTicks),
                         skill.Range,
                         checked((ushort)skill.Damage),
-                        skill.Name.Trim(), skill.IsHeal ? (byte)1 : (byte)0, skill.Radius));
+                        skill.Name.Trim(), skill.IsHeal ? (byte)1 : skill.Effect == "none" ? (byte)2 : (byte)0,
+                        skill.Radius, skill.StatusKind, checked((ushort)skill.StatusTicks),
+                        checked((ushort)skill.StatusAmount)));
                 }
             }
 
@@ -2368,6 +2408,29 @@ namespace Avelora.Server.Net
             Interlocked.Add(ref _combatEventBytes, bytes.Length);
         }
 
+        private void SendStatusEvents(Zone zone, PlayerEntity recipient, int connectionId)
+        {
+            List<StatusEventEntry> events = zone.StatusEvents;
+            if (events.Count == 0) return;
+            _statusEventEntries.Clear();
+            for (int i = 0; i < events.Count; i++)
+            {
+                StatusEventEntry entry = events[i];
+                if (entry.EntityId == recipient.Id || IsVisible(entry.EntityId))
+                    _statusEventEntries.Add(entry);
+            }
+            int count = _statusEventEntries.Count;
+            if (count == 0) return;
+            if (count > ProtocolConstants.MaxStatusEventsPerMessage)
+                count = ProtocolConstants.MaxStatusEventsPerMessage;
+            var entries = new StatusEventEntry[count];
+            for (int i = 0; i < count; i++) entries[i] = _statusEventEntries[i];
+            byte[] bytes = MessageCodec.EncodeStatusEvent(new StatusEventMessage(entries));
+            Enqueue(connectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            Interlocked.Increment(ref _statusEventMessages);
+            Interlocked.Add(ref _statusEventBytes, bytes.Length);
+        }
+
         private bool IsVisible(int entityId)
         {
             for (int i = 0; i < _visibleBuffer.Count; i++)
@@ -2655,9 +2718,13 @@ namespace Avelora.Server.Net
             long pvpRejectedMessages = 0,
             long skillCatalogBytes = 0,
             long skillUsedMessages = 0,
-            long skillRejectedMessages = 0,
-            long resourceMessages = 0,
-            long resourceBytes = 0)
+             long skillRejectedMessages = 0,
+             long resourceMessages = 0,
+             long resourceBytes = 0,
+             long statusMessages = 0,
+             long statusBytes = 0,
+             long statusEventMessages = 0,
+             long statusEventBytes = 0)
         {
             Connections = connections;
             MessagesReceived = messagesReceived;
@@ -2699,6 +2766,10 @@ namespace Avelora.Server.Net
             SkillRejectedMessages = skillRejectedMessages;
             ResourceMessages = resourceMessages;
             ResourceBytes = resourceBytes;
+            StatusMessages = statusMessages;
+            StatusBytes = statusBytes;
+            StatusEventMessages = statusEventMessages;
+            StatusEventBytes = statusEventBytes;
             SaveLastError = saveLastError;
         }
 
@@ -2784,6 +2855,18 @@ namespace Avelora.Server.Net
 
         /// <summary>Bytes de los mensajes de estado del recurso (I-16).</summary>
         public long ResourceBytes { get; }
+
+        /// <summary>Mensajes propios de estados temporales enviados (I-18).</summary>
+        public long StatusMessages { get; }
+
+        /// <summary>Bytes de mensajes propios de estados temporales (I-18).</summary>
+        public long StatusBytes { get; }
+
+        /// <summary>Mensajes de cambios de estado para observadores (I-18).</summary>
+        public long StatusEventMessages { get; }
+
+        /// <summary>Bytes de cambios de estado para observadores (I-18).</summary>
+        public long StatusEventBytes { get; }
 
         /// <summary>Último error de guardado, si lo hubo.</summary>
         public string? SaveLastError { get; }

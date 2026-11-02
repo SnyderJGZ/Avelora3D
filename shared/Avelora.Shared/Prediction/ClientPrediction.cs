@@ -66,7 +66,7 @@ namespace Avelora.Shared.Prediction
 
         private readonly MapCollisionGrid _map;
         private readonly Vec2 _halfSize;
-        private readonly float _speed;
+        private float _speed;
         private readonly float _dt;
         private readonly int _maxPendingInputs;
         private readonly float _correctionSpeed;
@@ -135,6 +135,17 @@ namespace Avelora.Shared.Prediction
 
         /// <summary>Posición predicha más reciente (la que debería tener el servidor tras estos inputs).</summary>
         public Vec2 Position { get; private set; }
+
+        /// <summary>Velocidad actual usada al predecir y reaplicar inputs.</summary>
+        public float Speed => _speed;
+
+        /// <summary>Cambia la velocidad efectiva sin alterar la posición predicha actual.</summary>
+        public void SetSpeed(float speed)
+        {
+            if (float.IsNaN(speed) || float.IsInfinity(speed) || speed < 0f)
+                throw new ArgumentOutOfRangeException(nameof(speed), speed, "La velocidad debe ser finita y no negativa.");
+            _speed = speed;
+        }
 
         /// <summary>Posición predicha antes del último paso; base de la interpolación del dibujo.</summary>
         public Vec2 PreviousPosition { get; private set; }

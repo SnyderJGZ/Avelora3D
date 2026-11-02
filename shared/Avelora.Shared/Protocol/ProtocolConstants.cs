@@ -30,9 +30,16 @@ namespace Avelora.Shared.Protocol
         /// personaje y la selección posterior; I-12 a 16 por los metadatos de armas por clase y nivel;
         /// I-13 a 17 por CombatEvent, I-25 a 18 por el oro del inventario y LootGained, I-15 a 19
         /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP;
-        /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus.
+        /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus; I-17 a 22 por áreas,
+        /// curación y objetivo en SkillUsed; I-18 a 23 por estados temporales y StatusEffects/StatusEvent.
         /// </summary>
-        public const ushort Version = 22;
+        public const ushort Version = 23;
+
+        /// <summary>Máximo de estados activos de tipos distintos por entidad (I-18).</summary>
+        public const int MaxStatusEffects = 4;
+
+        /// <summary>Máximo de entidades notificadas en un mensaje de cambios de estado (I-18).</summary>
+        public const int MaxStatusEventsPerMessage = 64;
 
         /// <summary>Máximo de zonas de mapa anunciadas al entrar (I-15).</summary>
         public const int MaxZones = 32;

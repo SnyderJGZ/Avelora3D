@@ -46,6 +46,7 @@ namespace Avelora.Server.Simulation
         private readonly int[] _areaIds = new int[SkillCatalog.MaxAreaTargets];
         private readonly float[] _areaDistSq = new float[SkillCatalog.MaxAreaTargets];
         private readonly long[] _skillRejected = new long[13];
+        private readonly long[] _statusApplied = new long[5];
 
         public CombatSystem(
             CombatSettings settings,
@@ -114,6 +115,19 @@ namespace Avelora.Server.Simulation
         public long HealsDone { get; private set; }
         /// <summary>Vida realmente curada.</summary>
         public long HealAmount { get; private set; }
+
+        /// <summary>Estados no aplicados por ser más débiles que el activo.</summary>
+        public long StatusesIgnoredWeaker { get; private set; }
+
+        /// <summary>Daño absorbido por escudos.</summary>
+        public long ShieldAbsorbed { get; private set; }
+
+        /// <summary>Estados aplicados o refrescados por tipo.</summary>
+        public long StatusesApplied(StatusKind kind)
+        {
+            int index = (int)kind;
+            return index > 0 && index < _statusApplied.Length ? _statusApplied[index] : 0;
+        }
         /// <summary>Habilidades que han resultado válidas (I-16).</summary>
         public long SkillsUsed { get; private set; }
 
@@ -268,6 +282,7 @@ namespace Avelora.Server.Simulation
                 _catalog,
                 attacker.Equipment,
                 hasWeapon ? weapon!.DamageType : null);
+            damage += attacker.Statuses.Bonus;
 
             ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType, baseRange > RangedMinRange, tick);
 
@@ -328,6 +343,12 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (skill.IsBeneficial)
+            {
+                ResolveBeneficial(entities, caster, skill, intent, tick);
+                return;
+            }
+
             TargetCheck targetCheck = CheckTarget(entities, caster, intent.TargetId, out Entity? target, out PlayerEntity? victim, out NpcEntity? npc);
             switch (targetCheck)
             {
@@ -347,6 +368,11 @@ namespace Avelora.Server.Simulation
             }
 
             Entity hitTarget = target!;
+            if (skill.StatusKind == StatusKind.Taunt && npc == null)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
+                return;
+            }
 
             ReachCheck reach = CheckReach(caster, hitTarget, skill.Range);
             if (reach == ReachCheck.Distance)
@@ -376,32 +402,67 @@ namespace Avelora.Server.Simulation
             caster.Mana -= skill.ResourceCost;
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
 
-            int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
-            int damage = CharacterStats.GetAttackDamage(
-                _classes,
-                caster.ClassId,
-                caster.Level,
-                caster.AllocStr,
-                caster.AllocDex,
-                caster.AllocInt,
-                caster.AllocVit,
-                skill.Damage,
-                out string damageType,
-                _catalog,
-                caster.Equipment,
-                skill.DamageType);
-
-            ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
-
-            for (int k = 0; k < found; k++)
+            if (skill.IsDamage)
             {
-                if (CheckTarget(entities, caster, _areaIds[k], out Entity? t, out PlayerEntity? v, out NpcEntity? n) != TargetCheck.Ok)
-                    continue;
-                ApplyDamage(entities, caster, t!, v, n, damage, damageType, skill.Range > RangedMinRange, tick);
+                int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
+                int damage = CharacterStats.GetAttackDamage(
+                    _classes,
+                    caster.ClassId,
+                    caster.Level,
+                    caster.AllocStr,
+                    caster.AllocDex,
+                    caster.AllocInt,
+                    caster.AllocVit,
+                    skill.Damage,
+                    out string damageType,
+                    _catalog,
+                    caster.Equipment,
+                    skill.DamageType);
+                damage += caster.Statuses.Bonus;
+
+                ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
+
+                for (int k = 0; k < found; k++)
+                {
+                    if (CheckTarget(entities, caster, _areaIds[k], out Entity? t, out PlayerEntity? v, out NpcEntity? n) != TargetCheck.Ok)
+                        continue;
+                    ApplyDamage(entities, caster, t!, v, n, damage, damageType, skill.Range > RangedMinRange, tick);
+                }
+                AreaTargetsHit += found;
             }
-            AreaTargetsHit += found;
+            else
+            {
+                caster.Action = EntityAction.Attacking;
+                caster.ActionUntilTick = tick + AttackingTicks;
+            }
+
+            if (skill.StatusKind != StatusKind.None)
+                ApplyHarmfulStatus(caster, hitTarget, npc, skill, tick);
             SkillsUsed++;
             SkillUsed?.Invoke(caster, (ushort)skill.Id, hitTarget.Id);
+        }
+
+        private void ApplyHarmfulStatus(PlayerEntity caster, Entity target, NpcEntity? npc, SkillDefinition skill, long tick)
+        {
+            if (target.Action == EntityAction.Dead) return;
+            StatusKind kind = skill.StatusKind;
+            bool applied = target.Statuses.Apply(kind, (ushort)skill.Id, caster.Id, skill.StatusAmount,
+                tick + skill.StatusTicks);
+            if (applied) _statusApplied[(int)kind]++;
+            else StatusesIgnoredWeaker++;
+
+            if (npc == null) return;
+            if (kind == StatusKind.Taunt && applied &&
+                (npc.AiState == NpcAiState.Wander || npc.TargetEntityId != caster.Id))
+            {
+                npc.AiState = NpcAiState.Chase;
+                npc.TargetEntityId = caster.Id;
+            }
+            else if (kind != StatusKind.Taunt && npc.AiState == NpcAiState.Wander)
+            {
+                npc.AiState = NpcAiState.Chase;
+                npc.TargetEntityId = caster.Id;
+            }
         }
 
         private int CollectAreaTargets(EntityStore entities, PlayerEntity caster, Entity center, SkillDefinition skill)
@@ -441,28 +502,9 @@ namespace Avelora.Server.Simulation
 
         private void ResolveHeal(EntityStore entities, PlayerEntity caster, SkillDefinition skill, in AttackIntent intent, long tick)
         {
-            if (!entities.TryGet(intent.TargetId, out Entity? entity) || !(entity is PlayerEntity target) || target.IsDead)
-            {
-                Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
-                return;
-            }
-            if (target != caster)
-            {
-                ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
-                ZoneKind targetZone = _zones.KindAt(target.Position.X, target.Position.Y);
-                if (target.IsPvpEffective(targetZone) && !caster.IsPvpEffective(casterZone))
-                {
-                    Reject(caster, intent.SkillId, SkillRejectReason.PvpNotAllowed);
-                    return;
-                }
-                ReachCheck reach = CheckReach(caster, target, skill.Range);
-                if (reach != ReachCheck.Ok)
-                {
-                    Reject(caster, intent.SkillId, reach == ReachCheck.Distance ? SkillRejectReason.OutOfRange : SkillRejectReason.NoLineOfSight);
-                    return;
-                }
-            }
-            if (target.Health >= target.MaxHealth)
+            if (!CheckFriendlyTarget(entities, caster, skill, intent, out PlayerEntity? target)) return;
+            PlayerEntity healTarget = target!;
+            if (healTarget.Health >= healTarget.MaxHealth)
             {
                 Reject(caster, intent.SkillId, SkillRejectReason.FullHealth);
                 return;
@@ -481,11 +523,71 @@ namespace Avelora.Server.Simulation
             caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
             int raw = CharacterStats.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
                 caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, out _, _catalog, caster.Equipment, skill.DamageType);
-            int healed = Math.Min(raw, target.MaxHealth - target.Health);
-            target.Health += healed;
+            int healed = Math.Min(raw, healTarget.MaxHealth - healTarget.Health);
+            healTarget.Health += healed;
             HealsDone++;
             HealAmount += healed;
-            _events?.Add(new CombatEventEntry(caster.Id, target.Id, (ushort)Math.Min(healed, ushort.MaxValue), CombatEventFlags.Heal));
+            _events?.Add(new CombatEventEntry(caster.Id, healTarget.Id, (ushort)Math.Min(healed, ushort.MaxValue), CombatEventFlags.Heal));
+            SkillsUsed++;
+            SkillUsed?.Invoke(caster, (ushort)skill.Id, healTarget.Id);
+        }
+
+        private bool CheckFriendlyTarget(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
+            in AttackIntent intent, out PlayerEntity? target)
+        {
+            target = null;
+            if (!entities.TryGet(intent.TargetId, out Entity? entity) || !(entity is PlayerEntity player) || player.IsDead)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
+                return false;
+            }
+            if (player != caster)
+            {
+                ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
+                ZoneKind targetZone = _zones.KindAt(player.Position.X, player.Position.Y);
+                if (player.IsPvpEffective(targetZone) && !caster.IsPvpEffective(casterZone))
+                {
+                    Reject(caster, intent.SkillId, SkillRejectReason.PvpNotAllowed);
+                    return false;
+                }
+                ReachCheck reach = CheckReach(caster, player, skill.Range);
+                if (reach != ReachCheck.Ok)
+                {
+                    Reject(caster, intent.SkillId, reach == ReachCheck.Distance
+                        ? SkillRejectReason.OutOfRange : SkillRejectReason.NoLineOfSight);
+                    return false;
+                }
+            }
+            target = player;
+            return true;
+        }
+
+        private void ResolveBeneficial(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
+            in AttackIntent intent, long tick)
+        {
+            if (!CheckFriendlyTarget(entities, caster, skill, intent, out PlayerEntity? target)) return;
+            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
+                return;
+            }
+            if (caster.Mana < skill.ResourceCost)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NotEnoughResource);
+                return;
+            }
+
+            caster.Mana -= skill.ResourceCost;
+            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            int amount = skill.StatusKind == StatusKind.Shield
+                ? CharacterStats.GetAttackDamage(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                    caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount, out _, _catalog,
+                    caster.Equipment, skill.DamageType)
+                : skill.StatusAmount;
+            bool applied = target!.Statuses.Apply(skill.StatusKind, (ushort)skill.Id, caster.Id, amount,
+                tick + skill.StatusTicks);
+            if (applied) _statusApplied[(int)skill.StatusKind]++;
+            else StatusesIgnoredWeaker++;
             SkillsUsed++;
             SkillUsed?.Invoke(caster, (ushort)skill.Id, target.Id);
         }
@@ -639,7 +741,7 @@ namespace Avelora.Server.Simulation
                     victim.AllocVit,
                     _catalog,
                     victim.Equipment);
-                defense = damageType == "physical" ? victimStats.Defense : victimStats.MagicResist;
+                defense = (damageType == "physical" ? victimStats.Defense : victimStats.MagicResist) + victim.Statuses.Bonus;
             }
             else
             {
@@ -648,6 +750,9 @@ namespace Avelora.Server.Simulation
             }
 
             damage = CharacterStats.MitigateDamage(damage, defense);
+            int absorbed = target.Statuses.Absorb(damage);
+            damage -= absorbed;
+            ShieldAbsorbed += absorbed;
             if (victim != null)
             {
                 victim.Health = Math.Max(0, victim.Health - damage);
@@ -706,6 +811,12 @@ namespace Avelora.Server.Simulation
 
             if (_events != null)
             {
+                if (absorbed > 0)
+                {
+                    _events.Add(new CombatEventEntry(attacker.Id, target.Id,
+                        (ushort)Math.Min(absorbed, ushort.MaxValue), CombatEventFlags.Absorbed));
+                }
+
                 CombatEventFlags flags = ranged ? CombatEventFlags.Ranged : CombatEventFlags.None;
                 if (damageType == "magical")
                 {
@@ -717,11 +828,14 @@ namespace Avelora.Server.Simulation
                     flags |= CombatEventFlags.Killed;
                 }
 
-                _events.Add(new CombatEventEntry(
-                    attacker.Id,
-                    target.Id,
-                    (ushort)Math.Min(damage, ushort.MaxValue),
-                    flags));
+                if (damage > 0)
+                {
+                    _events.Add(new CombatEventEntry(
+                        attacker.Id,
+                        target.Id,
+                        (ushort)Math.Min(damage, ushort.MaxValue),
+                        flags));
+                }
             }
         }
 

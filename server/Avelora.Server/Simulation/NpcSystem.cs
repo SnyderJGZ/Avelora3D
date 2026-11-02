@@ -81,6 +81,7 @@ namespace Avelora.Server.Simulation
         private long _chaseGiveUps;
         private long _returnTeleports;
         private long _aggroCancelledSafeZone;
+        private long _shieldAbsorbed;
 
         public NpcSystem(
             MapCollisionGrid map,
@@ -142,6 +143,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Persecuciones canceladas porque el objetivo entró en una zona segura.</summary>
         public long AggroCancelledSafeZone => _aggroCancelledSafeZone;
+
+        /// <summary>Daño absorbido por escudos de jugadores.</summary>
+        public long ShieldAbsorbed => _shieldAbsorbed;
 
         public long RankAppearances(int rank) =>
             rank > 0 && rank < _rankAppearances.Length ? _rankAppearances[rank] : 0;
@@ -571,7 +575,10 @@ namespace Avelora.Server.Simulation
                 target.AllocVit,
                 _items,
                 target.Equipment);
-            int damage = CharacterStats.MitigateDamage(npc.AttackDamage, targetStats.Defense);
+            int damage = CharacterStats.MitigateDamage(npc.AttackDamage, targetStats.Defense + target.Statuses.Bonus);
+            int absorbed = target.Statuses.Absorb(damage);
+            damage -= absorbed;
+            _shieldAbsorbed += absorbed;
             target.Health = Math.Max(0, target.Health - damage);
             target.LastDamageTick = _tick;
             target.RegenAccumulator = 0d;
@@ -598,12 +605,20 @@ namespace Avelora.Server.Simulation
             _hits++;
             if (_events != null)
             {
+                if (absorbed > 0)
+                {
+                    _events.Add(new CombatEventEntry(npc.Id, target.Id,
+                        (ushort)Math.Min(absorbed, ushort.MaxValue), CombatEventFlags.Absorbed));
+                }
                 CombatEventFlags flags = target.Health == 0 ? CombatEventFlags.Killed : CombatEventFlags.None;
-                _events.Add(new CombatEventEntry(
-                    npc.Id,
-                    target.Id,
-                    (ushort)Math.Min(damage, ushort.MaxValue),
-                    flags));
+                if (damage > 0)
+                {
+                    _events.Add(new CombatEventEntry(
+                        npc.Id,
+                        target.Id,
+                        (ushort)Math.Min(damage, ushort.MaxValue),
+                        flags));
+                }
             }
         }
 
@@ -707,11 +722,13 @@ namespace Avelora.Server.Simulation
         private void Move(NpcEntity npc)
         {
             Vec2 before = npc.Position;
+            int pct = npc.Statuses.SpeedPercent;
+            float speed = pct == 100 ? npc.Speed : npc.Speed * pct / 100f;
             npc.Position = MovementSimulator.Step(
                 npc.Position,
                 npc.DirectionX,
                 npc.DirectionY,
-                npc.Speed,
+                speed,
                 SimulationConstants.FixedDt,
                 npc.HalfSize,
                 _moveMap);

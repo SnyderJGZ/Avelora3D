@@ -1665,7 +1665,7 @@ namespace Avelora.Shared.Protocol
 
             for (int i = 0; i < entries.Length; i++)
             {
-                if (((byte)entries[i].Flags & ~15) != 0)
+                if (((byte)entries[i].Flags & ~31) != 0)
                 {
                     throw new ArgumentOutOfRangeException(nameof(message), "CombatEvent contiene banderas desconocidas.");
                 }
@@ -1713,7 +1713,7 @@ namespace Avelora.Shared.Protocol
                     int targetId = reader.ReadInt32();
                     ushort damage = reader.ReadUInt16();
                     byte flags = reader.ReadByte();
-                    if ((flags & ~15) != 0)
+                    if ((flags & ~31) != 0)
                     {
                         return false;
                     }
@@ -2334,6 +2334,10 @@ namespace Avelora.Shared.Protocol
         private const int SkillUsedSize = 1 + 2 + 4;
         private const int SkillRejectedSize = 1 + 2 + 1;
         private const int ResourceStatusSize = 1 + 2 + 2;
+        private const int StatusEffectsHeaderSize = 1 + 1 + 1;
+        private const int StatusEffectEntrySize = 1 + 2 + 2 + 2;
+        private const int StatusEventHeaderSize = 1 + 1;
+        private const int StatusEventEntrySize = 4 + 1;
 
         /// <summary>Codifica UseSkill: tipo, skillId (u16), targetId (i32) = 7 bytes.</summary>
         public static byte[] EncodeUseSkill(in UseSkillMessage message)
@@ -2380,7 +2384,7 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica SkillCatalog: tipo, resourceName (string), count (u8), por entrada: id (u16), requiredLevel (u8), damageType (u8), resourceCost (u16), cooldownTicks (u16), range (f32), damage (u16), effect (u8), radius (f32), name (string).</summary>
+        /// <summary>Codifica SkillCatalog con efecto y metadatos de estado (I-18).</summary>
         public static byte[] EncodeSkillCatalog(in SkillCatalogMessage message)
         {
             SkillCatalogEntry[] skills = message.Skills ?? Array.Empty<SkillCatalogEntry>();
@@ -2426,15 +2430,19 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentOutOfRangeException(nameof(message), "range debe ser finito y > 0.");
                 }
 
-                if (skill.Effect > 1 || float.IsNaN(skill.Radius) || float.IsInfinity(skill.Radius) || skill.Radius < 0f)
-                    throw new ArgumentOutOfRangeException(nameof(message), "effect o radius inválido.");
+                if (skill.Effect > 2 || float.IsNaN(skill.Radius) || float.IsInfinity(skill.Radius) || skill.Radius < 0f ||
+                    (byte)skill.StatusKind > 4 ||
+                    (skill.StatusKind == StatusKind.None && (skill.StatusTicks != 0 || skill.StatusAmount != 0)) ||
+                    (skill.StatusKind != StatusKind.None && skill.StatusTicks == 0) ||
+                    (skill.Effect == 2 && skill.StatusKind == StatusKind.None))
+                    throw new ArgumentOutOfRangeException(nameof(message), "effect, radius o estado inválido.");
                 int nameBytes = GetStrictUtf8ByteCount(skill.Name);
                 if (nameBytes == 0 || nameBytes > ProtocolConstants.MaxSkillNameBytes)
                 {
                     throw new ArgumentException("El nombre de la habilidad debe ocupar 1.." + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
                 }
 
-                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 1 + 4 + 2 + nameBytes;
+                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 1 + 4 + 1 + 2 + 2 + 2 + nameBytes;
             }
 
             if (size > ProtocolConstants.MaxMessageSize)
@@ -2460,6 +2468,9 @@ namespace Avelora.Shared.Protocol
                 writer.WriteUInt16(skill.Damage);
                 writer.WriteByte(skill.Effect);
                 writer.WriteSingle(skill.Radius);
+                writer.WriteByte((byte)skill.StatusKind);
+                writer.WriteUInt16(skill.StatusTicks);
+                writer.WriteUInt16(skill.StatusAmount);
                 writer.WriteString(skill.Name, ProtocolConstants.MaxSkillNameBytes);
             }
 
@@ -2503,16 +2514,25 @@ namespace Avelora.Shared.Protocol
                     ushort damage = reader.ReadUInt16();
                     byte effect = reader.ReadByte();
                     float radius = reader.ReadSingle();
+                    StatusKind statusKind = (StatusKind)reader.ReadByte();
+                    ushort statusTicks = reader.ReadUInt16();
+                    ushort statusAmount = reader.ReadUInt16();
                     string name = reader.ReadString(ProtocolConstants.MaxSkillNameBytes);
 
-                    if (effect > 1 || float.IsNaN(radius) || float.IsInfinity(radius) || radius < 0f || id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
+                    if (effect > 2 || float.IsNaN(radius) || float.IsInfinity(radius) || radius < 0f ||
+                        (byte)statusKind > 4 ||
+                        (statusKind == StatusKind.None && (statusTicks != 0 || statusAmount != 0)) ||
+                        (statusKind != StatusKind.None && statusTicks == 0) ||
+                        (effect == 2 && statusKind == StatusKind.None) ||
+                        id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
                         float.IsNaN(range) || float.IsInfinity(range) || range <= 0f ||
                         string.IsNullOrEmpty(name))
                     {
                         return false;
                     }
 
-                    skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks, range, damage, name, effect, radius);
+                    skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks,
+                        range, damage, name, effect, radius, statusKind, statusTicks, statusAmount);
                 }
 
                 if (reader.Remaining != 0)
@@ -2660,6 +2680,139 @@ namespace Avelora.Shared.Protocol
                 }
 
                 message = new ResourceStatusMessage(current, max);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica estados propios: cabecera de 3 bytes y 7 por estado (I-18).</summary>
+        public static byte[] EncodeStatusEffects(in StatusEffectsMessage message)
+        {
+            StatusEffectEntry[] effects = message.Effects ?? Array.Empty<StatusEffectEntry>();
+            if (message.SpeedPercent < 1 || message.SpeedPercent > 100 ||
+                effects.Length > ProtocolConstants.MaxStatusEffects)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "SpeedPercent o cantidad de estados inválidos.");
+            }
+
+            byte seen = 0;
+            for (int i = 0; i < effects.Length; i++)
+            {
+                StatusEffectEntry effect = effects[i];
+                byte kind = (byte)effect.Kind;
+                if (kind < 1 || kind > 4 || effect.RemainingTicks == 0 || (seen & (1 << (kind - 1))) != 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "StatusEffects contiene un estado inválido o repetido.");
+                }
+                seen |= (byte)(1 << (kind - 1));
+            }
+
+            var buffer = new byte[StatusEffectsHeaderSize + StatusEffectEntrySize * effects.Length];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.StatusEffects);
+            writer.WriteByte(message.SpeedPercent);
+            writer.WriteByte((byte)effects.Length);
+            for (int i = 0; i < effects.Length; i++)
+            {
+                writer.WriteByte((byte)effects[i].Kind);
+                writer.WriteUInt16(effects[i].SkillId);
+                writer.WriteUInt16(effects[i].RemainingTicks);
+                writer.WriteUInt16(effects[i].Amount);
+            }
+            return buffer;
+        }
+
+        /// <summary>Lee StatusEffects, validando tipos únicos, velocidad y duración (I-18).</summary>
+        public static bool TryReadStatusEffects(byte[] buffer, int offset, int length, out StatusEffectsMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.StatusEffects) || length < StatusEffectsHeaderSize)
+                return false;
+
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                byte speedPercent = reader.ReadByte();
+                int count = reader.ReadByte();
+                if (speedPercent < 1 || speedPercent > 100 || count > ProtocolConstants.MaxStatusEffects ||
+                    length != StatusEffectsHeaderSize + StatusEffectEntrySize * count)
+                    return false;
+
+                var effects = count == 0 ? Array.Empty<StatusEffectEntry>() : new StatusEffectEntry[count];
+                byte seen = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    StatusKind kind = (StatusKind)reader.ReadByte();
+                    ushort skillId = reader.ReadUInt16();
+                    ushort remainingTicks = reader.ReadUInt16();
+                    ushort amount = reader.ReadUInt16();
+                    byte kindValue = (byte)kind;
+                    if (kindValue < 1 || kindValue > 4 || remainingTicks == 0 ||
+                        (seen & (1 << (kindValue - 1))) != 0)
+                        return false;
+                    seen |= (byte)(1 << (kindValue - 1));
+                    effects[i] = new StatusEffectEntry(kind, skillId, remainingTicks, amount);
+                }
+                if (reader.Remaining != 0) return false;
+                message = new StatusEffectsMessage(speedPercent, effects);
+                return true;
+            }
+            catch (ProtocolException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Codifica cambios de máscara: cabecera de 2 bytes y 5 por entidad (I-18).</summary>
+        public static byte[] EncodeStatusEvent(in StatusEventMessage message)
+        {
+            StatusEventEntry[] entries = message.Entries ?? Array.Empty<StatusEventEntry>();
+            if (entries.Length < 1 || entries.Length > ProtocolConstants.MaxStatusEventsPerMessage)
+                throw new ArgumentOutOfRangeException(nameof(message), "StatusEvent debe contener entre 1 y 64 entradas.");
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (entries[i].EntityId <= 0 || (entries[i].Mask & 0xF0) != 0)
+                    throw new ArgumentOutOfRangeException(nameof(message), "StatusEvent contiene una entidad o máscara inválida.");
+            }
+
+            var buffer = new byte[StatusEventHeaderSize + StatusEventEntrySize * entries.Length];
+            var writer = new WireWriter(buffer);
+            writer.WriteByte((byte)MessageType.StatusEvent);
+            writer.WriteByte((byte)entries.Length);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                writer.WriteInt32(entries[i].EntityId);
+                writer.WriteByte(entries[i].Mask);
+            }
+            return buffer;
+        }
+
+        /// <summary>Lee StatusEvent y valida cantidad, identificadores y bits reservados (I-18).</summary>
+        public static bool TryReadStatusEvent(byte[] buffer, int offset, int length, out StatusEventMessage message)
+        {
+            message = default;
+            if (!HasHeader(buffer, offset, length, MessageType.StatusEvent) || length < StatusEventHeaderSize)
+                return false;
+            try
+            {
+                var reader = new WireReader(buffer, offset + 1, length - 1);
+                int count = reader.ReadByte();
+                if (count < 1 || count > ProtocolConstants.MaxStatusEventsPerMessage ||
+                    length != StatusEventHeaderSize + StatusEventEntrySize * count)
+                    return false;
+                var entries = new StatusEventEntry[count];
+                for (int i = 0; i < count; i++)
+                {
+                    int entityId = reader.ReadInt32();
+                    byte mask = reader.ReadByte();
+                    if (entityId <= 0 || (mask & 0xF0) != 0) return false;
+                    entries[i] = new StatusEventEntry(entityId, mask);
+                }
+                if (reader.Remaining != 0) return false;
+                message = new StatusEventMessage(entries);
                 return true;
             }
             catch (ProtocolException)

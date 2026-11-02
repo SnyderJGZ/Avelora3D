@@ -796,6 +796,7 @@ Implementado: servidor con área centrada en objetivo, radio, tope por cercanía
 
 ### I-18 — Estados temporales (escudo, ralentización, provocar, bonus)
 
+- **Implementado:** bonus a daño y defensas, escudo tras mitigación, ralentización de jugadores y PNJ, provocar sin tabla de amenaza; estados por ticks no persistidos, protocolo v23, mensajes propios y de observadores, estadísticas, bots y métricas. El ranger recibe su estado en I-19; cliente I-18b pendiente.
 - **Alcance:** efectos con duración medida en ticks (modificador de atributo, absorción, ralentización,
   provocar a PNJ), aplicados y expirados en el servidor; `Stats` los refleja. **Sin desplazamientos
   forzados ni saltos** en el MVP: chocan con la predicción y reconciliación del movimiento.

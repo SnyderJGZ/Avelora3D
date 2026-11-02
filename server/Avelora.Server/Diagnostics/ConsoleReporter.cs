@@ -310,6 +310,9 @@ namespace Avelora.Server.Diagnostics
                 " hab_rechazadas=" + TotalSkillRejections(zone) +
                 " recurso_msgs=" + network.ResourceMessages +
                 " recurso_bytes=" + network.ResourceBytes +
+                " est_lento=" + zone.StatusesApplied(StatusKind.Slow) +
+                " est_escudo=" + zone.StatusesApplied(StatusKind.Shield) +
+                " est_absorbido=" + zone.ShieldAbsorbed +
                 " hab_catalogo_bytes=" + network.SkillCatalogBytes);
 
             if (network.SaveFailures > 0 && !string.IsNullOrEmpty(network.SaveLastError))
@@ -472,6 +475,19 @@ namespace Avelora.Server.Diagnostics
                 ", recurso_msgs=" + network.ResourceMessages +
                 ", recurso_bytes=" + network.ResourceBytes +
                 ", hab_catalogo_bytes=" + network.SkillCatalogBytes +
+                ", est_bonus=" + zone.StatusesApplied(StatusKind.Bonus) +
+                ", est_escudo=" + zone.StatusesApplied(StatusKind.Shield) +
+                ", est_lento=" + zone.StatusesApplied(StatusKind.Slow) +
+                ", est_provocar=" + zone.StatusesApplied(StatusKind.Taunt) +
+                ", est_ignorados=" + zone.StatusesIgnoredWeaker +
+                ", est_expirados=" + zone.StatusesExpired +
+                ", est_muerte=" + zone.StatusesClearedByDeath +
+                ", est_provocar_roto=" + zone.TauntsBroken +
+                ", est_absorbido=" + zone.ShieldAbsorbed +
+                ", est_msgs=" + network.StatusMessages +
+                ", est_bytes=" + network.StatusBytes +
+                ", est_evt_msgs=" + network.StatusEventMessages +
+                ", est_evt_bytes=" + network.StatusEventBytes +
                 ", hab_rech_desconocida=" + zone.SkillsRejected(SkillRejectReason.UnknownSkill) +
                 ", hab_rech_clase=" + zone.SkillsRejected(SkillRejectReason.WrongClass) +
                 ", hab_rech_nivel=" + zone.SkillsRejected(SkillRejectReason.LevelTooLow) +

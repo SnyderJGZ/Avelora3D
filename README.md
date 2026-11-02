@@ -29,7 +29,8 @@ calcular igual (movimiento y colisión).
 > de armas por clase/nivel y armas a dos manos; I-13 sube a **v17** por `CombatEvent` y añade ataques
 > a distancia con línea de visión. I-25 sube a **v18** con botín y oro y migra SQLite al esquema **v7**;
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
-> I-17 añade áreas y curación: **protocolo v22, esquema v8**.
+> I-17 añade áreas y curación: **protocolo v22, esquema v8**. I-18 añade estados temporales:
+> **protocolo v23**, sin cambiar el esquema.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -374,7 +375,7 @@ pueden discrepar** del formato.
 | `SelectCharacter` | 25 | C → S | 5 B | `characterId` (i32) |
 | `CharacterList` | 26 | S → C | variable, ≤1400 B | máximo por cuenta, personajes (id, nombre, clase, nivel) y clases disponibles (id, nombre) |
 | `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
-| `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed` (u8); máximo 64 |
+| `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed`/`Heal`/`Absorbed` (u8); máximo 64 |
 | `LootGained` | 29 | S → C | 10 B + 5 B/objeto | experiencia (u32), oro (u32), N (u8); itemId (u16), cantidad (u16), bandera `OnGround` (u8); máximo 32 |
 | `ZoneList` | 30 | S → C | 2 B + 4 B/zona + 8 B/rectángulo | N (u8); id (u16), tipo (u8), R (u8); x/y/w/h (i16); máximo 32 zonas y 128 rectángulos (1154 B) |
 | `ZoneChanged` | 31 | S → C | 4 B | id de zona (u16) y tipo (u8); id 0 solo con `Normal` |
@@ -386,13 +387,15 @@ pueden discrepar** del formato.
 | `SkillUsed` | 37 | S → C | 7 B | uso aceptado y objetivo |
 | `SkillRejected` | 38 | S → C | 4 B | habilidad y motivo |
 | `ResourceStatus` | 39 | S → C | 5 B | recurso actual y máximo |
+| `StatusEffects` | 40 | S → C | 3 B + 7 B/estado | velocidad (%), cantidad (u8); tipo (u8), habilidad, ticks restantes y cantidad (u16); solo al dueño, máximo 4 |
+| `StatusEvent` | 41 | S → C | 2 B + 5 B/entidad | cantidad (u8); entidad (i32) y máscara (u8); cambios de entidades visibles, máximo 64 |
 
 Canales:
 
 - **Fiable y ordenado:** `Hello`, `Welcome`, `Reject`, `Attack`, `PickUp`, `UseItem`, `Equip`,
   `Unequip`, `ChatSend`, `AllocatePoints`, `ResetPoints`, `ItemCatalog`, `Inventory`, `Progress`,
   `Stats`, `Chat`, `CreateCharacter`, `DeleteCharacter`, `SelectCharacter`, `CharacterList`,
-  `CharacterRejected`, `LootGained`, `ZoneList`, `ZoneChanged`, `SetPvpMode`, `PvpStatus`, `PvpModeRejected`, `SkillCatalog`, `SkillUsed`, `SkillRejected` y `ResourceStatus`.
+  `CharacterRejected`, `LootGained`, `ZoneList`, `ZoneChanged`, `SetPvpMode`, `PvpStatus`, `PvpModeRejected`, `SkillCatalog`, `SkillUsed`, `SkillRejected`, `ResourceStatus`, `StatusEffects` y `StatusEvent`.
 - **No fiable y secuenciado:** `MoveInput` y `Snapshot`. Si un paquete se pierde, el siguiente lo
   reemplaza; no se reintenta.
 - **No fiable y sin secuencia compartida:** `CombatEvent`. Es cosmético y perderlo no altera el daño
@@ -408,7 +411,7 @@ Canales:
 > `ItemCatalog`; I-20 sube a **v13** al empaquetar el rango en el byte de acción del snapshot e I-21 a
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
-> I-17 sube a **v22** por los campos de área, curación y objetivo; esquema v8 sin cambios.
+> I-17 sube a **v22** por los campos de área, curación y objetivo; I-18 sube a **v23** por estados temporales y sus mensajes. El esquema sigue en v8.
 > I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
@@ -870,7 +873,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v22** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v23** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1126,6 +1129,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-15p** | Combate entre jugadores, modo PvE/PvP y forzado (`SetPvpMode`, `PvpStatus`, `PvpModeRejected`; protocolo v20, esquema v8) | ✅ servidor, bots y cliente I-15pb |
 | **I-16** | Habilidades, regeneración y bots (protocolo v21, esquema v8) | ✅ servidor; cliente I-16b/I-16c implementado, Play pendiente |
 | **I-17** | Áreas y curación (protocolo v22, esquema v8) | ✅ servidor; cliente I-17b pendiente |
+| **I-18** | Estados temporales (protocolo v23, esquema v8) | ✅ servidor y bots; cliente I-18b pendiente |
 | **I-15q** | Esperas PvE/PvP y rótulos «PvP activo» (sin cambio de protocolo ni esquema) | ✅ servidor, cliente y pruebas |
 | **I-15r** | Cancelación del PvP forzado al entrar en zona segura (sin cambio de protocolo ni esquema) | ✅ servidor y pruebas |
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
@@ -2040,6 +2044,38 @@ Métricas nuevas: `hab_area_objetivos`, `hab_area_tope`, `hab_curas`, `hab_cura_
 resumen, `hab_rech_vida_llena`. Los bots priorizan área y se curan bajo el 70 % de vida;
 publican `hab_curas_enviadas`. Suite: **898/898** pruebas (39 nuevas). Validación y carga: [informe I-17](docs/agentes/informes/I-17.md).
 
+#### Estados temporales (I-18, protocolo v23)
+
+`skills.json` añade `status` (`bonus`, `shield`, `slow` o `taunt`), `statusSeconds` y
+`statusAmount`. `effect` admite `damage`, `heal` o `none`; este último requiere daño 0 y un estado.
+En `SkillCatalogEntry`, `effect` vale 0/1/2 y se añaden `statusKind u8`, `statusTicks u16` y
+`statusAmount u16` (5 B por habilidad).
+El servidor valida duración de 0,5..30 s, convierte a ticks con redondeo hacia arriba y rechaza
+estados en área. Hay cuatro tipos y como máximo uno de cada tipo por entidad; una aplicación más
+débil se ignora —en el escudo se compara la cantidad restante— y una igual o mayor reemplaza
+cantidad, lanzador y caducidad. Caducan al principio
+del tick límite; la muerte limpia todos los estados y no se guardan en SQLite.
+
+`Slow` y `Taunt` son dañinos y comparten las reglas de objetivo del ataque: PvP efectivo, zonas
+seguras y PNJ en `Return`; provocar solo acepta PNJ. `Bonus` y `Shield` son beneficiosos: uno mismo
+o un jugador vivo, con el límite PvP de curación; la zona segura no los impide. El bonus suma al
+daño bruto y a defensa/resistencia, sin alterar máximos de vida o recurso; al cambiar se publica
+`Stats`. El escudo absorbe después de mitigar: `CombatEventFlags.Absorbed = 16` informa lo absorbido
+en una entrada aparte y el evento normal solo se envía si queda daño. La ralentización (10..80 %)
+afecta a jugadores y PNJ con la misma velocidad efectiva; el dueño recibe `StatusEffects` al cambiar
+la lista para que predicción y reconciliación usen la velocidad nueva. Provocar fija al PNJ en `Chase`
+contra el lanzador; si vuelve o cambia de objetivo, el estado se rompe, y al caducar no restaura un
+objetivo anterior.
+
+El guerrero recibe Provocar; el mago, Rayo helado y Escudo arcano; el sanador, Bendición. El ranger
+recibirá su estado en I-19. `StatusEffects` (40) lleva velocidad y tipos, habilidades, ticks restantes
+y cantidades solo al dueño; `StatusEvent` (41) anuncia máscaras a los observadores visibles cuando
+cambian, sin duración. Ninguno modifica el snapshot. Métricas: `est_bonus`, `est_escudo`, `est_lento`,
+`est_provocar`, `est_ignorados`, `est_expirados`, `est_muerte`, `est_provocar_roto`, `est_absorbido`,
+`est_msgs`, `est_bytes`, `est_evt_msgs` y `est_evt_bytes`; los bots informan `est_enviadas`, `est_msgs`
+y `est_lento_msgs`. Suite: **933/933** pruebas. El cliente compatible queda pendiente de I-18b.
+No hay estados en área, periódicos, aturdimiento ni desplazamiento forzado.
+
 
 ### Chat (I-07, protocolo v10)
 
@@ -2130,7 +2166,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v22, incluidos I-15p/I-15q, I-16 e I-17.
-El cliente usa v21 (I-17b pendiente; incompatible con el servidor v22) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
+El servidor ya implementa **I-04 a I-25**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
+El cliente usa v21 (I-17b/I-18b pendientes; incompatible con el servidor v23) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

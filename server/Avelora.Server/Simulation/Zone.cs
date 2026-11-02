@@ -42,6 +42,7 @@ namespace Avelora.Server.Simulation
         private readonly PvpSystem _pvp;
         private readonly PlayerVitalsSystem? _vitals;
         private readonly ItemSystem? _items;
+        private readonly StatusSystem _statuses = new StatusSystem();
         private readonly StatsSystem _stats;
         private readonly ItemCatalog? _itemCatalog;
         private readonly List<ItemAction> _itemInbox = new List<ItemAction>(64);
@@ -244,6 +245,12 @@ namespace Avelora.Server.Simulation
         /// <summary>Eventos de combate pendientes de enviar con el siguiente snapshot.</summary>
         public CombatEventBuffer CombatEvents { get; } = new CombatEventBuffer();
 
+        /// <summary>Cambios de máscara de estado por entidad para los observadores visibles.</summary>
+        public List<StatusEventEntry> StatusEvents { get; } = new List<StatusEventEntry>(64);
+
+        /// <summary>Cambios de estado descartados al alcanzar el límite del búfer de la zona.</summary>
+        public long StatusEventsDropped { get; private set; }
+
         public long CombatEventsDropped => CombatEvents.Dropped;
 
         /// <summary>Catálogo de PNJ de la zona, para consultar el botín al morir.</summary>
@@ -285,6 +292,9 @@ namespace Avelora.Server.Simulation
 
         /// <summary>El recurso de un jugador cambió y hay que avisar solo a él (I-16).</summary>
         public event Action<PlayerEntity>? ResourceChanged;
+
+        /// <summary>Estados propios cambiados; se notifica solo al dueño.</summary>
+        public event Action<PlayerEntity>? StatusEffectsChanged;
 
         /// <summary>Parámetros del área de interés efectivos en esta zona.</summary>
         public InterestSettings Interest => _interest.Settings;
@@ -357,6 +367,18 @@ namespace Avelora.Server.Simulation
         public long HealsDone => _combat?.HealsDone ?? 0;
         /// <summary>Vida realmente curada.</summary>
         public long HealAmount => _combat?.HealAmount ?? 0;
+        /// <summary>Estados aplicados o refrescados por tipo.</summary>
+        public long StatusesApplied(StatusKind kind) => _combat?.StatusesApplied(kind) ?? 0;
+        /// <summary>Estados ignorados por ser más débiles.</summary>
+        public long StatusesIgnoredWeaker => _combat?.StatusesIgnoredWeaker ?? 0;
+        /// <summary>Daño absorbido por escudos de jugadores y PNJ.</summary>
+        public long ShieldAbsorbed => (_combat?.ShieldAbsorbed ?? 0) + (_npcs?.ShieldAbsorbed ?? 0);
+        /// <summary>Estados retirados por caducidad.</summary>
+        public long StatusesExpired => _statuses.Expired;
+        /// <summary>Estados retirados por muerte.</summary>
+        public long StatusesClearedByDeath => _statuses.ClearedByDeath;
+        /// <summary>Provocaciones interrumpidas antes de caducar.</summary>
+        public long TauntsBroken => _statuses.TauntsBroken;
         /// <summary>Habilidades válidas (I-16).</summary>
         public long SkillsUsed => _combat?.SkillsUsed ?? 0;
 
@@ -611,6 +633,7 @@ namespace Avelora.Server.Simulation
         public void Tick()
         {
             DrainInputs();
+            _statuses.Tick(Entities, _tickCount);
             _movement.Tick(Entities, Map);
 
             // Combate (I-02): después de mover a los jugadores (el ataque usa su posición nueva y
@@ -684,6 +707,31 @@ namespace Avelora.Server.Simulation
                     {
                         player.ResourceSentKey = key;
                         ResourceChanged?.Invoke(player);
+                    }
+                }
+
+                for (int i = 0; i < Entities.Count; i++)
+                {
+                    Entity entity = Entities[i];
+                    byte mask = entity.Statuses.Mask;
+                    if (mask != entity.StatusMaskSent)
+                    {
+                        entity.StatusMaskSent = mask;
+                        if (StatusEvents.Count < 1024) StatusEvents.Add(new StatusEventEntry(entity.Id, mask));
+                        else StatusEventsDropped++;
+                    }
+
+                    if (entity is not PlayerEntity statusPlayer) continue;
+                    if (statusPlayer.Statuses.Version != statusPlayer.StatusSentVersion)
+                    {
+                        statusPlayer.StatusSentVersion = statusPlayer.Statuses.Version;
+                        StatusEffectsChanged?.Invoke(statusPlayer);
+                    }
+                    int bonus = statusPlayer.Statuses.Bonus;
+                    if (bonus != statusPlayer.BonusSent)
+                    {
+                        statusPlayer.BonusSent = bonus;
+                        NotifyStatsChanged(statusPlayer);
                     }
                 }
             }

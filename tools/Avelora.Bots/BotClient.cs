@@ -192,6 +192,7 @@ namespace Avelora.Bots
         private float _x;
         private float _y;
         private float _speed;
+        private float _welcomeSpeed;
         private uint _lastSnapshotTick;
         private bool _hasPosition;
         private float _travelled;
@@ -233,6 +234,15 @@ namespace Avelora.Bots
         private bool _hasHealSkill;
         private long _nextHealAt;
         private long _healsSent;
+        private SkillCatalogEntry _debuffSkill;
+        private bool _hasDebuffSkill;
+        private long _nextDebuffAt;
+        private SkillCatalogEntry _buffSkill;
+        private bool _hasBuffSkill;
+        private long _nextBuffAt;
+        private long _statusSkillsSent;
+        private long _statusMessages;
+        private long _slowMessages;
         private ushort _resource;
         private long _nextSkillAt;
         private long _skillsSent;
@@ -480,6 +490,9 @@ namespace Avelora.Bots
         public long PvpRejects => Interlocked.Read(ref _pvpRejects);
         public long PvpModeRequests => Interlocked.Read(ref _pvpModeRequests);
         public long HealsSent => Interlocked.Read(ref _healsSent);
+        public long StatusSkillsSent => Interlocked.Read(ref _statusSkillsSent);
+        public long StatusMessages => Interlocked.Read(ref _statusMessages);
+        public long SlowMessages => Interlocked.Read(ref _slowMessages);
         public long SkillsSent => Interlocked.Read(ref _skillsSent);
         public long SkillsOk => Interlocked.Read(ref _skillsOk);
         public long SkillsRejected => Interlocked.Read(ref _skillsRejected);
@@ -805,6 +818,7 @@ namespace Avelora.Bots
                     {
                         UpdateItemActions(_pendingFightSnapshot);
                         SendSelfHealIfNeeded(now);
+                        SendSelfBuffIfNeeded(now);
                         _itemDecisionPending = false;
                     }
 
@@ -1061,6 +1075,8 @@ namespace Avelora.Bots
             _classId = 0;
             _hasSkill = false;
             _hasHealSkill = false;
+            _hasDebuffSkill = false;
+            _hasBuffSkill = false;
             _nextHealAt = 0;
             _resource = 0;
             _lastFreePoints = 0;
@@ -1524,6 +1540,8 @@ namespace Avelora.Bots
             {
                 _hasSkill = false;
                 _hasHealSkill = false;
+                _hasDebuffSkill = false;
+                _hasBuffSkill = false;
                 foreach (SkillCatalogEntry entry in skillCatalog.Skills)
                 {
                     if (entry.Effect == 1 && !_hasHealSkill)
@@ -1531,10 +1549,21 @@ namespace Avelora.Bots
                         _healSkill = entry;
                         _hasHealSkill = true;
                     }
-                    if (entry.Effect == 0 && (!_hasSkill || (_skill.Radius == 0 && entry.Radius > 0)))
+                    if (entry.Effect == 0 && entry.StatusKind == StatusKind.None &&
+                        (!_hasSkill || (_skill.Radius == 0 && entry.Radius > 0)))
                     {
                         _skill = entry;
                         _hasSkill = true;
+                    }
+                    if (!_hasDebuffSkill && (entry.StatusKind == StatusKind.Slow || entry.StatusKind == StatusKind.Taunt))
+                    {
+                        _debuffSkill = entry;
+                        _hasDebuffSkill = true;
+                    }
+                    if (!_hasBuffSkill && (entry.StatusKind == StatusKind.Bonus || entry.StatusKind == StatusKind.Shield))
+                    {
+                        _buffSkill = entry;
+                        _hasBuffSkill = true;
                     }
                 }
 
@@ -1547,6 +1576,18 @@ namespace Avelora.Bots
                 Interlocked.Increment(ref _resourceMessages);
                 return;
             }
+
+            if (MessageCodec.TryReadStatusEffects(buffer, offset, length, out StatusEffectsMessage statuses))
+            {
+                Interlocked.Increment(ref _statusMessages);
+                if (statuses.SpeedPercent < 100) Interlocked.Increment(ref _slowMessages);
+                _prediction?.SetSpeed(statuses.SpeedPercent == 100
+                    ? _welcomeSpeed
+                    : _welcomeSpeed * statuses.SpeedPercent / 100f);
+                return;
+            }
+
+            if (MessageCodec.TryReadStatusEvent(buffer, offset, length, out _)) return;
 
             if (MessageCodec.TryReadSkillUsed(buffer, offset, length, out _))
             {
@@ -1634,6 +1675,7 @@ namespace Avelora.Bots
                 _x = welcome.SpawnX;
                 _y = welcome.SpawnY;
                 _speed = welcome.Speed;
+                _welcomeSpeed = welcome.Speed;
                 _hasPosition = true;
                 Status = "conectado";
 
@@ -2175,7 +2217,8 @@ namespace Avelora.Bots
                         _npcs[state.Id] = new NpcView(
                             ProtocolConstants.DequantizePosition(state.X),
                             ProtocolConstants.DequantizePosition(state.Y),
-                            state.Action);
+                            state.Action,
+                            player: true);
                     }
 
                     continue;
@@ -2194,7 +2237,8 @@ namespace Avelora.Bots
                 _npcs[state.Id] = new NpcView(
                     ProtocolConstants.DequantizePosition(state.X),
                     ProtocolConstants.DequantizePosition(state.Y),
-                    state.Action);
+                    state.Action,
+                    player: false);
 
                 if (state.Action == EntityAction.Dead && _deadNpcs.Add(state.Id))
                 {
@@ -2278,6 +2322,16 @@ namespace Avelora.Bots
                 _nextSkillAt = now + (_skill.CooldownTicks * 1000 / SimulationConstants.TickRate) + AttackSlackMs;
             }
 
+            if (_useSkills && _hasDebuffSkill && _resource >= _debuffSkill.ResourceCost && now >= _nextDebuffAt &&
+                distanceSq <= _debuffSkill.Range * _debuffSkill.Range &&
+                (_debuffSkill.StatusKind != StatusKind.Taunt || !_npcs[target].Player))
+            {
+                byte[] useSkill = MessageCodec.EncodeUseSkill(new UseSkillMessage(_debuffSkill.Id, target));
+                _transport!.Send(useSkill, useSkill.Length, DeliveryMode.ReliableOrdered);
+                Interlocked.Increment(ref _statusSkillsSent);
+                _nextDebuffAt = now + _debuffSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+            }
+
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
             // un jitter mínimo la haría llegar antes de tiempo y contaría como rechazo.
             _nextAttackAt = now + CurrentAttackCooldownMs + AttackSlackMs;
@@ -2323,6 +2377,16 @@ namespace Avelora.Bots
             _transport!.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             Interlocked.Increment(ref _healsSent);
             _nextHealAt = now + _healSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+        }
+
+        private void SendSelfBuffIfNeeded(long now)
+        {
+            if (!_useSkills || !_hasBuffSkill || _npcs.Count == 0 || _resource < _buffSkill.ResourceCost ||
+                now < _nextBuffAt || EntityId <= 0) return;
+            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(_buffSkill.Id, EntityId));
+            _transport!.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
+            Interlocked.Increment(ref _statusSkillsSent);
+            _nextBuffAt = now + _buffSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>
@@ -2588,14 +2652,15 @@ namespace Avelora.Bots
             }
         }
 
-        /// <summary>Lo que el bot sabe de un enemigo por el último snapshot: posición y acción.</summary>
+        /// <summary>Lo que el bot sabe de una entidad atacable por el último snapshot.</summary>
         private readonly struct NpcView
         {
-            public NpcView(float x, float y, EntityAction action)
+            public NpcView(float x, float y, EntityAction action, bool player)
             {
                 X = x;
                 Y = y;
                 Action = action;
+                Player = player;
             }
 
             public float X { get; }
@@ -2603,6 +2668,8 @@ namespace Avelora.Bots
             public float Y { get; }
 
             public EntityAction Action { get; }
+
+            public bool Player { get; }
         }
 
         private enum AttemptResult

@@ -119,6 +119,12 @@ namespace Avelora.Server.Entities
         /// <summary>Último recurso enviado al cliente (actual &lt;&lt; 32 | máximo); -1 = ninguno.</summary>
         internal long ResourceSentKey { get; set; } = -1;
 
+        /// <summary>Última versión propia de estados enviada.</summary>
+        internal int StatusSentVersion { get; set; }
+
+        /// <summary>Último bonus de estado reflejado en estadísticas.</summary>
+        internal int BonusSent { get; set; }
+
         /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
         internal bool ProgressChanged { get; set; }
 

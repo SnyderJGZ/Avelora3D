@@ -268,7 +268,7 @@ namespace Avelora.Tests
         {
             SkillCatalog catalog = SkillCatalog.Load(RepoFile("skills.json"), ClassCatalog.Default);
 
-            Assert.Equal(6, catalog.Skills!.Count);
+            Assert.Equal(10, catalog.Skills!.Count);
             for (int classId = 1; classId <= 4; classId++)
             {
                 Assert.Contains(catalog.Skills, skill => skill.ClassId == classId);
