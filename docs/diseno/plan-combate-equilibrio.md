@@ -241,7 +241,7 @@ Versiones orientativas (una subida por tarea que cambie el formato).
 
 | Tarea | Qué | Peso | Protocolo / esquema | Cliente | Verificación |
 | --- | --- | --- | --- | --- | --- |
-| **I-26** Fórmulas en `CombatMath` y simulador | Mover `GetAttackDamage`, `MitigateDamage` y el cálculo de recarga de `CharacterStats`/`CombatSystem` a `CombatMath` sin cambiar resultados; `tools/Avelora.Balance` y pruebas de equivalencia y de informe. | Media | No / No | — | Las 898 pruebas siguen verdes sin tocarlas; el simulador reproduce la tabla de §1 (guerrero 1: 21,2 DPS); carga sin cambios. |
+| **I-26** Fórmulas en `CombatMath` y simulador | Mover `GetAttackDamage`, `MitigateDamage` y el cálculo de recarga de `CharacterStats`/`CombatSystem` a `CombatMath` sin cambiar resultados; `tools/Avelora.Balance` y pruebas de equivalencia y de informe. | Media | No / No | — | Las 933 pruebas siguen verdes sin tocarlas; el simulador reproduce la tabla de §1 (guerrero 1: 21,2 DPS); carga sin cambios. |
 | **I-27** Modelo de daño, vida y defensa | §2.2, §2.3 (sin crítico ni PvP), bonus antes del multiplicador, `damageType` de PNJ, `weaponPercent`; reescribir números de `classes.json`, `items.json` (armas por franja 1 y 5, armaduras), `npcs.json` (orcos a §2.7) y `skills.json`; ajustar pruebas que fijan cifras. | Pesada | No (cambian valores de `Stats`, no el formato) / No | — | Tablas de fórmulas por clase; simulador cumple objetivos 1 y 3 en niveles 1 y 5; carga con bots `fight` sin correcciones. |
 | **I-28** Crítico, velocidad de ataque y PvP | §2.4, §2.5, `globalCooldownSeconds`, `pvpDamagePercent`, `CombatSeed`; `CombatEventFlags.Critical = 32`; `Stats` gana probabilidad de crítico y prisa. | Media | **v24** / No | I-28b (liviana): números de crítico más grandes; crítico y prisa en el panel de atributos | Pruebas con `Random` inyectado; recargas en ticks con topes; duelos del simulador (objetivo 7) en informe. |
 | **I-29** Velocidad de movimiento | §2.6: `moveSpeed` en armaduras, `moveCap`, `SpeedPercent` total en `StatusEffects`; PNJ a 3,0-3,4; bots que respetan la velocidad. | Liviana | No / No (si el formato de `StatusEffects` no cambia) | Nada si I-18b aplica `SpeedPercent` siempre; si no, entra en I-28b | Pruebas de movimiento con botas y ralentización juntas; carga: correcciones por bot y minuto como I-18. |
@@ -254,15 +254,15 @@ explícito, como en I-08.
 
 ---
 
-## 6. Decisiones abiertas (con recomendación)
+## 6. Decisiones (aceptadas el 2026-11-02)
 
-1. **Número de habilidades por clase.** Mago y sanador ya tienen habilidades de sobra. *Recomendación:* 4 por
+1. **[Decidido] Número de habilidades por clase.** Mago y sanador ya tienen habilidades de sobra. *Decisión (recomendación aceptada):* 4 por
    clase; retirar Proyectil arcano (4002); el sanador conserva 5 (Curación y Castigo a nivel 1) para poder
    subir solo.
-2. **Daño en PvP.** *Recomendación:* `pvpDamagePercent` 60 global (duelos de 8-15 s); curas sin reducir.
-3. **Velocidad de los mobs.** *Recomendación:* subirla a 3,0-3,4 (hoy 2,0/1,6, nunca alcanzan a nadie) y que la
+2. **[Decidido] Daño en PvP.** *Decisión (recomendación aceptada):* `pvpDamagePercent` 60 global (duelos de 8-15 s); curas sin reducir.
+3. **[Decidido] Velocidad de los mobs.** *Decisión (recomendación aceptada):* subirla a 3,0-3,4 (hoy 2,0/1,6, nunca alcanzan a nadie) y que la
    ralentización sea el control del ranger y del mago.
-4. **Tipos de armadura por clase (tela/cuero/placas).** *Recomendación:* no en el MVP; la diferencia de aguante
+4. **[Decidido] Tipos de armadura por clase (tela/cuero/placas).** *Decisión (recomendación aceptada):* no en el MVP; la diferencia de aguante
    sale de `healthPerLevel`, `defensePerLevel` y `magicResistPerLevel` de la clase, y todos llevan el mismo equipo.
-5. **Esquiva y precisión.** *Recomendación:* no en el MVP; solo crítico. Un fallo aleatorio frustra con
+5. **[Decidido] Esquiva y precisión.** *Decisión (recomendación aceptada):* no en el MVP; solo crítico. Un fallo aleatorio frustra con
    recargas largas y complica el PvP; se reconsidera con más estados.
