@@ -78,7 +78,9 @@ namespace Avelora.Server.Progression
                 maxHealth,
                 maxResource,
                 defense,
-                magicResist);
+                magicResist,
+                CombatMath.CritChancePb(catalog, classId, dex),
+                CombatMath.HastePb(catalog, dex));
         }
 
         /// <summary>Daño bruto de un ataque sin arma o de un arma física.</summary>
@@ -168,7 +170,9 @@ namespace Avelora.Server.Progression
             int maxHealth,
             int maxResource,
             int defense,
-            int magicResist)
+            int magicResist,
+            int critChancePb = 0,
+            int hastePb = 0)
         {
             Str = str;
             Dex = dex;
@@ -178,6 +182,8 @@ namespace Avelora.Server.Progression
             MaxResource = maxResource;
             Defense = defense;
             MagicResist = magicResist;
+            CritChancePb = critChancePb;
+            HastePb = hastePb;
         }
 
         public int Str { get; }
@@ -188,5 +194,9 @@ namespace Avelora.Server.Progression
         public int MaxResource { get; }
         public int Defense { get; }
         public int MagicResist { get; }
+        /// <summary>Probabilidad crítica en puntos básicos.</summary>
+        public int CritChancePb { get; }
+        /// <summary>Prisa en puntos básicos.</summary>
+        public int HastePb { get; }
     }
 }

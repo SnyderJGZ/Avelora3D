@@ -2056,6 +2056,8 @@ namespace Avelora.Server.Net
                 damageType == "magical" ? (byte)1 : (byte)0,
                 checked((ushort)(derived.Defense + bonus)),
                 checked((ushort)(derived.MagicResist + bonus)),
+                checked((ushort)derived.CritChancePb),
+                checked((ushort)derived.HastePb),
                 checked((ushort)player.Mana),
                 checked((ushort)player.MaxMana),
                 player.Level <= _zone.Levels.FreeResetMaxLevel ? (byte)1 : (byte)0));

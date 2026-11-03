@@ -644,14 +644,14 @@ namespace Avelora.Tests
                         4, new ushort[] { 3102, 3103, 3101, 3301 }, new ushort[] { 1, 1, 1, 1 })));
                     _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(1, 0, 100, 100)));
                     _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
-                        1, 1, 4, 3, 1, 10, 0, 0, 0, 0, 3, 100, 12, 0, 0, 0, 100, 100, 1)));
+                        1, 1, 4, 3, 1, 10, 0, 0, 0, 0, 3, 100, 12, 0, 0, 0, 0, 0, 100, 100, 1)));
                 }
                 else if (data[0] == (byte)MessageType.AllocatePoints)
                 {
                     AllocateSent = MessageCodec.TryReadAllocatePoints(data, 0, length, out AllocatePointsMessage points) &&
                         points.Str == 2 && points.Dex == 0 && points.Int == 0 && points.Vit == 1;
                     _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
-                        1, 1, 6, 3, 1, 11, 2, 0, 0, 1, 0, 105, 13, 0, 0, 0, 100, 100, 1)));
+                        1, 1, 6, 3, 1, 11, 2, 0, 0, 1, 0, 105, 13, 0, 0, 0, 0, 0, 100, 100, 1)));
                 }
                 else if (data[0] == (byte)MessageType.Equip)
                 {
@@ -678,7 +678,7 @@ namespace Avelora.Tests
                             4, new ushort[] { 3102, 3103, 0, 0 }, new ushort[] { 1, 1, 0, 0 }, equipment)));
                         _incoming.Enqueue(MessageCodec.EncodeProgress(new ProgressMessage(3, 0, 0, 130)));
                         _incoming.Enqueue(MessageCodec.EncodeStats(new StatsMessage(
-                            1, 3, 4, 3, 1, 10, 0, 0, 0, 0, 0, 100, 24, 0, 0, 0, 100, 100, 1)));
+                            1, 3, 4, 3, 1, 10, 0, 0, 0, 0, 0, 100, 24, 0, 0, 0, 0, 0, 100, 100, 1)));
                         EntityState[] states =
                         {
                             new EntityState(42, 0, 0, 0, 0, EntityKind.Player, 100, EntityAction.None),

@@ -843,6 +843,8 @@ namespace Avelora.Shared.Protocol
             byte damageType,
             ushort defense,
             ushort magicResist,
+            ushort critChance,
+            ushort haste,
             ushort resource,
             ushort maxResource,
             byte freeReset)
@@ -863,6 +865,8 @@ namespace Avelora.Shared.Protocol
             DamageType = damageType;
             Defense = defense;
             MagicResist = magicResist;
+            CritChance = critChance;
+            Haste = haste;
             Resource = resource;
             MaxResource = maxResource;
             FreeReset = freeReset;
@@ -885,6 +889,10 @@ namespace Avelora.Shared.Protocol
         public byte DamageType { get; }
         public ushort Defense { get; }
         public ushort MagicResist { get; }
+        /// <summary>Probabilidad crítica en puntos básicos (1 pb = 0,01 %).</summary>
+        public ushort CritChance { get; }
+        /// <summary>Prisa en puntos básicos (1 pb = 0,01 %).</summary>
+        public ushort Haste { get; }
         public ushort Resource { get; }
         public ushort MaxResource { get; }
         public byte FreeReset { get; }
@@ -915,6 +923,7 @@ namespace Avelora.Shared.Protocol
         Killed = 4,
         Heal = 8,
         Absorbed = 16,
+        Critical = 32,
     }
 
     /// <summary>Un daño resuelto por el servidor.</summary>

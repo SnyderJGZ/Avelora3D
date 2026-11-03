@@ -289,7 +289,8 @@ namespace Avelora.Server
                 new AttackQueue(config.MaxQueuedAttacks),
                 new CombatSettings(
                     config.AttackRangeTolerance,
-                    (long)Math.Ceiling(config.LootTagSeconds * SimulationConstants.TickRate)),
+                    (long)Math.Ceiling(config.LootTagSeconds * SimulationConstants.TickRate),
+                    config.CombatSeed),
                 config.PlayerVitals,
                 items,
                 new ItemActionQueue(config.MaxQueuedItemActions),

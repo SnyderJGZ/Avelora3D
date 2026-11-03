@@ -25,7 +25,7 @@ namespace Avelora.Balance
                 return 2;
             if (options.Help)
             {
-                output.WriteLine("Uso: Avelora.Balance [--datos carpeta] [--niveles 1,5,10,25] [--build puro|equilibrado] [--equipo ninguno|franja] [--sin-habilidades] [--salida archivo]");
+                output.WriteLine("Uso: Avelora.Balance [--datos carpeta] [--niveles 1,5,10,25] [--build puro|equilibrado] [--equipo ninguno|franja] [--sin-habilidades] [--duelos] [--salida archivo]");
                 return 0;
             }
 
@@ -60,6 +60,11 @@ namespace Avelora.Balance
                 if (argument == "--sin-habilidades")
                 {
                     options.IncludeSkills = false;
+                    continue;
+                }
+                if (argument == "--duelos")
+                {
+                    options.IncludeDuels = true;
                     continue;
                 }
                 if (argument == "--help")
@@ -182,6 +187,34 @@ namespace Avelora.Balance
                         .Append(" | ").Append(Format(npc.HealthLostPercent)).AppendLine(" |");
                 }
             }
+            if (options.IncludeDuels)
+            {
+                report.AppendLine();
+                report.AppendLine("## Duelos (valor esperado, ataque básico)");
+                report.AppendLine();
+                report.AppendLine("| Nivel | A | B | Gana | Primer muerto (s) | Ratio |");
+                report.AppendLine("| ---: | --- | --- | --- | ---: | ---: |");
+                for (int levelIndex = 0; levelIndex < options.Levels.Count; levelIndex++)
+                {
+                    int level = options.Levels[levelIndex];
+                    for (int aIndex = 0; aIndex < classes.Classes!.Count; aIndex++)
+                    {
+                        CharacterClass a = classes.Classes[aIndex];
+                        for (int bIndex = aIndex + 1; bIndex < classes.Classes.Count; bIndex++)
+                        {
+                            CharacterClass b = classes.Classes[bIndex];
+                            DuelResult duel = simulator.SimulateDuel(a.Id, b.Id, level,
+                                options.Build, options.Equipment);
+                            string winner = duel.WinnerClassId == 0 ? "Empate" :
+                                classes.Find(duel.WinnerClassId)!.Name;
+                            report.Append("| ").Append(level).Append(" | ").Append(a.Name).Append(" | ")
+                                .Append(b.Name).Append(" | ").Append(winner).Append(" | ")
+                                .Append(Format(duel.SecondsToFirstKill)).Append(" | ")
+                                .Append(Format(duel.KillTimeRatio)).AppendLine(" |");
+                        }
+                    }
+                }
+            }
             return report.ToString();
         }
 
@@ -199,6 +232,7 @@ namespace Avelora.Balance
             public string Equipment { get; set; } = "ninguno";
             public string? OutputFile { get; set; }
             public bool IncludeSkills { get; set; } = true;
+            public bool IncludeDuels { get; set; }
             public bool Help { get; set; }
         }
 

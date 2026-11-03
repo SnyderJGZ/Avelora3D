@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-27 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-28 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -31,6 +31,7 @@ calcular igual (movimiento y colisión).
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
 > I-17 añade áreas y curación: **protocolo v22, esquema v8**. I-18 añade estados temporales:
 > **protocolo v23**, sin cambiar el esquema.
+> I-28 añade crítico, prisa, daño PvP y recarga global: **protocolo v24**, sin cambiar el esquema.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -367,7 +368,7 @@ pueden discrepar** del formato.
 | `ChatSend` | 8 | C → S | 3 B + texto | texto UTF-8 con longitud u16; máximo 120 bytes |
 | `Chat` | 17 | S → C | 9 B + nombre + texto | emisor (i32), nombre UTF-8 (≤24 B) y texto UTF-8 (≤120 B), ambos con longitud u16 |
 | `AllocatePoints` | 9 | C → S | **5 B** | puntos a añadir a FUE, DES, INT y VIT (u8 cada uno) |
-| `Stats` | 18 | S → C | **37 B** | clase/nivel (u8), atributos efectivos y repartidos, puntos libres, vida, daño/tipo, defensa/resistencia, recurso y reajuste gratis |
+| `Stats` | 18 | S → C | **41 B** | clase/nivel (u8), atributos efectivos y repartidos, puntos libres, vida, daño/tipo, defensa/resistencia, crítico y prisa (pb), recurso y reajuste gratis |
 | `ResetPoints` | 19 | C → S | **1 B** | sin cuerpo; devuelve todos los puntos repartidos |
 | `EntityKind.Item` | 2 | dentro de `Snapshot` | 1 B | objeto en el suelo; `TypeId` contiene `itemId` |
 | `CreateCharacter` | 23 | C → S | 4 B + nombre | nombre UTF-8 (≤32 B) y `classId` (u8) |
@@ -375,7 +376,7 @@ pueden discrepar** del formato.
 | `SelectCharacter` | 25 | C → S | 5 B | `characterId` (i32) |
 | `CharacterList` | 26 | S → C | variable, ≤1400 B | máximo por cuenta, personajes (id, nombre, clase, nivel) y clases disponibles (id, nombre) |
 | `CharacterRejected` | 27 | S → C | 2 B | motivo de rechazo de crear, borrar o seleccionar personaje (u8) |
-| `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed`/`Heal`/`Absorbed` (u8); máximo 64 |
+| `CombatEvent` | 28 | S → C | 2 B + 11 B/evento | atacante (i32), objetivo (i32), daño mitigado (u16), banderas `Ranged`/`Magical`/`Killed`/`Heal`/`Absorbed`/`Critical` (u8); máximo 64 |
 | `LootGained` | 29 | S → C | 10 B + 5 B/objeto | experiencia (u32), oro (u32), N (u8); itemId (u16), cantidad (u16), bandera `OnGround` (u8); máximo 32 |
 | `ZoneList` | 30 | S → C | 2 B + 4 B/zona + 8 B/rectángulo | N (u8); id (u16), tipo (u8), R (u8); x/y/w/h (i16); máximo 32 zonas y 128 rectángulos (1154 B) |
 | `ZoneChanged` | 31 | S → C | 4 B | id de zona (u16) y tipo (u8); id 0 solo con `Normal` |
@@ -412,6 +413,7 @@ Canales:
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
 > I-17 sube a **v22** por los campos de área, curación y objetivo; I-18 sube a **v23** por estados temporales y sus mensajes. El esquema sigue en v8.
+> I-28 sube a **v24** por `Stats` (crítico y prisa) y `CombatEventFlags.Critical`.
 > I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
@@ -873,7 +875,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v23** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v24** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1135,6 +1137,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-25** | Botín directo, dueño del botín y oro (`LootGained`, protocolo v18; esquema v7) | ✅ servidor, bots y cliente |
 | **I-26** | Fórmulas compartidas en `CombatMath` y simulador `tools/Avelora.Balance` (sin cambio de protocolo ni esquema) | ✅ servidor, herramienta y pruebas |
 | **I-27** | Modelo de daño, vida y defensa (§2.2–§2.3 del plan); datos de franjas 1 y 5 y orcos (sin cambio de protocolo ni esquema) | ✅ servidor, datos y pruebas |
+| **I-28** | Crítico, velocidad de ataque, PvP y recarga global (§2.4–§2.5, §2.8 del plan); protocolo v24 | ✅ servidor, datos y pruebas; cliente I-28b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -1451,6 +1454,9 @@ Fórmulas enteras (I-27):
 - recurso máximo = `resource.base + INT × resource.perInt` (el valor actual se persiste en `mana`);
 - defensa/resistencia = valor de clase + `nivel × defensePerLevel`/`nivel × magicResistPerLevel` + equipo + bonus;
 - daño mitigado = `max(1, floor(daño bruto × 100 / (100 + defensa/resistencia)))`.
+- probabilidad crítica (pb) = `min(critCap, critBase + DES efectiva × critPerDex)`; daño crítico = `floor(golpe × critMultiplier / 100)`;
+- prisa (pb) = `min(hasteCap, DES efectiva × hastePerDex)`; recarga básica = `max(minAttackTicks, ceil(ticksArma × 10000 / (10000 + prisa)))`;
+- contra otro jugador, tras mitigar: `max(1, floor(daño × pvpDamagePercent / 100))`; no reduce curas.
 
 Las armas declaran su tipo de daño y los puños usan el `damageType` de la clase. Los PNJ declaran
 `damageType` (`physical` por defecto o `magical`): sus ataques se mitigan con defensa o resistencia
@@ -1506,9 +1512,9 @@ curar ni regenerar recurso. La **Piedra de reajuste** es `material`, `maxStack: 
 (2002) la suelta con probabilidad **0,03**; `items-carga.json`, `levels-carga.json` y `npcs-carga.json`
 replican los datos necesarios para la carga.
 
-`Stats` (servidor→cliente, tipo 18, 37 bytes, fiable y ordenado) contiene classId/nivel, atributos
+`Stats` (servidor→cliente, tipo 18, 41 bytes, fiable y ordenado) contiene classId/nivel, atributos
 efectivos, puntos asignados/libres, vida máxima, daño bruto actual y su tipo (0 físico, 1 mágico),
-defensa/resistencia, recurso actual/máximo y si el reajuste siguiente es gratis. Se envía después de
+defensa/resistencia, crítico y prisa en pb, recurso actual/máximo y si el reajuste siguiente es gratis. Se envía después de
 `Welcome`, en el orden `Welcome`, `ItemCatalog`, `Inventory`, `Progress`, `Stats`; también tras un reparto
 o reajuste válido, al subir de nivel y al equipar/desequipar. No se emite cada tick. El bot `fight` lee
 `Stats` y reparte los puntos de forma que la mitad (redondeando hacia su atributo principal) vaya al
@@ -2093,6 +2099,23 @@ Opciones: `--niveles`, `--build puro|equilibrado`, `--equipo ninguno|franja`, `-
 
 La vida y las defensas derivadas de clase crecen por nivel; el daño usa un multiplicador entero de `powerPerPoint` y las habilidades suman su porcentaje del arma (`weaponPercent`). El bonus se añade a la base del daño antes del multiplicador. Los ataques de PNJ seleccionan defensa o resistencia mágica mediante `damageType`. Protocolo v23 y esquema v8 no cambian; **996/996** pruebas.
 
+#### Crítico, prisa y PvP (I-28)
+
+El ataque básico esperado suma el crítico (`critBase + DES × critPerDex`, limitado por `critCap`) y reduce su recarga con la prisa (`DES × hastePerDex`); ambos usan la DES efectiva con equipo. En PvP el daño se mitiga primero y luego se multiplica por `pvpDamagePercent` (60 %); las curas no se reducen. Stats v24 comunica crítico y prisa en puntos básicos; el servidor usa una semilla de combate configurable y las habilidades comparten una recarga global de 1 s.
+
+| Nivel | Build | Guerrero | Mago | Ranger | Sanador | Sanador / media |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | puro | 14,28 | 15,16 | 14,63 | 11,16 | 76,0 % |
+| 1 | equilibrado | 14,28 | 15,16 | 14,62 | 10,16 | 69,2 % |
+| 5 | puro | 21,67 | 20,84 | 21,02 | 16,26 | 76,8 % |
+| 5 | equilibrado | 19,94 | 19,85 | 18,87 | 15,23 | 77,9 % |
+| 10 | puro | 26,05 | 25,54 | 26,74 | 19,30 | 73,9 % |
+| 10 | equilibrado | 23,41 | 22,73 | 22,07 | 17,26 | 75,9 % |
+| 20 | puro | 35,57 | 34,10 | 36,16 | 26,43 | 74,9 % |
+| 20 | equilibrado | 29,52 | 28,42 | 30,16 | 21,33 | 72,6 % |
+
+Objetivo 7 (paridad de duelos) y objetivo 1 en niveles 10 y 20 quedan en modo informe hasta I-30; el duelo actual usa solo ataques básicos y todavía no incluye las habilidades ni la cura del sanador. La suite contiene **1.024** pruebas.
+
 
 ### Chat (I-07, protocolo v10)
 
@@ -2183,7 +2206,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-27**, con persistencia SQLite en esquema v8 y protocolo v23, incluidos I-15p/I-15q, I-16, I-17 e I-18.
-El cliente usa v21 (I-17b/I-18b pendientes; incompatible con el servidor v23) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
+El servidor ya implementa **I-04 a I-28**, con persistencia SQLite en esquema v8 y protocolo v24, incluidos I-15p/I-15q, I-16, I-17 e I-18.
+El cliente usa v21 (I-17b/I-18b e I-28b pendientes; incompatible con el servidor v24) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

@@ -60,12 +60,14 @@ namespace Avelora.Balance
                 allocInt, allocVit, weapon?.Damage, out string basicDamageType, _items, equipped,
                 weapon?.DamageType);
             long basicCooldown = CombatMath.AttackCooldownTicks(
-                weapon?.CooldownSeconds ?? characterClass.Unarmed!.CooldownSeconds);
+                weapon?.CooldownSeconds ?? characterClass.Unarmed!.CooldownSeconds,
+                stats.HastePb, _classes.MinAttackTicks);
             int basicNpcDamage = CombatMath.MitigateDamage(basicDamage, 0);
             SkillAttack[] skillAttacks = includeSkills
                 ? GetSkillAttacks(characterClass.Id, level, allocStr, allocDex, allocInt, allocVit, equipped)
                 : Array.Empty<SkillAttack>();
-            double dps = MeasureDps(basicDamage, basicCooldown, skillAttacks,
+            double dps = MeasureDps(basicDamage, stats.CritChancePb, _classes.CritMultiplier,
+                basicCooldown, skillAttacks, _skills.GlobalCooldownTicks,
                 characterClass.Resource!.RegenPerSecond, stats.MaxResource);
 
             var npcResults = new List<NpcCombatResult>(_npcs.Types.Count);
@@ -73,11 +75,95 @@ namespace Avelora.Balance
             {
                 NpcType npc = _npcs.Types[i];
                 npcResults.Add(SimulateNpc(npc, stats, basicDamageType, basicDamage,
-                    basicCooldown, skillAttacks, characterClass.Resource.RegenPerSecond));
+                    basicCooldown, skillAttacks, _skills.GlobalCooldownTicks,
+                    characterClass.Resource.RegenPerSecond));
             }
 
             return new CombatSimulationResult(classId, characterClass.Name, level, dps,
-                basicNpcDamage, basicCooldown, npcResults);
+                basicNpcDamage, basicCooldown, stats.CritChancePb, stats.HastePb,
+                CombatMath.ExpectedDamage(basicDamage, stats.CritChancePb, _classes.CritMultiplier), npcResults);
+        }
+
+        /// <summary>Simula un duelo de ataque básico por daño esperado entre dos clases.</summary>
+        public DuelResult SimulateDuel(int classA, int classB, int level, string build, string equipment)
+        {
+            if (equipment != "ninguno" && equipment != "franja")
+                throw new ArgumentException("El equipo debe ser ninguno o franja.", nameof(equipment));
+
+            CharacterClass a = _classes.Find(classA) ??
+                throw new InvalidOperationException("No existe la clase " + classA + " en classes.json.");
+            CharacterClass b = _classes.Find(classB) ??
+                throw new InvalidOperationException("No existe la clase " + classB + " en classes.json.");
+            var allocationA = Allocations(a, level, build);
+            var allocationB = Allocations(b, level, build);
+            int rawA = GetDuelDamage(a, level, allocationA, equipment, out long cooldownA);
+            int rawB = GetDuelDamage(b, level, allocationB, equipment, out long cooldownB);
+            DerivedCharacterStats statsA = GetStats(a, level, allocationA, equipment);
+            DerivedCharacterStats statsB = GetStats(b, level, allocationB, equipment);
+            string typeA = DuelDamageType(a, level, equipment);
+            string typeB = DuelDamageType(b, level, equipment);
+            double expectedA = CombatMath.ExpectedHit(rawA, statsA.CritChancePb,
+                _classes.CritMultiplier, DefenseFor(statsB, typeA), _classes.PvpDamagePercent);
+            double expectedB = CombatMath.ExpectedHit(rawB, statsB.CritChancePb,
+                _classes.CritMultiplier, DefenseFor(statsA, typeB), _classes.PvpDamagePercent);
+            double secondsA = KillTime(statsB.MaxHealth, expectedA, cooldownA);
+            double secondsB = KillTime(statsA.MaxHealth, expectedB, cooldownB);
+            double first = Math.Min(secondsA, secondsB);
+            double ratio = first / Math.Max(secondsA, secondsB);
+            int winner = classA == classB || Math.Abs(secondsA - secondsB) < 1e-9
+                ? 0 : secondsA < secondsB ? classA : classB;
+            return new DuelResult(winner, first, secondsA, secondsB, ratio, expectedA, expectedB);
+        }
+
+        private int GetDuelDamage(CharacterClass attacker, int level,
+            (int str, int dex, int intelligence, int vit) allocation, string equipment, out long cooldown)
+        {
+            ushort[] equipped = CreateEquipment(attacker, level, equipment);
+            ItemType? weapon = _items.Find(equipped[(int)EquipSlot.Weapon]);
+            cooldown = CombatMath.AttackCooldownTicks(
+                weapon?.CooldownSeconds ?? attacker.Unarmed!.CooldownSeconds,
+                GetStats(attacker, level, allocation, equipment).HastePb, _classes.MinAttackTicks);
+            return CombatMath.GetAttackDamage(_classes, attacker.Id, level,
+                allocation.str, allocation.dex, allocation.intelligence, allocation.vit,
+                weapon?.Damage, out _, _items, equipped, weapon?.DamageType);
+        }
+
+        private DerivedCharacterStats GetStats(CharacterClass characterClass, int level,
+            (int str, int dex, int intelligence, int vit) allocation, string equipment) =>
+            CharacterStats.Calculate(_classes, characterClass.Id, level,
+                allocation.str, allocation.dex, allocation.intelligence, allocation.vit,
+                _items, CreateEquipment(characterClass, level, equipment));
+
+        private (int str, int dex, int intelligence, int vit) Allocations(
+            CharacterClass characterClass, int level, string build)
+        {
+            if (level < 1 || level > byte.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(level));
+            if (build != "puro" && build != "equilibrado")
+                throw new ArgumentException("El build debe ser puro o equilibrado.", nameof(build));
+            int points = checked(_levels.PointsPerLevel * level);
+            int primary = build == "puro" ? points : points * 2 / 3;
+            int vit = build == "puro" ? 0 : points - primary;
+            return (characterClass.Primary == "str" ? primary : 0,
+                characterClass.Primary == "dex" ? primary : 0,
+                characterClass.Primary == "int" ? primary : 0, vit);
+        }
+
+        private string DuelDamageType(CharacterClass characterClass, int level, string equipment)
+        {
+            ItemType? weapon = _items.Find(CreateEquipment(characterClass, level, equipment)[(int)EquipSlot.Weapon]);
+            return weapon?.DamageType ?? characterClass.Unarmed!.DamageType;
+        }
+
+        private static int DefenseFor(DerivedCharacterStats stats, string damageType) =>
+            damageType == "physical"
+                ? stats.Defense
+                : stats.MagicResist;
+
+        private static double KillTime(double health, double expectedHit, long cooldown)
+        {
+            double hits = Math.Ceiling(health / expectedHit - 1e-9);
+            return ((hits - 1d) * cooldown + 1d) / SimulationConstants.TickRate;
         }
 
         private ushort[] CreateEquipment(CharacterClass characterClass, int level, string equipment)
@@ -168,16 +254,19 @@ namespace Avelora.Balance
             return attacks;
         }
 
-        private static double MeasureDps(int basicDamage, long basicCooldown, SkillAttack[] skills,
+        private static double MeasureDps(int basicDamage, int critChancePb, int multiplierPercent,
+            long basicCooldown, SkillAttack[] skills, int globalCooldownTicks,
             int regenPerSecond, int maxResource)
         {
             if (skills.Length == 0)
-                return basicDamage * (double)SimulationConstants.TickRate / basicCooldown;
+                return CombatMath.ExpectedDamage(basicDamage, critChancePb, multiplierPercent) *
+                    SimulationConstants.TickRate / basicCooldown;
 
             int mana = maxResource;
             long nextBasicTick = 0;
+            long nextGlobalSkillTick = 0;
             long[] nextSkillTicks = new long[skills.Length];
-            long totalDamage = 0;
+            double totalDamage = 0;
             int totalTicks = MeasurementSeconds * SimulationConstants.TickRate;
             for (int tick = 0; tick < totalTicks; tick++)
             {
@@ -188,7 +277,7 @@ namespace Avelora.Balance
                 for (int i = 0; i < skills.Length; i++)
                 {
                     SkillDefinition skill = skills[i].Definition;
-                    if (tick < nextSkillTicks[i] || mana < skill.ResourceCost)
+                    if (tick < nextSkillTicks[i] || tick < nextGlobalSkillTick || mana < skill.ResourceCost)
                         continue;
                     if (best < 0 || skills[i].Priority > skills[best].Priority)
                         best = i;
@@ -199,11 +288,12 @@ namespace Avelora.Balance
                     SkillDefinition skill = skills[best].Definition;
                     mana -= skill.ResourceCost;
                     nextSkillTicks[best] = tick + skill.CooldownTicks;
-                    totalDamage += skills[best].Damage;
+                    nextGlobalSkillTick = tick + globalCooldownTicks;
+                    totalDamage += CombatMath.ExpectedDamage(skills[best].Damage, critChancePb, multiplierPercent);
                 }
                 else if (tick >= nextBasicTick)
                 {
-                    totalDamage += basicDamage;
+                    totalDamage += CombatMath.ExpectedDamage(basicDamage, critChancePb, multiplierPercent);
                     nextBasicTick = tick + basicCooldown;
                 }
             }
@@ -212,13 +302,15 @@ namespace Avelora.Balance
 
         private NpcCombatResult SimulateNpc(NpcType npc, DerivedCharacterStats stats,
             string basicDamageType, int basicDamage, long basicCooldown, SkillAttack[] skills,
+            int globalCooldownTicks,
             int regenPerSecond)
         {
-            int npcHealth = npc.MaxHealth;
+            double npcHealth = npc.MaxHealth;
             int playerHealth = stats.MaxHealth;
             int mana = stats.MaxResource;
             long nextBasicTick = 0;
             long nextNpcTick = 0;
+            long nextGlobalSkillTick = 0;
             long[] nextSkillTicks = new long[skills.Length];
             long maxTicks = Math.Max(1L, (long)npc.MaxHealth * SimulationConstants.TickRate);
             long elapsedTicks = maxTicks;
@@ -231,7 +323,8 @@ namespace Avelora.Balance
                 int selected = -1;
                 for (int i = 0; i < skills.Length; i++)
                 {
-                    if (tick < nextSkillTicks[i] || mana < skills[i].Definition.ResourceCost)
+                    if (tick < nextSkillTicks[i] || tick < nextGlobalSkillTick ||
+                        mana < skills[i].Definition.ResourceCost)
                         continue;
                     if (selected < 0 || skills[i].Priority > skills[selected].Priority)
                         selected = i;
@@ -244,6 +337,7 @@ namespace Avelora.Balance
                     SkillAttack attack = skills[selected];
                     mana -= attack.Definition.ResourceCost;
                     nextSkillTicks[selected] = tick + attack.Definition.CooldownTicks;
+                    nextGlobalSkillTick = tick + globalCooldownTicks;
                     outgoingDamage = attack.Damage;
                     outgoingType = attack.DamageType;
                 }
@@ -256,7 +350,8 @@ namespace Avelora.Balance
                 if (outgoingDamage > 0)
                 {
                     int defense = outgoingType == "physical" ? npc.Defense : npc.MagicResist;
-                    npcHealth -= CombatMath.MitigateDamage(outgoingDamage, defense);
+                    npcHealth -= CombatMath.ExpectedHit(outgoingDamage, stats.CritChancePb,
+                        _classes.CritMultiplier, defense);
                     if (npcHealth <= 0)
                     {
                         elapsedTicks = tick + 1;
@@ -301,7 +396,8 @@ namespace Avelora.Balance
     public sealed class CombatSimulationResult
     {
         internal CombatSimulationResult(int classId, string className, int level, double dps,
-            int firstHitDamage, long basicCooldownTicks, List<NpcCombatResult> npcs)
+            int firstHitDamage, long basicCooldownTicks, int critChancePb, int hastePb,
+            double expectedHit, List<NpcCombatResult> npcs)
         {
             ClassId = classId;
             ClassName = className;
@@ -309,6 +405,9 @@ namespace Avelora.Balance
             DamagePerSecond = dps;
             FirstHitDamage = firstHitDamage;
             BasicCooldownTicks = basicCooldownTicks;
+            CritChancePb = critChancePb;
+            HastePb = hastePb;
+            ExpectedHit = expectedHit;
             Npcs = npcs;
         }
 
@@ -324,8 +423,45 @@ namespace Avelora.Balance
         public int FirstHitDamage { get; }
         /// <summary>Recarga del ataque básico en ticks.</summary>
         public long BasicCooldownTicks { get; }
+        /// <summary>Probabilidad crítica en puntos básicos.</summary>
+        public int CritChancePb { get; }
+        /// <summary>Prisa en puntos básicos.</summary>
+        public int HastePb { get; }
+        /// <summary>Daño esperado por golpe básico sin mitigar.</summary>
+        public double ExpectedHit { get; }
         /// <summary>Resultados contra cada tipo PNJ del catálogo.</summary>
         public IReadOnlyList<NpcCombatResult> Npcs { get; }
+    }
+
+    /// <summary>Resultado por daño esperado de un duelo de ataques básicos.</summary>
+    public sealed class DuelResult
+    {
+        internal DuelResult(int winnerClassId, double secondsToFirstKill, double secondsA,
+            double secondsB, double killTimeRatio, double expectedHitA, double expectedHitB)
+        {
+            WinnerClassId = winnerClassId;
+            SecondsToFirstKill = secondsToFirstKill;
+            SecondsA = secondsA;
+            SecondsB = secondsB;
+            KillTimeRatio = killTimeRatio;
+            ExpectedHitA = expectedHitA;
+            ExpectedHitB = expectedHitB;
+        }
+
+        /// <summary>Identificador de la clase ganadora, o cero si hay empate.</summary>
+        public int WinnerClassId { get; }
+        /// <summary>Tiempo hasta la primera muerte.</summary>
+        public double SecondsToFirstKill { get; }
+        /// <summary>Tiempo de muerte de A.</summary>
+        public double SecondsA { get; }
+        /// <summary>Tiempo de muerte de B.</summary>
+        public double SecondsB { get; }
+        /// <summary>Relación entre el primer y el último tiempo de muerte.</summary>
+        public double KillTimeRatio { get; }
+        /// <summary>Daño esperado de A por golpe.</summary>
+        public double ExpectedHitA { get; }
+        /// <summary>Daño esperado de B por golpe.</summary>
+        public double ExpectedHitB { get; }
     }
 
     /// <summary>Tiempo hasta derrotar un PNJ y porcentaje de vida perdido por el jugador.</summary>

@@ -116,6 +116,9 @@ namespace Avelora.Server.Entities
         /// <summary>Tick en que cada habilidad vuelve a estar lista (I-16). No se guarda.</summary>
         internal Dictionary<ushort, long> SkillReadyTicks { get; } = new Dictionary<ushort, long>();
 
+        /// <summary>Tick en que vuelve a estar disponible cualquier habilidad del jugador.</summary>
+        internal long GlobalSkillReadyTick { get; set; }
+
         /// <summary>Último recurso enviado al cliente (actual &lt;&lt; 32 | máximo); -1 = ninguno.</summary>
         internal long ResourceSentKey { get; set; } = -1;
 

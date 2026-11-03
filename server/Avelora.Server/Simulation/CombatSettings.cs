@@ -11,7 +11,7 @@ namespace Avelora.Server.Simulation
     /// </summary>
     public readonly struct CombatSettings
     {
-        public CombatSettings(float rangeTolerance, long lootTagTimeoutTicks = 200)
+        public CombatSettings(float rangeTolerance, long lootTagTimeoutTicks = 200, int combatSeed = 0)
         {
             if (rangeTolerance < 0f || float.IsNaN(rangeTolerance) || float.IsInfinity(rangeTolerance))
             {
@@ -28,6 +28,7 @@ namespace Avelora.Server.Simulation
 
             RangeTolerance = rangeTolerance;
             LootTagTimeoutTicks = lootTagTimeoutTicks;
+            CombatSeed = combatSeed;
         }
 
         /// <summary>Margen que se suma al alcance para compensar la interpolación del cliente.</summary>
@@ -35,5 +36,7 @@ namespace Avelora.Server.Simulation
 
         /// <summary>Ticks sin golpe del dueño para que la marca de botín pueda cambiar.</summary>
         public long LootTagTimeoutTicks { get; }
+        /// <summary>Semilla de las tiradas críticas.</summary>
+        public int CombatSeed { get; }
     }
 }

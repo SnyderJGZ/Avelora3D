@@ -146,6 +146,9 @@ namespace Avelora.Server.Configuration
         /// </summary>
         public int NpcSeed { get; set; } = 12345;
 
+        /// <summary>Semilla del azar del crítico.</summary>
+        public int CombatSeed { get; set; } = 54321;
+
         /// <summary>
         /// Código necesario para crear una cuenta nueva. Vacío cierra el registro.
         /// </summary>

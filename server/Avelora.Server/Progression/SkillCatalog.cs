@@ -25,6 +25,13 @@ namespace Avelora.Server.Progression
 
         public List<SkillDefinition>? Skills { get; set; }
 
+        /// <summary>Segundos de recarga global compartida por las habilidades; cero la desactiva.</summary>
+        public double GlobalCooldownSeconds { get; set; }
+
+        /// <summary>Recarga global calculada en ticks.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public int GlobalCooldownTicks { get; private set; }
+
         private Dictionary<int, SkillDefinition>? _byId;
 
         /// <summary>Carga y valida el catálogo de habilidades.</summary>
@@ -49,6 +56,14 @@ namespace Avelora.Server.Progression
         /// <summary>Valida las reglas comunes y cada definición de habilidad.</summary>
         public void Validate(ClassCatalog classes)
         {
+            if (double.IsNaN(GlobalCooldownSeconds) || double.IsInfinity(GlobalCooldownSeconds) ||
+                GlobalCooldownSeconds < 0 || GlobalCooldownSeconds > 10)
+            {
+                throw new InvalidOperationException(
+                    "skills.json: globalCooldownSeconds debe estar entre 0 y 10.");
+            }
+
+            GlobalCooldownTicks = (int)Math.Ceiling(GlobalCooldownSeconds * SimulationConstants.TickRate);
             if (Skills == null || Skills.Count == 0)
             {
                 throw new InvalidOperationException("skills.json: skills debe contener al menos una entrada.");

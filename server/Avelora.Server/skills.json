@@ -1,4 +1,5 @@
 {
+  "globalCooldownSeconds": 1.0,
   "skills": [
     { "id": 4001, "name": "Golpe poderoso", "classId": 1, "requiredLevel": 1, "resourceCost": 30,
       "cooldownSeconds": 6, "range": 1.2, "damage": 6, "weaponPercent": 150, "damageType": "physical" },

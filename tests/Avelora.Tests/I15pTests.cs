@@ -370,7 +370,7 @@ namespace Avelora.Tests
             Assert.Equal(1, zone.PvpAttacksOk);
             Assert.Equal(1, zone.AttacksOk);
             Assert.True(victim.Health < health);
-            Assert.Equal(health - CharacterStats.MitigateDamage(raw, defense), victim.Health);
+            Assert.Equal(health - CombatMath.PvpDamage(CharacterStats.MitigateDamage(raw, defense), 60), victim.Health);
             Assert.Equal(0, attacker.LastAttackTick);
             Assert.Equal(0, victim.LastDamageTick);
             Assert.Equal(0, victim.RegenAccumulator);

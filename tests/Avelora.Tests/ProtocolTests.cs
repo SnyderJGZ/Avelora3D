@@ -186,7 +186,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)23, ProtocolConstants.Version);
+            Assert.Equal((ushort)24, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -684,7 +684,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_Pvp_Usa_La_Version_23()
         {
-            Assert.Equal((ushort)23, ProtocolConstants.Version);
+            Assert.Equal((ushort)24, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -969,14 +969,14 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadCombatEvent(new byte[] { 27, 1 }, 0, 2, out _));
 
             byte[] invalidFlags = (byte[])oneBytes.Clone();
-            invalidFlags[12] = 32;
+            invalidFlags[12] = 64;
             Assert.False(MessageCodec.TryReadCombatEvent(invalidFlags, 0, invalidFlags.Length, out _));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(Array.Empty<CombatEventEntry>())));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
                 new CombatEventMessage(new CombatEventEntry[65])));
             Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeCombatEvent(
-                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)32) })));
+                new CombatEventMessage(new[] { new CombatEventEntry(1, 2, 3, (CombatEventFlags)64) })));
         }
 
         [Fact]
@@ -1427,10 +1427,10 @@ namespace Avelora.Tests
         public void Stats_Va_Y_Vuelve_Con_Todos_Los_Campos_Y_Rechaza_Datos_Invalidos()
         {
             var original = new StatsMessage(
-                4, 25, 11, 12, 13, 14, 1, 2, 3, 4, 65, 123456, 567, 1, 321, 654, 987, 1234, 0);
+                4, 25, 11, 12, 13, 14, 1, 2, 3, 4, 65, 123456, 567, 1, 321, 654, 840, 600, 987, 1234, 0);
             byte[] bytes = MessageCodec.EncodeStats(original);
 
-            Assert.Equal(37, bytes.Length);
+            Assert.Equal(41, bytes.Length);
             Assert.Equal((byte)18, bytes[0]);
             Assert.True(MessageCodec.TryReadStats(bytes, 0, bytes.Length, out StatsMessage decoded));
             Assert.Equal(original.ClassId, decoded.ClassId);
@@ -1449,6 +1449,8 @@ namespace Avelora.Tests
             Assert.Equal(original.DamageType, decoded.DamageType);
             Assert.Equal(original.Defense, decoded.Defense);
             Assert.Equal(original.MagicResist, decoded.MagicResist);
+            Assert.Equal(original.CritChance, decoded.CritChance);
+            Assert.Equal(original.Haste, decoded.Haste);
             Assert.Equal(original.Resource, decoded.Resource);
             Assert.Equal(original.MaxResource, decoded.MaxResource);
             Assert.Equal(original.FreeReset, decoded.FreeReset);
@@ -1460,7 +1462,7 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadStats(unknownDamage, 0, unknownDamage.Length, out _));
 
             byte[] invalidResetFlag = (byte[])bytes.Clone();
-            invalidResetFlag[36] = 2;
+            invalidResetFlag[40] = 2;
             Assert.False(MessageCodec.TryReadStats(invalidResetFlag, 0, invalidResetFlag.Length, out _));
 
             byte[] zeroClass = (byte[])bytes.Clone();
@@ -1468,8 +1470,8 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadStats(zeroClass, 0, zeroClass.Length, out _));
 
             byte[] resourceAboveMaximum = (byte[])bytes.Clone();
-            resourceAboveMaximum[32] = 0xD3;
-            resourceAboveMaximum[33] = 0x04;
+            resourceAboveMaximum[36] = 0xD3;
+            resourceAboveMaximum[37] = 0x04;
             Assert.False(MessageCodec.TryReadStats(resourceAboveMaximum, 0, resourceAboveMaximum.Length, out _));
         }
 
@@ -1867,7 +1869,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_De_Habilidades_Usa_La_Version_23()
         {
-            Assert.Equal((ushort)23, ProtocolConstants.Version);
+            Assert.Equal((ushort)24, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);

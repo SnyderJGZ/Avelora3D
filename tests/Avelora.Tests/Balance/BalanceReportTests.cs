@@ -37,10 +37,10 @@ namespace Avelora.Tests.Balance
         }
 
         [Fact]
-        public void Guerrero_Nivel_Uno_Reproduce_Dps_De_Referencia()
+        public void Guerrero_Nivel_Uno_Reproduce_Dps_Esperado_De_Referencia()
         {
             double dps = CreateSimulator().Simulate(1, 1, "puro", "ninguno", false).DamagePerSecond;
-            Assert.InRange(dps, 13.70, 13.80);
+            Assert.InRange(dps, 14.22, 14.32);
         }
 
         [Theory]
@@ -48,7 +48,7 @@ namespace Avelora.Tests.Balance
         [InlineData(2, 1)] [InlineData(2, 25)]
         [InlineData(3, 1)] [InlineData(3, 25)]
         [InlineData(4, 1)] [InlineData(4, 25)]
-        public void Sin_Habilidades_Dps_Es_Dano_Bruto_Por_Recarga(int classId, int level)
+        public void Sin_Habilidades_Dps_Usa_Dano_Esperado_Y_Recarga(int classId, int level)
         {
             string basePath = AppContext.BaseDirectory;
             ClassCatalog classes = ClassCatalog.Load(Path.Combine(basePath, "classes.json"));
@@ -68,9 +68,14 @@ namespace Avelora.Tests.Balance
             int damage = CombatMath.GetAttackDamage(classes, classId, level,
                 clase.Primary == "str" ? puntos : 0, clase.Primary == "dex" ? puntos : 0,
                 clase.Primary == "int" ? puntos : 0, 0, arma?.Damage, out _, items, equipo, arma?.DamageType);
-            long cooldown = CombatMath.AttackCooldownTicks(arma?.CooldownSeconds ?? clase.Unarmed!.CooldownSeconds);
+            DerivedCharacterStats stats = CharacterStats.Calculate(classes, classId, level,
+                clase.Primary == "str" ? puntos : 0, clase.Primary == "dex" ? puntos : 0,
+                clase.Primary == "int" ? puntos : 0, 0, items, equipo);
+            long cooldown = CombatMath.AttackCooldownTicks(arma?.CooldownSeconds ?? clase.Unarmed!.CooldownSeconds,
+                stats.HastePb, classes.MinAttackTicks);
             var result = CreateSimulator().Simulate(classId, level, "puro", "ninguno", false);
-            Assert.Equal(damage * (double)SimulationConstants.TickRate / cooldown, result.DamagePerSecond, 6);
+            Assert.Equal(CombatMath.ExpectedDamage(damage, stats.CritChancePb, classes.CritMultiplier) *
+                SimulationConstants.TickRate / cooldown, result.DamagePerSecond, 6);
         }
 
         [Fact]
@@ -79,16 +84,19 @@ namespace Avelora.Tests.Balance
             string basePath = AppContext.BaseDirectory;
             ClassCatalog classes = ClassCatalog.Load(Path.Combine(basePath, "classes.json"));
             ItemCatalog items = ItemCatalog.Load(Path.Combine(basePath, "items.json"));
-            items.Find(3101)!.CooldownSeconds = 0.35f;
+            items.Find(3101)!.CooldownSeconds = 0.45f;
             var simulator = new CombatSimulator(classes, items,
                 SkillCatalog.Load(Path.Combine(basePath, "skills.json"), classes),
                 NpcCatalog.Load(Path.Combine(basePath, "npcs.json")),
                 LevelTable.Load(Path.Combine(basePath, "levels.json"), items));
             var result = simulator.Simulate(1, 1, "puro", "ninguno", false);
-            Assert.Equal(7, result.BasicCooldownTicks);
+            Assert.Equal(9, result.BasicCooldownTicks);
             Assert.NotEqual(0, 60 * SimulationConstants.TickRate % result.BasicCooldownTicks);
             int damage = CombatMath.GetAttackDamage(classes, 1, 1, 3, 0, 0, 0, 10, out _, items);
-            Assert.Equal(damage * (double)SimulationConstants.TickRate / 7, result.DamagePerSecond, 6);
+            DerivedCharacterStats stats = CharacterStats.Calculate(classes, 1, 1, 3, 0, 0, 0, items,
+                new ushort[ProtocolConstants.EquipSlotCount]);
+            Assert.Equal(CombatMath.ExpectedDamage(damage, stats.CritChancePb, classes.CritMultiplier) *
+                SimulationConstants.TickRate / 9, result.DamagePerSecond, 6);
         }
 
         [Fact]
@@ -140,6 +148,47 @@ namespace Avelora.Tests.Balance
             Assert.False(result.Npcs[0].Defeated);
             Assert.Null(result.Npcs[0].TimeToKillSeconds);
             Assert.InRange(result.Npcs[0].HealthLostPercent, 0, 99);
+        }
+
+        [Fact]
+        public void Simulador_Respeta_La_Recarga_Global_De_Las_Habilidades()
+        {
+            string basePath = AppContext.BaseDirectory;
+            ClassCatalog classes = ClassCatalog.Load(Path.Combine(basePath, "classes.json"));
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(basePath, "items.json"));
+            LevelTable levels = LevelTable.Load(Path.Combine(basePath, "levels.json"), items);
+            NpcCatalog npcs = NpcCatalog.Load(Path.Combine(basePath, "npcs.json"));
+            double withoutGlobal = SimulateWithGlobalCooldown(0, classes, items, levels, npcs);
+            double withGlobal = SimulateWithGlobalCooldown(1, classes, items, levels, npcs);
+
+            Assert.True(withGlobal < withoutGlobal);
+        }
+
+        private static double SimulateWithGlobalCooldown(double globalCooldown, ClassCatalog classes,
+            ItemCatalog items, LevelTable levels, NpcCatalog npcs)
+        {
+            var skills = new SkillCatalog
+            {
+                GlobalCooldownSeconds = globalCooldown,
+                Skills = new System.Collections.Generic.List<SkillDefinition>
+                {
+                    new SkillDefinition
+                    {
+                        Id = 5101, Name = "Habilidad de prueba", ClassId = 1, RequiredLevel = 1,
+                        ResourceCost = 0, CooldownSeconds = 0.05, Range = 1, Damage = 10,
+                        DamageType = "physical",
+                    },
+                    new SkillDefinition
+                    {
+                        Id = 5102, Name = "Otra habilidad de prueba", ClassId = 1, RequiredLevel = 1,
+                        ResourceCost = 0, CooldownSeconds = 0.05, Range = 1, Damage = 10,
+                        DamageType = "physical",
+                    },
+                },
+            };
+            skills.Validate(classes);
+            return new CombatSimulator(classes, items, skills, npcs, levels)
+                .Simulate(1, 1, "puro", "ninguno", true).DamagePerSecond;
         }
 
         private static CombatSimulator CreateSimulator(NpcCatalog? npcs = null, ItemCatalog? customItems = null)

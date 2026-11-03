@@ -247,7 +247,8 @@ namespace Avelora.Tests
             caster.PvpMode = victim.PvpMode = PvpMode.Pvp;
             DerivedCharacterStats victimStats = CharacterStats.Calculate(zone.Classes, victim.ClassId, victim.Level,
                 victim.AllocStr, victim.AllocDex, victim.AllocInt, victim.AllocVit);
-            int mitigated = ExpectedDamage(zone.Classes, caster, 10, victimStats.MagicResist);
+            int mitigated = CombatMath.PvpDamage(
+                ExpectedDamage(zone.Classes, caster, 10, victimStats.MagicResist), 60);
             Assert.True(mitigated > 5);
             Assert.True(victim.Statuses.Apply(StatusKind.Shield, 4009, victim.Id, 5, 1000));
             Use(zone, caster, victim.Id, 4008);
@@ -265,7 +266,8 @@ namespace Avelora.Tests
             secondCaster.PvpMode = secondVictim.PvpMode = PvpMode.Pvp;
             DerivedCharacterStats secondStats = CharacterStats.Calculate(second.Classes, secondVictim.ClassId,
                 secondVictim.Level, secondVictim.AllocStr, secondVictim.AllocDex, secondVictim.AllocInt, secondVictim.AllocVit);
-            int secondDamage = ExpectedDamage(second.Classes, secondCaster, 10, secondStats.MagicResist);
+            int secondDamage = CombatMath.PvpDamage(
+                ExpectedDamage(second.Classes, secondCaster, 10, secondStats.MagicResist), 60);
             Assert.True(secondVictim.Statuses.Apply(StatusKind.Shield, 4009, secondVictim.Id, secondDamage + 7, 1000));
             int health = secondVictim.Health;
             Use(second, secondCaster, secondVictim.Id, 4008);
@@ -327,8 +329,8 @@ namespace Avelora.Tests
             Assert.True(blessed.Statuses.Apply(StatusKind.Bonus, 4010, blessed.Id, 4, 1000));
             Use(pvpZone, attacker, blessed.Id, 4002);
             pvpZone.Tick();
-            Assert.Equal(blessed.MaxHealth - ExpectedDamage(pvpZone.Classes, attacker, 18,
-                blessedStats.MagicResist + 4), blessed.Health);
+            Assert.Equal(blessed.MaxHealth - CombatMath.PvpDamage(ExpectedDamage(pvpZone.Classes, attacker, 18,
+                blessedStats.MagicResist + 4), 60), blessed.Health);
         }
 
         [Fact]

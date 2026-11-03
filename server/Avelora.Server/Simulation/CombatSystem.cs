@@ -43,6 +43,7 @@ namespace Avelora.Server.Simulation
         private readonly CombatEventBuffer? _events;
         private readonly ZoneMap _zones;
         private readonly SkillCatalog? _skills;
+        private readonly Random _random;
         private readonly int[] _areaIds = new int[SkillCatalog.MaxAreaTargets];
         private readonly float[] _areaDistSq = new float[SkillCatalog.MaxAreaTargets];
         private readonly long[] _skillRejected = new long[13];
@@ -55,7 +56,8 @@ namespace Avelora.Server.Simulation
             MapCollisionGrid? map = null,
             CombatEventBuffer? events = null,
             ZoneMap? zones = null,
-            SkillCatalog? skills = null)
+            SkillCatalog? skills = null,
+            Random? random = null)
         {
             _settings = settings;
             _catalog = catalog;
@@ -64,6 +66,7 @@ namespace Avelora.Server.Simulation
             _events = events;
             _zones = zones ?? ZoneMap.Empty;
             _skills = skills;
+            _random = random ?? new Random(settings.CombatSeed);
         }
 
         /// <summary>Ataques que han resultado válidos.</summary>
@@ -250,6 +253,9 @@ namespace Avelora.Server.Simulation
             CharacterClass characterClass = _classes.Find(attacker.ClassId)
                 ?? throw new InvalidOperationException("No existe la clase " + attacker.ClassId + " en classes.json.");
             float baseRange = hasWeapon ? weapon!.Range : characterClass.Unarmed!.Range;
+            DerivedCharacterStats attackerStats = CharacterStats.Calculate(
+                _classes, attacker.ClassId, attacker.Level, attacker.AllocStr, attacker.AllocDex,
+                attacker.AllocInt, attacker.AllocVit, _catalog, attacker.Equipment);
 
             // Regla 4: la distancia entre centros cabe en alcance + tolerancia y hay línea de visión.
             ReachCheck reach = CheckReach(attacker, hitTarget, baseRange);
@@ -269,8 +275,8 @@ namespace Avelora.Server.Simulation
             long lastAttackTick = attacker.LastAttackTick;
 
             long cooldownTicks = hasWeapon
-                ? CombatMath.AttackCooldownTicks(weapon!.CooldownSeconds)
-                : CombatMath.AttackCooldownTicks(characterClass.Unarmed!.CooldownSeconds);
+                ? CombatMath.AttackCooldownTicks(weapon!.CooldownSeconds, attackerStats.HastePb, _classes.MinAttackTicks)
+                : CombatMath.AttackCooldownTicks(characterClass.Unarmed!.CooldownSeconds, attackerStats.HastePb, _classes.MinAttackTicks);
             if (lastAttackTick >= 0 && tick - lastAttackTick < cooldownTicks)
             {
                 RejectedCooldown++;
@@ -292,7 +298,8 @@ namespace Avelora.Server.Simulation
                 hasWeapon ? weapon!.DamageType : null,
                 attacker.Statuses.Bonus);
 
-            ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType, baseRange > RangedMinRange, tick);
+            ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType,
+                baseRange > RangedMinRange, attackerStats.CritChancePb, tick);
 
             attacker.LastAttackTick = tick;
             AttacksOk++;
@@ -395,7 +402,7 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            if (OnCooldown(caster, skill, tick))
             {
                 Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
                 return;
@@ -408,7 +415,7 @@ namespace Avelora.Server.Simulation
             }
 
             caster.Mana -= skill.ResourceCost;
-            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            StartCooldown(caster, skill, tick);
 
             if (skill.IsDamage)
             {
@@ -428,14 +435,19 @@ namespace Avelora.Server.Simulation
                     caster.Equipment,
                     caster.Statuses.Bonus);
                 string damageType = skill.DamageType;
+                int critChancePb = CharacterStats.Calculate(_classes, caster.ClassId, caster.Level,
+                    caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
+                    _catalog, caster.Equipment).CritChancePb;
 
-                ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType, skill.Range > RangedMinRange, tick);
+                ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType,
+                    skill.Range > RangedMinRange, critChancePb, tick);
 
                 for (int k = 0; k < found; k++)
                 {
                     if (CheckTarget(entities, caster, _areaIds[k], out Entity? t, out PlayerEntity? v, out NpcEntity? n) != TargetCheck.Ok)
                         continue;
-                    ApplyDamage(entities, caster, t!, v, n, damage, damageType, skill.Range > RangedMinRange, tick);
+                    ApplyDamage(entities, caster, t!, v, n, damage, damageType,
+                        skill.Range > RangedMinRange, critChancePb, tick);
                 }
                 AreaTargetsHit += found;
             }
@@ -518,7 +530,7 @@ namespace Avelora.Server.Simulation
                 Reject(caster, intent.SkillId, SkillRejectReason.FullHealth);
                 return;
             }
-            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            if (OnCooldown(caster, skill, tick))
             {
                 Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
                 return;
@@ -529,15 +541,23 @@ namespace Avelora.Server.Simulation
                 return;
             }
             caster.Mana -= skill.ResourceCost;
-            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            StartCooldown(caster, skill, tick);
             int raw = CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
                 caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, skill.WeaponPercent,
                 WeaponDamage(caster), _catalog, caster.Equipment);
+            int critChancePb = CharacterStats.Calculate(_classes, caster.ClassId, caster.Level,
+                caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
+                _catalog, caster.Equipment).CritChancePb;
+            bool crit = critChancePb > 0 && _random.Next(10000) < critChancePb;
+            if (crit) raw = CombatMath.CritDamage(raw, _classes.CritMultiplier);
             int healed = Math.Min(raw, healTarget.MaxHealth - healTarget.Health);
             healTarget.Health += healed;
             HealsDone++;
             HealAmount += healed;
-            _events?.Add(new CombatEventEntry(caster.Id, healTarget.Id, (ushort)Math.Min(healed, ushort.MaxValue), CombatEventFlags.Heal));
+            CombatEventFlags flags = CombatEventFlags.Heal;
+            if (crit) flags |= CombatEventFlags.Critical;
+            _events?.Add(new CombatEventEntry(caster.Id, healTarget.Id,
+                (ushort)Math.Min(healed, ushort.MaxValue), flags));
             SkillsUsed++;
             SkillUsed?.Invoke(caster, (ushort)skill.Id, healTarget.Id);
         }
@@ -576,7 +596,7 @@ namespace Avelora.Server.Simulation
             in AttackIntent intent, long tick)
         {
             if (!CheckFriendlyTarget(entities, caster, skill, intent, out PlayerEntity? target)) return;
-            if (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt)
+            if (OnCooldown(caster, skill, tick))
             {
                 Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
                 return;
@@ -588,7 +608,7 @@ namespace Avelora.Server.Simulation
             }
 
             caster.Mana -= skill.ResourceCost;
-            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            StartCooldown(caster, skill, tick);
             int amount = skill.StatusKind == StatusKind.Shield
                 ? CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
                     caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount,
@@ -606,6 +626,16 @@ namespace Avelora.Server.Simulation
         {
             _skillRejected[(int)reason]++;
             SkillRejected?.Invoke(caster, skillId, reason);
+        }
+
+        private bool OnCooldown(PlayerEntity caster, SkillDefinition skill, long tick) =>
+            tick < caster.GlobalSkillReadyTick ||
+            (caster.SkillReadyTicks.TryGetValue((ushort)skill.Id, out long readyAt) && tick < readyAt);
+
+        private void StartCooldown(PlayerEntity caster, SkillDefinition skill, long tick)
+        {
+            caster.SkillReadyTicks[(ushort)skill.Id] = tick + skill.CooldownTicks;
+            caster.GlobalSkillReadyTick = tick + _skills!.GlobalCooldownTicks;
         }
 
         private enum TargetCheck
@@ -735,9 +765,15 @@ namespace Avelora.Server.Simulation
             int rawDamage,
             string damageType,
             bool ranged,
+            int critChancePb,
             long tick)
         {
             int damage = rawDamage;
+            bool crit = critChancePb > 0 && _random.Next(10000) < critChancePb;
+            if (crit)
+            {
+                damage = CombatMath.CritDamage(damage, _classes.CritMultiplier);
+            }
             int defense;
             if (victim != null)
             {
@@ -760,6 +796,10 @@ namespace Avelora.Server.Simulation
             }
 
             damage = CombatMath.MitigateDamage(damage, defense);
+            if (victim != null)
+            {
+                damage = CombatMath.PvpDamage(damage, _classes.PvpDamagePercent);
+            }
             int absorbed = target.Statuses.Absorb(damage);
             damage -= absorbed;
             ShieldAbsorbed += absorbed;
@@ -831,6 +871,10 @@ namespace Avelora.Server.Simulation
                 if (damageType == "magical")
                 {
                     flags |= CombatEventFlags.Magical;
+                }
+                if (crit)
+                {
+                    flags |= CombatEventFlags.Critical;
                 }
 
                 if ((victim?.Health ?? npc!.Health) == 0)

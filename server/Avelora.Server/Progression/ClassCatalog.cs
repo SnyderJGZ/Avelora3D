@@ -24,6 +24,13 @@ namespace Avelora.Server.Progression
 
         public int BaseHealth { get; set; } = -1;
         public int PowerPerPoint { get; set; } = -1;
+        public int CritPerDex { get; set; }
+        public int CritCap { get; set; } = 4000;
+        public int CritMultiplier { get; set; } = 150;
+        public int HastePerDex { get; set; }
+        public int HasteCap { get; set; } = 3000;
+        public int MinAttackTicks { get; set; } = 8;
+        public int PvpDamagePercent { get; set; } = 100;
         public List<CharacterClass>? Classes { get; set; }
 
         /// <summary>Carga y valida el catálogo de clases.</summary>
@@ -57,6 +64,14 @@ namespace Avelora.Server.Progression
             {
                 throw new InvalidOperationException("classes.json: powerPerPoint debe estar entre 0 y 100.");
             }
+
+            ValidateCatalogValue(CritPerDex, 0, 1000, "critPerDex");
+            ValidateCatalogValue(CritCap, 0, 10000, "critCap");
+            ValidateCatalogValue(CritMultiplier, 100, 1000, "critMultiplier");
+            ValidateCatalogValue(HastePerDex, 0, 1000, "hastePerDex");
+            ValidateCatalogValue(HasteCap, 0, 10000, "hasteCap");
+            ValidateCatalogValue(MinAttackTicks, 1, 200, "minAttackTicks");
+            ValidateCatalogValue(PvpDamagePercent, 1, 100, "pvpDamagePercent");
 
             if (Classes == null || Classes.Count == 0)
             {
@@ -108,6 +123,12 @@ namespace Avelora.Server.Progression
                 {
                     throw new InvalidOperationException(
                         "classes.json: " + where + ".healthPerVit debe estar entre 1 y 1000.");
+                }
+
+                if (!InRange(characterClass.CritBase, 0, 10000))
+                {
+                    throw new InvalidOperationException(
+                        "classes.json: " + where + ".critBase debe estar entre 0 y 10000.");
                 }
 
                 if (characterClass.HealthPerLevel < 0 || characterClass.HealthPerLevel > 1000)
@@ -313,6 +334,15 @@ namespace Avelora.Server.Progression
         }
 
         private static bool InRange(int value, int min, int max) => value >= min && value <= max;
+
+        private static void ValidateCatalogValue(int value, int min, int max, string field)
+        {
+            if (!InRange(value, min, max))
+            {
+                throw new InvalidOperationException(
+                    "classes.json: " + field + " debe estar entre " + min + " y " + max + ".");
+            }
+        }
     }
 
     public sealed class CharacterClass
@@ -323,6 +353,7 @@ namespace Avelora.Server.Progression
         public CharacterAttributes? Base { get; set; }
         public int HealthPerLevel { get; set; }
         public int HealthPerVit { get; set; } = -1;
+        public int CritBase { get; set; }
         public int Defense { get; set; }
         public int DefensePerLevel { get; set; }
         public int MagicResist { get; set; }

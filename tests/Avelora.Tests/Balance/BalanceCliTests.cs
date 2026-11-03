@@ -27,5 +27,19 @@ namespace Avelora.Tests.Balance
             Assert.Contains("Argumento desconocido: --no-existe", output.ToString());
             Assert.DoesNotContain(" at ", output.ToString());
         }
+
+        [Fact]
+        public void Run_Duelos_Anade_La_Tabla_Solo_Cuando_Se_Pide()
+        {
+            using var withoutDuels = new StringWriter();
+            Assert.Equal(0, Program.Run(new[] { "--niveles", "1", "--sin-habilidades" }, withoutDuels));
+            Assert.DoesNotContain("## Duelos", withoutDuels.ToString());
+
+            using var withDuels = new StringWriter();
+            Assert.Equal(0, Program.Run(new[] { "--niveles", "1", "--build", "equilibrado",
+                "--equipo", "franja", "--sin-habilidades", "--duelos" }, withDuels));
+            Assert.Contains("## Duelos (valor esperado, ataque básico)", withDuels.ToString());
+            Assert.Contains("| 1 | Guerrero | Mago | Guerrero | 11.3 |", withDuels.ToString());
+        }
     }
 }

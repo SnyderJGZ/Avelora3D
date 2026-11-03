@@ -51,7 +51,7 @@ namespace Avelora.Shared.Protocol
         private const int SetPvpModeSize = 1 + 1;
         private const int PvpStatusSize = 1 + 1 + 1 + 1 + 2 + 2;
         private const int PvpModeRejectedSize = 1 + 1;
-        private const int StatsSize = 37;
+        private const int StatsSize = 41;
         private const int ChatHeaderSize = 1 + 4;
         private const int SnapshotHeaderSize = 1 + 4 + 4 + 2;
         private const int ItemCatalogHeaderSize = 1 + 4 + 4 + 4 + 4 + 2;
@@ -1665,7 +1665,7 @@ namespace Avelora.Shared.Protocol
 
             for (int i = 0; i < entries.Length; i++)
             {
-                if (((byte)entries[i].Flags & ~31) != 0)
+                if (((byte)entries[i].Flags & ~63) != 0)
                 {
                     throw new ArgumentOutOfRangeException(nameof(message), "CombatEvent contiene banderas desconocidas.");
                 }
@@ -1713,7 +1713,7 @@ namespace Avelora.Shared.Protocol
                     int targetId = reader.ReadInt32();
                     ushort damage = reader.ReadUInt16();
                     byte flags = reader.ReadByte();
-                    if ((flags & ~31) != 0)
+                    if ((flags & ~63) != 0)
                     {
                         return false;
                     }
@@ -2164,7 +2164,7 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica Stats en sus 37 bytes fijos.</summary>
+        /// <summary>Codifica Stats en sus 41 bytes fijos.</summary>
         public static byte[] EncodeStats(in StatsMessage message)
         {
             if (message.ClassId == 0 || message.Level == 0 || message.MaxHealth == 0 ||
@@ -2192,6 +2192,8 @@ namespace Avelora.Shared.Protocol
             writer.WriteByte(message.DamageType);
             writer.WriteUInt16(message.Defense);
             writer.WriteUInt16(message.MagicResist);
+            writer.WriteUInt16(message.CritChance);
+            writer.WriteUInt16(message.Haste);
             writer.WriteUInt16(message.Resource);
             writer.WriteUInt16(message.MaxResource);
             writer.WriteByte(message.FreeReset);
@@ -2226,6 +2228,8 @@ namespace Avelora.Shared.Protocol
                 byte damageType = reader.ReadByte();
                 ushort defense = reader.ReadUInt16();
                 ushort magicResist = reader.ReadUInt16();
+                ushort critChance = reader.ReadUInt16();
+                ushort haste = reader.ReadUInt16();
                 ushort resource = reader.ReadUInt16();
                 ushort maxResource = reader.ReadUInt16();
                 byte freeReset = reader.ReadByte();
@@ -2253,6 +2257,8 @@ namespace Avelora.Shared.Protocol
                     damageType,
                     defense,
                     magicResist,
+                    critChance,
+                    haste,
                     resource,
                     maxResource,
                     freeReset);

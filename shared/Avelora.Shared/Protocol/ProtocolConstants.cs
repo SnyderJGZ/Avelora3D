@@ -33,7 +33,7 @@ namespace Avelora.Shared.Protocol
         /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus; I-17 a 22 por áreas,
         /// curación y objetivo en SkillUsed; I-18 a 23 por estados temporales y StatusEffects/StatusEvent.
         /// </summary>
-        public const ushort Version = 23;
+        public const ushort Version = 24;
 
         /// <summary>Máximo de estados activos de tipos distintos por entidad (I-18).</summary>
         public const int MaxStatusEffects = 4;
