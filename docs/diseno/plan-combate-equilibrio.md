@@ -82,8 +82,8 @@ recibido  = máx(1, ⌊bruto × 100 / (100 + defensa o resMágica según tipo)�
 
 | Clase | healthPerLevel | healthPerVit | defensePerLevel | magicResistPerLevel | critBase (pb) |
 | --- | --- | --- | --- | --- | --- |
-| Guerrero | 10 | 6 | 2 | 0 | 500 |
-| Mago | 6 | 4 | 0 | 2 | 500 |
+| Guerrero | 10 | 6 | 2 | 0 | 800 |
+| Mago | 6 | 4 | 0 | 2 | 800 |
 | Ranger | 8 | 5 | 1 | 1 | 800 |
 | Sanador | 7 | 5 | 1 | 2 | 300 |
 
@@ -112,7 +112,7 @@ PvP       = ⌊recibido × pvpDamagePercent / 100⌋ cuando atacante y víctima 
 ### 2.4 Crítico
 
 ```
-probabilidad (pb) = mín(critCap, critBase(clase) + DES × critPerDex + Σ equipo crit)    critPerDex 20, critCap 4000
+probabilidad (pb) = mín(critCap, critBase(clase) + DES × critPerDex + Σ equipo crit)    critPerDex 10, critCap 4000
 multiplicador      = critMultiplier (global 150) + skill.critBonus (0 por defecto)
 ```
 
@@ -160,7 +160,51 @@ velocidad = PlayerSpeed × mín(moveCap, 100 + Σ equipo moveSpeed) / 100 × Spe
 Élite y campeón siguen con los multiplicadores de rango de I-20 (`npcs.json` → `ranks`). Los dos orcos actuales
 se recolocan en esta tabla (orco nivel 1: 80 PV, 13 de daño; orco guerrero nivel 3: 95 PV, 18 de daño).
 
-### 2.8 Estados de I-18 dentro del modelo
+### 2.8 Fórmula de equilibrio (la respetan I-29, I-19 y I-30)
+
+Valores fijados en I-28 (se calcularon con el script de la tarea y se afirman en `BalanceObjectivesTests`):
+`critPerDex` 10, `critCap` 4000, `critMultiplier` 150, `hastePerDex` 15, `hasteCap` 3000, `minAttackTicks` 8,
+`critBase` 800 (guerrero, mago, ranger) y 300 (sanador), `pvpDamagePercent` 60. El equipo **no** aporta crítico ni
+prisa hasta I-30. Arcos de franja 1 y 5: `damage` 12 y 14 (los absorbe la ventaja que el ranger saca de su DES).
+
+```
+golpe     = ⌊arma × (100 + primario × 2) / 100⌋                  golpeCrít = ⌊golpe × 150 / 100⌋
+probCrit  = mín(4000, critBase + DES × 10) / 10000               prisa     = mín(3000, DES × 15) / 10000
+recarga   = máx(8, ⌈ticksArma × 10000 / (10000 + prisa pb)⌉)     (ticks; segundos = ticks / 20)
+E[golpe]  = golpe + probCrit × (golpeCrít − golpe)               ≈ golpe × (1 + probCrit × (multCrít − 1))
+DPS_esp   = E[golpe] × 20 / recarga                              ≈ golpe × (1 + probCrit × (multCrít − 1)) × (1 + prisa) / recargaArma
+```
+
+- El simulador y las pruebas usan **solo** `DPS_esp` (sin azar). La forma continua de la derecha es la lectura
+  humana; la tabla usa la de ticks (entera), que es la que juega el servidor.
+- `DES` es el efectivo (base + puntos + equipo). Solo el ranger reparte puntos en DES: su crítico y su prisa crecen
+  con el nivel y los de las demás clases quedan casi planos (DES 4). Eso es lo que compensan los arcos y los valores
+  por punto: **no se suben `critPerDex` ni `hastePerDex` sin volver a calcular la tabla**.
+- **Invariante** (niveles 1, 5, 10 y 20; builds `puro` y `equilibrado`; equipo de la franja; solo ataque básico):
+  DPS_esp de guerrero, mago y ranger dentro de **±10 %** de su media (hoy ±3,5 %) y sanador entre el **65 %** y el
+  **80 %** (hoy 69-78 %).
+
+| Nivel | Build | Guerrero | Mago | Ranger | Sanador | Sanador / media |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | puro | 14,28 | 15,16 | 14,63 | 11,16 | 76,0 % |
+| 1 | equilibrado | 14,28 | 15,16 | 14,62 | 10,16 | 69,2 % |
+| 5 | puro | 21,67 | 20,84 | 21,02 | 16,26 | 76,8 % |
+| 5 | equilibrado | 19,94 | 19,85 | 18,87 | 15,23 | 77,9 % |
+| 10 | puro | 26,05 | 25,54 | 26,74 | 19,30 | 73,9 % |
+| 10 | equilibrado | 23,41 | 22,73 | 22,07 | 17,26 | 75,9 % |
+| 20 | puro | 35,57 | 34,10 | 36,16 | 26,43 | 74,9 % |
+| 20 | equilibrado | 29,52 | 28,42 | 30,16 | 21,33 | 72,6 % |
+
+- **Reglas para las tareas siguientes.** I-29 no toca DPS. I-19: cada golpe de habilidad tira su crítico con la misma
+  `probCrit` y `critBonus` solo suma al multiplicador; su daño esperado usa `CombatMath.ExpectedDamage`. I-30: el
+  equipo de una franja debe dar el **mismo** crítico y prisa a todas las clases (si no, la tabla se rompe) y, al
+  añadir armas de las franjas 10, 15 y 20, hay que recalcular esta tabla y mantener la invariante.
+- **Qué NO cubre todavía** (informe hasta I-30): objetivo 1 en los niveles 10 y 20 (faltan armas y armaduras de esas
+  franjas: con el equipo de la franja 5 el guerrero tarda 6,05 s y 10,85 s) y objetivo 7 (con solo ataque básico el
+  guerrero gana a todos; el primer muerto cae a los 11-17 s en los niveles 1-5 y a los 14-28 s en los niveles 10-20;
+  hacen falta habilidades y la cura del sanador).
+
+### 2.9 Estados de I-18 dentro del modelo
 
 | Estado | Entra en |
 | --- | --- |
@@ -243,7 +287,7 @@ Versiones orientativas (una subida por tarea que cambie el formato).
 | --- | --- | --- | --- | --- | --- |
 | **I-26** Fórmulas en `CombatMath` y simulador | Mover `GetAttackDamage`, `MitigateDamage` y el cálculo de recarga de `CharacterStats`/`CombatSystem` a `CombatMath` sin cambiar resultados; `tools/Avelora.Balance` y pruebas de equivalencia y de informe. | Media | No / No | — | Las 933 pruebas siguen verdes sin tocarlas; el simulador reproduce la tabla de §1 (guerrero 1: 21,2 DPS); carga sin cambios. |
 | **I-27** Modelo de daño, vida y defensa | §2.2, §2.3 (sin crítico ni PvP), bonus antes del multiplicador, `damageType` de PNJ, `weaponPercent`; reescribir números de `classes.json`, `items.json` (armas por franja 1 y 5, armaduras), `npcs.json` (orcos a §2.7) y `skills.json`; ajustar pruebas que fijan cifras. | Pesada | No (cambian valores de `Stats`, no el formato) / No | — | Tablas de fórmulas por clase; simulador cumple objetivos 1 y 3 en niveles 1 y 5; carga con bots `fight` sin correcciones. |
-| **I-28** Crítico, velocidad de ataque y PvP | §2.4, §2.5, `globalCooldownSeconds`, `pvpDamagePercent`, `CombatSeed`; `CombatEventFlags.Critical = 32`; `Stats` gana probabilidad de crítico y prisa. | Media | **v24** / No | I-28b (liviana): números de crítico más grandes; crítico y prisa en el panel de atributos | Pruebas con `Random` inyectado; recargas en ticks con topes; duelos del simulador (objetivo 7) en informe. |
+| **I-28** Crítico, velocidad de ataque y PvP | §2.4, §2.5, `globalCooldownSeconds`, `pvpDamagePercent`, `CombatSeed`; `CombatEventFlags.Critical = 32`; `Stats` gana probabilidad de crítico y prisa. | Media | **v24** / No | I-28b (liviana): números de crítico más grandes; crítico y prisa en el panel de atributos | Pruebas con `Random` inyectado; recargas en ticks con topes; objetivo 3 afirmado en los niveles 1, 5, 10 y 20 (builds puro y equilibrado) y objetivo 1 en 1 y 5 con la fórmula de §2.8; duelos del simulador (objetivo 7) y objetivo 1 en 10 y 20 en informe hasta I-30. |
 | **I-29** Velocidad de movimiento | §2.6: `moveSpeed` en armaduras, `moveCap`, `SpeedPercent` total en `StatusEffects`; PNJ a 3,0-3,4; bots que respetan la velocidad. | Liviana | No / No (si el formato de `StatusEffects` no cambia) | Nada si I-18b aplica `SpeedPercent` siempre; si no, entra en I-28b | Pruebas de movimiento con botas y ralentización juntas; carga: correcciones por bot y minuto como I-18. |
 | **I-19** Cuatro habilidades por clase | Tabla de §4: `hits`, `areaCenter`, `critBonus`, cura en área, `requiredLevel` 1/5/10/20, retirar 4002; bots con rotación por clase; valores ajustados con el simulador. | Pesada | **v25** (`SkillCatalogEntry` gana campos) / No | I-19b (media): nivel de desbloqueo y bloqueadas en gris en el panel, anillo de área propia, colores provisionales | Pruebas por mecánica nueva; objetivo 8 de §3.1 en informe; carga con bots de las 4 clases. |
 | **I-30** Pasada de equilibrio y contenido de referencia | Armas y armaduras de las franjas 10, 15 y 20; un PNJ normal por franja (5 tipos, al menos uno mágico y uno con defensa alta) según §2.7; las pruebas de §3.1 pasan de informe a **afirmar**. | Media (datos) | No / No | I-30b (liviana): color/tamaño por `TypeId` de los mobs nuevos | `dotnet test` con los objetivos afirmados; tabla del simulador en el informe; carga. |
