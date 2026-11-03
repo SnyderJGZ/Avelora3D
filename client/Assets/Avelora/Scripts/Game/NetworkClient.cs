@@ -81,6 +81,8 @@ namespace Avelora.Client
 
         private const float HintSeconds = 1.5f;
         private const float PickRadius = 0.5f;
+        // 8 ticks es minAttackTicks de classes.json.
+        private const float MinAttackTicks = 8f;
 
         // Doble clic (I-06c): ventana entre clics, margen para pararse dentro del alcance aunque la
         // posición del servidor vaya un poco por detrás, y zona muerta por eje para no zigzaguear.
@@ -132,6 +134,7 @@ namespace Avelora.Client
             public bool OnSelf;
             public bool Heal;
             public bool Absorbed;
+            public bool Critical;
         }
 
         private struct LootText
@@ -712,6 +715,9 @@ namespace Avelora.Client
 
             Vector2 delta = (Vector2)(target.transform.position - transform.position);
             CurrentWeapon(out float attackRange, out float attackCooldown);
+            float baseTicks = Mathf.Ceil(attackCooldown * SimulationConstants.TickRate - 0.001f);
+            float hasteTicks = Mathf.Ceil(baseTicks * 10000f / (10000f + _stats.Haste) - 0.001f);
+            attackCooldown = Mathf.Max(MinAttackTicks, hasteTicks) / SimulationConstants.TickRate;
             if (delta.sqrMagnitude > attackRange * attackRange)
             {
                 // En automático no es un error: ApproachTarget ya está caminando hacia él.
@@ -1714,6 +1720,7 @@ namespace Avelora.Client
                 OnSelf = targetId == _entityId,
                 Heal = (flags & CombatEventFlags.Heal) != 0,
                 Absorbed = (flags & CombatEventFlags.Absorbed) != 0,
+                Critical = (flags & CombatEventFlags.Critical) != 0,
             });
         }
 

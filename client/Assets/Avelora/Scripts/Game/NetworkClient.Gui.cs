@@ -42,6 +42,7 @@ namespace Avelora.Client
         private GUIStyle _darkButtonStyle;
         private GUIStyle _characterStatusStyle;
         private GUIStyle _damageNumberStyle;
+        private GUIStyle _critNumberStyle;
         private Rect _characterPanel;
         private string _deleteControlName = "avelora-character-delete";
         private string _createControlName = "avelora-character-create";
@@ -413,6 +414,11 @@ namespace Avelora.Client
                     richText = false,
                 };
                 _damageNumberStyle.normal.textColor = Color.white;
+                _critNumberStyle = new GUIStyle(_damageNumberStyle)
+                {
+                    fontSize = 24,
+                    fontStyle = FontStyle.Bold,
+                };
             }
         }
 
@@ -428,7 +434,8 @@ namespace Avelora.Client
             }
             for (int i = _damageNumbers.Count - 1; i >= 0; i--)
             {
-                if (now - _damageNumbers[i].StartTime >= 0.9f)
+                float lifetime = _damageNumbers[i].Critical ? 1.2f : 0.9f;
+                if (now - _damageNumbers[i].StartTime >= lifetime)
                 {
                     _damageNumbers.RemoveAt(i);
                 }
@@ -495,7 +502,8 @@ namespace Avelora.Client
             {
                 DamageNumber number = _damageNumbers[i];
                 float elapsed = now - number.StartTime;
-                Vector3 world = number.Position + Vector3.up * (0.8f * elapsed / 0.9f);
+                float lifetime = number.Critical ? 1.2f : 0.9f;
+                Vector3 world = number.Position + Vector3.up * (0.8f * elapsed / lifetime);
                 Vector3 screen = cam.WorldToScreenPoint(world);
                 if (screen.z < 0f)
                 {
@@ -503,12 +511,16 @@ namespace Avelora.Client
                 }
 
                 Vector2 gui = new Vector2(screen.x, Screen.height - screen.y);
-                Color color = number.Heal ? new Color(0.35f, 1f, 0.4f)
+                Color color = number.Critical && !number.Heal && !number.Absorbed ? new Color(1f, 0.7f, 0.15f)
+                    : number.Heal ? new Color(0.35f, 1f, 0.4f)
                     : number.Absorbed ? new Color(0.45f, 0.85f, 1f)
                     : (number.OnSelf ? new Color(1f, 0.35f, 0.3f) : Color.white);
-                color.a = 1f - elapsed / 0.9f;
+                color.a = 1f - elapsed / lifetime;
                 GUI.color = color;
-                GUI.Label(new Rect(gui.x - 32f, gui.y - 20f, 64f, 24f), number.Text, _damageNumberStyle);
+                GUI.Label(
+                    number.Critical ? new Rect(gui.x - 48f, gui.y - 28f, 96f, 32f) : new Rect(gui.x - 32f, gui.y - 20f, 64f, 24f),
+                    number.Text,
+                    number.Critical ? _critNumberStyle : _damageNumberStyle);
             }
 
             if (_lootTexts.Count > 0 && TryGetEntityPosition(_entityId, out Vector3 self))
@@ -1651,6 +1663,8 @@ namespace Avelora.Client
             StatLine(scale, y += line, 2, "Daño", _stats.AttackDamage + (_stats.DamageType == 1 ? " mágico" : " físico"));
             StatLine(scale, y += line, 3, "Defensa", _stats.Defense.ToString());
             StatLine(scale, y += line, 8, "Res. mágica", _stats.MagicResist.ToString());
+            StatLine(scale, y += line, 2, "Crít / Prisa",
+                (_stats.CritChance / 100f).ToString("0.0") + " % / " + (_stats.Haste / 100f).ToString("0.0") + " %");
 
             string[] names = { "Fuerza", "Destreza", "Inteligencia", "Vitalidad" };
             ushort[] totals = { _stats.Str, _stats.Dex, _stats.Int, _stats.Vit };
