@@ -1710,6 +1710,7 @@ namespace Avelora.Server.Net
             Enqueue(connectionId, EncodeInventory(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeProgress(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
             Enqueue(connectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+            OnStatusEffectsChanged(player);
         }
 
         private void RemovePlayer(int connectionId) => RemoveSession(connectionId, null);
@@ -1972,7 +1973,7 @@ namespace Avelora.Server.Net
                     entries.Add(new StatusEffectEntry(kind, status.SkillId, remainingTicks, amount));
                 }
                 byte[] bytes = MessageCodec.EncodeStatusEffects(new StatusEffectsMessage(
-                    (byte)player.Statuses.SpeedPercent, entries.ToArray()));
+                    (byte)player.TotalSpeedPercent, entries.ToArray()));
                 Enqueue(player.ConnectionId, bytes, DeliveryMode.ReliableOrdered, disconnectAfter: false);
                 Interlocked.Increment(ref _statusMessages);
                 Interlocked.Add(ref _statusBytes, bytes.Length);
@@ -1985,6 +1986,7 @@ namespace Avelora.Server.Net
                 session.EntityId == player.Id)
             {
                 Enqueue(player.ConnectionId, EncodeStats(player), DeliveryMode.ReliableOrdered, disconnectAfter: false);
+                OnStatusEffectsChanged(player);
             }
         }
 

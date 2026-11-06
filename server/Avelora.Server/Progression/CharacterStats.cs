@@ -42,6 +42,7 @@ namespace Avelora.Server.Progression
 
             int defense = checked(characterClass.Defense + checked(level * characterClass.DefensePerLevel));
             int magicResist = checked(characterClass.MagicResist + checked(level * characterClass.MagicResistPerLevel));
+            int moveSpeed = 0;
             if (equipment != null)
             {
                 if (equipment.Length != Avelora.Shared.Protocol.ProtocolConstants.EquipSlotCount)
@@ -63,6 +64,7 @@ namespace Avelora.Server.Progression
                     vit = checked(vit + item.Vit);
                     defense = checked(defense + item.Defense);
                     magicResist = checked(magicResist + item.MagicResist);
+                    moveSpeed = checked(moveSpeed + item.MoveSpeed);
                 }
             }
 
@@ -80,7 +82,8 @@ namespace Avelora.Server.Progression
                 defense,
                 magicResist,
                 CombatMath.CritChancePb(catalog, classId, dex),
-                CombatMath.HastePb(catalog, dex));
+                CombatMath.HastePb(catalog, dex),
+                CombatMath.MoveSpeedPercent(moveSpeed, catalog.MoveCap));
         }
 
         /// <summary>Daño bruto de un ataque sin arma o de un arma física.</summary>
@@ -172,7 +175,8 @@ namespace Avelora.Server.Progression
             int defense,
             int magicResist,
             int critChancePb = 0,
-            int hastePb = 0)
+            int hastePb = 0,
+            int moveSpeedPercent = 100)
         {
             Str = str;
             Dex = dex;
@@ -184,6 +188,7 @@ namespace Avelora.Server.Progression
             MagicResist = magicResist;
             CritChancePb = critChancePb;
             HastePb = hastePb;
+            MoveSpeedPercent = moveSpeedPercent;
         }
 
         public int Str { get; }
@@ -198,5 +203,7 @@ namespace Avelora.Server.Progression
         public int CritChancePb { get; }
         /// <summary>Prisa en puntos básicos.</summary>
         public int HastePb { get; }
+        /// <summary>Porcentaje de velocidad de movimiento aportado por el equipo, con el tope de clase aplicado.</summary>
+        public int MoveSpeedPercent { get; }
     }
 }

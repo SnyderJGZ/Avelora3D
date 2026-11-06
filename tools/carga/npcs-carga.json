@@ -7,7 +7,7 @@
     {
       "id": 2001,
       "name": "Orco",
-      "speed": 2.0,
+      "speed": 3.4,
       "halfWidth": 0.35,
       "halfHeight": 0.35,
       "maxHealth": 80,
@@ -39,7 +39,7 @@
     {
       "id": 2002,
       "name": "Orco guerrero",
-      "speed": 1.6,
+      "speed": 3.0,
       "halfWidth": 0.35,
       "halfHeight": 0.35,
       "maxHealth": 95,

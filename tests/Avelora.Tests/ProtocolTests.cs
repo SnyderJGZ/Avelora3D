@@ -1915,7 +1915,7 @@ namespace Avelora.Tests
             invalid = (byte[])bytes.Clone();
             invalid[10] = invalid[3]; // segundo estado repite el primero
             Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
-            foreach (byte speed in new byte[] { 0, 101 })
+            foreach (byte speed in new byte[] { 0, 201 })
             {
                 invalid = (byte[])bytes.Clone();
                 invalid[1] = speed;

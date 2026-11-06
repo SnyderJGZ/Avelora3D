@@ -16,7 +16,7 @@
     { "id": 3303, "name": "Peto de cuero", "kind": "armor", "slot": "body", "maxStack": 1, "defense": 2, "magicResist": 1 },
     { "id": 3304, "name": "Pantalones de cuero", "kind": "armor", "slot": "legs", "maxStack": 1, "defense": 1 },
     { "id": 3305, "name": "Guantes de cuero", "kind": "armor", "slot": "hands", "maxStack": 1, "defense": 1, "dex": 1 },
-    { "id": 3306, "name": "Botas de cuero", "kind": "armor", "slot": "feet", "maxStack": 1, "defense": 1 },
+    { "id": 3306, "name": "Botas de cuero", "kind": "armor", "slot": "feet", "maxStack": 1, "defense": 1, "moveSpeed": 5 },
     { "id": 3307, "name": "Escudo de madera", "kind": "armor", "slot": "offhand", "maxStack": 1, "defense": 2 },
     { "id": 3308, "name": "Anillo de vigor", "kind": "armor", "slot": "ring", "maxStack": 1, "vit": 2 },
     { "id": 3309, "name": "Collar de fuerza", "kind": "armor", "slot": "neck", "maxStack": 1, "magicResist": 1, "str": 2 },

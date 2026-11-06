@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-28 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-29 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -1138,6 +1138,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-26** | Fórmulas compartidas en `CombatMath` y simulador `tools/Avelora.Balance` (sin cambio de protocolo ni esquema) | ✅ servidor, herramienta y pruebas |
 | **I-27** | Modelo de daño, vida y defensa (§2.2–§2.3 del plan); datos de franjas 1 y 5 y orcos (sin cambio de protocolo ni esquema) | ✅ servidor, datos y pruebas |
 | **I-28** | Crítico, velocidad de ataque, PvP y recarga global (§2.4–§2.5, §2.8 del plan); protocolo v24 | ✅ servidor, datos y pruebas; cliente I-28b pendiente |
+| **I-29** | Velocidad de movimiento (§2.6 del plan): moveSpeed de botas, moveCap 115, PNJ a 3,0-3,4; protocolo v24 sin cambios | ✅ servidor, datos y pruebas; cliente sin cambios |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -2206,7 +2207,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-28**, con persistencia SQLite en esquema v8 y protocolo v24, incluidos I-15p/I-15q, I-16, I-17 e I-18.
+El servidor ya implementa **I-04 a I-29**, con persistencia SQLite en esquema v8 y protocolo v24, incluidos I-15p/I-15q, I-16, I-17 e I-18.
 El cliente usa v21 (I-17b/I-18b e I-28b pendientes; incompatible con el servidor v24) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

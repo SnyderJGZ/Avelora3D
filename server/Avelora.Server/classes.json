@@ -1,6 +1,7 @@
 {
   "baseHealth": 50,
   "powerPerPoint": 2,
+  "moveCap": 115,
   "critPerDex": 10,
   "critCap": 4000,
   "critMultiplier": 150,

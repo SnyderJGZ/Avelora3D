@@ -109,6 +109,10 @@ namespace Avelora.Server.Progression
             return Math.Min(catalog.HasteCap, checked(dex * catalog.HastePerDex));
         }
 
+        /// <summary>Calcula el porcentaje de velocidad del equipo después de aplicar el tope de clase.</summary>
+        public static int MoveSpeedPercent(int equipMoveSpeed, int moveCap) =>
+            Math.Min(moveCap, checked(100 + equipMoveSpeed));
+
         /// <summary>Convierte la recarga del arma a ticks después de aplicar la prisa y el mínimo.</summary>
         public static long AttackCooldownTicks(double cooldownSeconds, int hastePb, int minTicks)
         {

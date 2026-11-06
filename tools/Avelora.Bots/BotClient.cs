@@ -1581,9 +1581,11 @@ namespace Avelora.Bots
             {
                 Interlocked.Increment(ref _statusMessages);
                 if (statuses.SpeedPercent < 100) Interlocked.Increment(ref _slowMessages);
-                _prediction?.SetSpeed(statuses.SpeedPercent == 100
+                float speed = statuses.SpeedPercent == 100
                     ? _welcomeSpeed
-                    : _welcomeSpeed * statuses.SpeedPercent / 100f);
+                    : _welcomeSpeed * statuses.SpeedPercent / 100f;
+                _speed = speed;
+                _prediction?.SetSpeed(speed);
                 return;
             }
 

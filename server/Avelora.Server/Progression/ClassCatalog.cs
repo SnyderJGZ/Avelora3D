@@ -24,6 +24,7 @@ namespace Avelora.Server.Progression
 
         public int BaseHealth { get; set; } = -1;
         public int PowerPerPoint { get; set; } = -1;
+        public int MoveCap { get; set; } = 100;
         public int CritPerDex { get; set; }
         public int CritCap { get; set; } = 4000;
         public int CritMultiplier { get; set; } = 150;
@@ -63,6 +64,11 @@ namespace Avelora.Server.Progression
             if (PowerPerPoint < 0 || PowerPerPoint > 100)
             {
                 throw new InvalidOperationException("classes.json: powerPerPoint debe estar entre 0 y 100.");
+            }
+
+            if (MoveCap < 100 || MoveCap > 200)
+            {
+                throw new InvalidOperationException("classes.json: moveCap debe estar entre 100 y 200.");
             }
 
             ValidateCatalogValue(CritPerDex, 0, 1000, "critPerDex");

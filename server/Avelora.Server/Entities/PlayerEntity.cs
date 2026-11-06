@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
 using Avelora.Server.Simulation;
 using Avelora.Shared;
@@ -127,6 +128,12 @@ namespace Avelora.Server.Entities
 
         /// <summary>Último bonus de estado reflejado en estadísticas.</summary>
         internal int BonusSent { get; set; }
+
+        /// <summary>Porcentaje de velocidad del equipo, cacheado hasta recalcular sus estadísticas.</summary>
+        internal int MoveSpeedPercent { get; set; } = 100;
+
+        /// <summary>Porcentaje total de velocidad después de combinar equipo y ralentización activa.</summary>
+        public int TotalSpeedPercent => Math.Max(1, MoveSpeedPercent * Statuses.SpeedPercent / 100);
 
         /// <summary>Indica que el progreso debe publicarse tras terminar el combate de este tick.</summary>
         internal bool ProgressChanged { get; set; }

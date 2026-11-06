@@ -94,7 +94,7 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
-            int pct = player.Statuses.SpeedPercent;
+            int pct = player.TotalSpeedPercent;
             float speed = pct == 100 ? _speed : _speed * pct / 100f;
             player.Position = MovementSimulator.Step(
                 player.Position,

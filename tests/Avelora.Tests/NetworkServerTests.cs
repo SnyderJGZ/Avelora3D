@@ -540,9 +540,11 @@ namespace Avelora.Tests
             harness.Server.AfterTick(harness.Zone);
             harness.Server.PollOnce();
 
-            SentMessage own = Assert.Single(harness.Transport.Sent, sent => sent.ConnectionId == 1 &&
-                MessageCodec.TryReadStatusEffects(sent.Data, 0, sent.Data.Length, out _));
-            Assert.Equal(DeliveryMode.ReliableOrdered, own.Mode);
+            SentMessage[] ownStatuses = harness.Transport.Sent.Where(sent => sent.ConnectionId == 1 &&
+                MessageCodec.TryReadStatusEffects(sent.Data, 0, sent.Data.Length, out _)).ToArray();
+            Assert.Equal(2, ownStatuses.Length);
+            SentMessage own = ownStatuses[ownStatuses.Length - 1];
+            Assert.All(ownStatuses, status => Assert.Equal(DeliveryMode.ReliableOrdered, status.Mode));
             Assert.True(MessageCodec.TryReadStatusEffects(own.Data, 0, own.Data.Length, out StatusEffectsMessage ownStatus));
             Assert.Equal((byte)100, ownStatus.SpeedPercent);
             Assert.Equal(StatusKind.Bonus, Assert.Single(ownStatus.Effects).Kind);
@@ -562,8 +564,8 @@ namespace Avelora.Tests
                 ownerPlayer.Equipment, null);
             Assert.Equal(checked((ushort)(baseDamage + 4)), stats.AttackDamage);
             NetworkStats network = harness.Server.Snapshot();
-            Assert.Equal(1, network.StatusMessages);
-            Assert.True(network.StatusBytes >= own.Data.Length);
+            Assert.Equal(4, network.StatusMessages);
+            Assert.True(network.StatusBytes >= ownStatuses[0].Data.Length + ownStatuses[1].Data.Length);
             Assert.True(network.StatusEventMessages >= 1);
             Assert.True(network.StatusEventBytes >= observed.Data.Length);
         }
@@ -899,7 +901,7 @@ namespace Avelora.Tests
             harness.Pump();
 
             Assert.Equal(1, harness.Zone.Entities.Count);
-            Assert.Equal(5, harness.Transport.Sent.Count);
+            Assert.Equal(6, harness.Transport.Sent.Count);
 
             SentMessage sent = harness.Transport.Sent[0];
             Assert.Equal(1, sent.ConnectionId);
@@ -1233,7 +1235,10 @@ namespace Avelora.Tests
             Assert.True(MessageCodec.TryReadStats(
                 harness.Transport.Sent[messageIndex + 2].Data, 0,
                 harness.Transport.Sent[messageIndex + 2].Data.Length, out _));
-            Assert.Equal(messageIndex + 3, harness.Transport.Sent.Count);
+            Assert.True(MessageCodec.TryReadStatusEffects(
+                harness.Transport.Sent[messageIndex + 3].Data, 0,
+                harness.Transport.Sent[messageIndex + 3].Data.Length, out _));
+            Assert.Equal(messageIndex + 4, harness.Transport.Sent.Count);
         }
 
         [Fact]
@@ -1307,8 +1312,12 @@ namespace Avelora.Tests
             harness.Zone.Tick();
             harness.Server.PollOnce();
 
-            SentMessage sent = Assert.Single(harness.Transport.Sent);
+            SentMessage sent = Assert.Single(harness.Transport.Sent, message =>
+                MessageCodec.TryReadStats(message.Data, 0, message.Data.Length, out _));
+            Assert.Equal(2, harness.Transport.Sent.Count);
             Assert.True(MessageCodec.TryReadStats(sent.Data, 0, sent.Data.Length, out StatsMessage stats));
+            Assert.Contains(harness.Transport.Sent, message =>
+                MessageCodec.TryReadStatusEffects(message.Data, 0, message.Data.Length, out _));
             Assert.Equal((ushort)2, stats.AllocVit);
             Assert.Equal((ushort)1, stats.FreePoints);
             Assert.Equal((uint)132, stats.MaxHealth);
@@ -1472,6 +1481,72 @@ namespace Avelora.Tests
                 inventory.Equipment[(int)EquipSlot.Weapon] == 0);
             Assert.Contains(harness.Transport.Sent, sent => MessageCodec.TryReadStats(
                 sent.Data, 0, sent.Data.Length, out StatsMessage stats) && stats.AttackDamage == 6);
+        }
+
+        [Fact]
+        public void Equipar_Y_Desequipar_Botas_Publica_StatusEffects_Con_La_Velocidad_Total()
+        {
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            using var harness = new Harness(customItems: items);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            PlayerEntity player = Assert.IsType<PlayerEntity>(harness.Zone.Entities[harness.Zone.Entities.Count - 1]);
+            player.Inventory[0] = new InventorySlot(3306, 1);
+            harness.Transport.Sent.Clear();
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeEquip(new EquipMessage(0)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage equipped = Assert.Single(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadStatusEffects(sent.Data, 0, sent.Data.Length, out _));
+            Assert.True(MessageCodec.TryReadStatusEffects(
+                equipped.Data, 0, equipped.Data.Length, out StatusEffectsMessage equippedStatus));
+            Assert.Equal((byte)105, equippedStatus.SpeedPercent);
+            Assert.Empty(equippedStatus.Effects);
+
+            harness.Transport.Sent.Clear();
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeUnequip(
+                new UnequipMessage((byte)EquipSlot.Feet, byte.MaxValue)));
+            harness.Server.PollOnce();
+            harness.Zone.Tick();
+            harness.Server.PollOnce();
+
+            SentMessage unequipped = Assert.Single(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadStatusEffects(sent.Data, 0, sent.Data.Length, out _));
+            Assert.True(MessageCodec.TryReadStatusEffects(
+                unequipped.Data, 0, unequipped.Data.Length, out StatusEffectsMessage unequippedStatus));
+            Assert.Equal((byte)100, unequippedStatus.SpeedPercent);
+        }
+
+        [Fact]
+        public void Alta_Con_Botas_Publica_StatusEffects_Despues_De_Stats()
+        {
+            ushort[] equipment = new ushort[ProtocolConstants.EquipSlotCount];
+            equipment[(int)EquipSlot.Feet] = 3306;
+            DateTime now = DateTime.UtcNow;
+            var character = new CharacterRecord(
+                1, 1, "dev", 1, 0, 100, 100, 1, new Vec2(-1.5f, -2.5f),
+                new byte[ProtocolConstants.MapHashSize], now, now, equipment: equipment);
+            ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
+            using var repository = new FixedCharacterRepository(character);
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(customItems: items, repository: repository, saves: saves);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+
+            SentMessage stats = Assert.Single(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadStats(sent.Data, 0, sent.Data.Length, out _));
+            SentMessage status = Assert.Single(harness.Transport.Sent, sent =>
+                MessageCodec.TryReadStatusEffects(sent.Data, 0, sent.Data.Length, out _));
+            Assert.True(MessageCodec.TryReadStatusEffects(
+                status.Data, 0, status.Data.Length, out StatusEffectsMessage statusMessage));
+            Assert.Equal((byte)105, statusMessage.SpeedPercent);
+            Assert.Empty(statusMessage.Effects);
+            Assert.True(harness.Transport.Sent.IndexOf(stats) < harness.Transport.Sent.IndexOf(status));
         }
 
         [Fact]

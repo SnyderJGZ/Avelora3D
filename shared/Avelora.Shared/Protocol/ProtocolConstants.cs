@@ -38,6 +38,9 @@ namespace Avelora.Shared.Protocol
         /// <summary>Máximo de estados activos de tipos distintos por entidad (I-18).</summary>
         public const int MaxStatusEffects = 4;
 
+        /// <summary>Máximo porcentaje total de velocidad aceptado por StatusEffects (I-29).</summary>
+        public const int MaxSpeedPercent = 200;
+
         /// <summary>Máximo de entidades notificadas en un mensaje de cambios de estado (I-18).</summary>
         public const int MaxStatusEventsPerMessage = 64;
 

@@ -100,6 +100,7 @@ namespace Avelora.Server.Items
         public int Dex { get; set; }
         public int Int { get; set; }
         public int Vit { get; set; }
+        public int MoveSpeed { get; set; }
 
         /// <summary>Tamaño máximo de pila (1..999).</summary>
         public int MaxStack { get; set; }
@@ -529,6 +530,17 @@ namespace Avelora.Server.Items
 
         private static void ValidateEquipmentStats(ItemType item, string where, bool equipable)
         {
+            if (item.MoveSpeed < 0 || item.MoveSpeed > 10)
+            {
+                throw new InvalidOperationException("items.json: moveSpeed debe estar entre 0 y 10.");
+            }
+
+            if (item.MoveSpeed != 0 && !item.IsArmor)
+            {
+                throw new InvalidOperationException(
+                    "items.json: " + where + " (id " + item.Id + ") no es armadura y no puede dar moveSpeed.");
+            }
+
             if (item.Defense < 0 || item.Defense > ushort.MaxValue ||
                 item.MagicResist < 0 || item.MagicResist > ushort.MaxValue)
             {

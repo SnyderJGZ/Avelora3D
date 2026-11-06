@@ -2698,7 +2698,7 @@ namespace Avelora.Shared.Protocol
         public static byte[] EncodeStatusEffects(in StatusEffectsMessage message)
         {
             StatusEffectEntry[] effects = message.Effects ?? Array.Empty<StatusEffectEntry>();
-            if (message.SpeedPercent < 1 || message.SpeedPercent > 100 ||
+            if (message.SpeedPercent < 1 || message.SpeedPercent > ProtocolConstants.MaxSpeedPercent ||
                 effects.Length > ProtocolConstants.MaxStatusEffects)
             {
                 throw new ArgumentOutOfRangeException(nameof(message), "SpeedPercent o cantidad de estados inválidos.");
@@ -2743,7 +2743,7 @@ namespace Avelora.Shared.Protocol
                 var reader = new WireReader(buffer, offset + 1, length - 1);
                 byte speedPercent = reader.ReadByte();
                 int count = reader.ReadByte();
-                if (speedPercent < 1 || speedPercent > 100 || count > ProtocolConstants.MaxStatusEffects ||
+                if (speedPercent < 1 || speedPercent > ProtocolConstants.MaxSpeedPercent || count > ProtocolConstants.MaxStatusEffects ||
                     length != StatusEffectsHeaderSize + StatusEffectEntrySize * count)
                     return false;
 

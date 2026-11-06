@@ -194,6 +194,7 @@ namespace Avelora.Server.Simulation
                 player.AllocVit,
                 _items,
                 player.Equipment);
+            player.MoveSpeedPercent = derived.MoveSpeedPercent;
             player.MaxHealth = derived.MaxHealth;
             player.Health = Math.Min(player.Health, player.MaxHealth);
             player.MaxMana = derived.MaxResource;
