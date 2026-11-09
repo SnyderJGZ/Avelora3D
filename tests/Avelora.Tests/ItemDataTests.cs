@@ -222,7 +222,7 @@ namespace Avelora.Tests
             Assert.Equal(10, stone.MaxStack);
 
             NpcCatalog npcs = NpcCatalog.Load(Path.Combine(AppContext.BaseDirectory, "npcs.json"));
-            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-valle.avmap")), items);
+            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-ciudad.avmap")), items);
             LootEntry drop = Assert.Single(npcs.FindType(2002)!.Loot!, loot => loot.ItemId == 3201);
             Assert.Equal(0.03, drop.Chance);
             Assert.Equal(1, drop.Min);
@@ -265,7 +265,7 @@ namespace Avelora.Tests
             }
 
             NpcCatalog npcs = NpcCatalog.Load(Path.Combine(AppContext.BaseDirectory, "npcs.json"));
-            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-valle.avmap")), items);
+            npcs.Validate(MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-ciudad.avmap")), items);
             int[] orcDrops = npcs.FindType(2001)!.Loot!
                 .Where(drop => drop.ItemId >= 3301 && drop.ItemId <= 3305)
                 .Select(drop => drop.ItemId)

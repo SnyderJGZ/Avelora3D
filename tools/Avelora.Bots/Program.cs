@@ -1163,7 +1163,7 @@ namespace Avelora.Bots
 
             public int Seed { get; set; } = 20261019;
 
-            public string MapPath { get; set; } = "maps/avelora-valle.avmap";
+            public string MapPath { get; set; } = "maps/avelora-ciudad.avmap";
 
             public string AccountPrefix { get; set; } = "bot";
 

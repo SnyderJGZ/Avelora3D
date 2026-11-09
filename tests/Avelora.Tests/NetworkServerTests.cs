@@ -292,6 +292,31 @@ namespace Avelora.Tests
             Assert.Equal((ushort)0, inventory.Equipment[(int)EquipSlot.Weapon]);
         }
 
+        [Fact]
+        public void Al_Cargar_Personaje_Con_Huella_Distinta_Aparece_En_El_Spawn()
+        {
+            var huellaAnterior = new byte[ProtocolConstants.MapHashSize];
+            huellaAnterior[0] = 1;
+            var character = new CharacterRecord(
+                1, 1, "PersonajeGuardado", 1, 0, 100, 100, 1,
+                new Vec2(-1.5f, -2.5f), huellaAnterior,
+                DateTime.UtcNow, DateTime.UtcNow, classId: 2);
+            var repository = new FixedCharacterRepository(character);
+            using var saves = new CharacterSaveService(repository);
+            using var harness = new Harness(withItems: true, repository: repository, saves: saves);
+
+            Assert.NotEqual(harness.MapHash, character.MapHash);
+            harness.Connect(1);
+            harness.Handshake(1);
+            harness.Pump();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Zone.Tick();
+
+            PlayerInfo player = Assert.Single(harness.Zone.Players);
+            Assert.Equal(harness.Config.Spawn.X, player.X);
+            Assert.Equal(harness.Config.Spawn.Y, player.Y);
+        }
+
         [Theory]
         [InlineData("nivel")]
         [InlineData("dosmanos")]

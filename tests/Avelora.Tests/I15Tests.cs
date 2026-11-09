@@ -306,14 +306,14 @@ namespace Avelora.Tests
         public void Datos_Reales_De_Zonas_Coinciden_Con_Carga_Y_Sus_Spawns_Son_Validos()
         {
             string basePath = AppContext.BaseDirectory;
-            MapCollisionGrid map = MapFile.Load(Path.Combine(basePath, "maps", "avelora-valle.avmap"));
+            MapCollisionGrid map = MapFile.Load(Path.Combine(basePath, "maps", "avelora-ciudad.avmap"));
             ZoneMap zones = ZoneMap.Load(Path.Combine(basePath, "zones.json"), map);
             ItemCatalog items = ItemCatalog.Load(Path.Combine(basePath, "items.json"));
             NpcCatalog npcs = NpcCatalog.Load(Path.Combine(basePath, "npcs.json"));
 
             npcs.Validate(map, items);
             zones.ValidateSpawners(npcs);
-            Assert.Equal(ZoneKind.Safe, zones.KindAt(-6.5f, 0.5f));
+            Assert.Equal(ZoneKind.Safe, zones.KindAt(0.5f, -4.5f));
 
             foreach (ZoneInfo zone in zones.Zones.Where(value => value.Kind == ZoneKind.Pvp))
             {

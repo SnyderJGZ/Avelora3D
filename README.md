@@ -1898,8 +1898,8 @@ rectángulos de casillas (`x`, `y`, `w`, `h`):
 ```json
 {
   "zones": [
-    { "id": 1, "name": "Villa del Valle", "kind": "safe", "rects": [ { "x": -10, "y": -3, "w": 8, "h": 7 } ] },
-    { "id": 2, "name": "Arena del Este", "kind": "pvp", "rects": [ { "x": 8, "y": -24, "w": 12, "h": 8 } ] }
+    { "id": 1, "name": "Ciudad", "kind": "safe", "rects": [ { "x": -30, "y": -22, "w": 60, "h": 44 } ] },
+    { "id": 2, "name": "Arena del Este", "kind": "pvp", "rects": [ { "x": 44, "y": 28, "w": 14, "h": 10 } ] }
   ]
 }
 ```
@@ -2161,10 +2161,16 @@ parejas consecutivas, sin saltos. No se modificó predicción, fuera del alcance
 
 ---
 
+### Mapa «Ciudad» (J-04)
+
+El servidor y los bots cargan **`maps/avelora-ciudad.avmap`**, mapa de 160×120 (x −80..79, y −60..59), con huella `4d86b0d9788c143607d664d15d93243d6634bf2192da86ad5992e397305418f6`. La aparición está en (0,5; −4,5); la zona segura «Ciudad» ocupa −30,−22,60×44 y «Arena del Este» es PvP en 44,28,14×10. Hay 10 spawners (6 orcos 2001 y 4 orcos guerreros 2002) fuera de la ciudad. El layout determinista es `Editor/MapaCiudadLayout.cs`, pintado/exportado por `Editor/MapaCiudadGenerator.cs` desde «Avelora › Generar mapa «Ciudad»». El layout comprueba mediante BFS que puertas, claros y arena sean alcanzables desde la aparición; en la generación comprobada hubo 15.343 casillas libres, todas alcanzables.
+
 ### Mapa «Valle» (J-02)
 
-El servidor y los bots cargan **`maps/avelora-valle.avmap`** (80×60, x de −40 a 39 e y de −30 a 29).
-Lo genera el menú **Avelora › Generar mapa «Valle»** (`Editor/ValleyMapGenerator.cs`, semilla fija:
+Sustituido por la «Ciudad» (J-04); archivo y generador conservados.
+
+El mapa histórico **`maps/avelora-valle.avmap`** mide 80×60 (x de −40 a 39 e y de −30 a 29).
+Lo generaba el menú **Avelora › Generar mapa «Valle»** (`Editor/ValleyMapGenerator.cs`, semilla fija:
 volver a generarlo da la misma huella) con el arte de Tiny Swords recortado a 64 px en `Art/Map`:
 - **isla** con costa irregular, playa y espuma; el mar rodea todo el borde;
 - **río** de norte a sur con **dos puentes** (y = 0 e y = 16) que lleva a las tierras altas del este;
