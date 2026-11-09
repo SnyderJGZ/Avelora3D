@@ -1,0 +1,1593 @@
+{
+    "fuente": "afueras.png",
+    "casilla": 64,
+    "celdaOrigen": 79.0,
+    "piezas": [
+        {
+            "numero": 1,
+            "archivo": "Afueras_suelo_001.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 6,
+                "y": 5,
+                "ancho": 70,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 2,
+            "archivo": "Afueras_suelo_002.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 79,
+                "y": 5,
+                "ancho": 68,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 3,
+            "archivo": "Afueras_suelo_003.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 152,
+                "y": 5,
+                "ancho": 68,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 4,
+            "archivo": "Afueras_suelo_004.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 223,
+                "y": 5,
+                "ancho": 69,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 5,
+            "archivo": "Afueras_suelo_005.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 296,
+                "y": 5,
+                "ancho": 69,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 6,
+            "archivo": "Afueras_suelo_006.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 369,
+                "y": 5,
+                "ancho": 70,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 7,
+            "archivo": "Afueras_suelo_007.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 6,
+                "y": 102,
+                "ancho": 70,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 8,
+            "archivo": "Afueras_suelo_008.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 79,
+                "y": 102,
+                "ancho": 68,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 9,
+            "archivo": "Afueras_suelo_009.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 152,
+                "y": 102,
+                "ancho": 67,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 10,
+            "archivo": "Afueras_suelo_010.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 224,
+                "y": 102,
+                "ancho": 69,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 11,
+            "archivo": "Afueras_suelo_011.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 297,
+                "y": 102,
+                "ancho": 68,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 12,
+            "archivo": "Afueras_suelo_012.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 370,
+                "y": 102,
+                "ancho": 69,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 13,
+            "archivo": "Afueras_suelo_013.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 196,
+                "ancho": 70,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 14,
+            "archivo": "Afueras_suelo_014.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 80,
+                "y": 196,
+                "ancho": 68,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 15,
+            "archivo": "Afueras_suelo_015.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 152,
+                "y": 195,
+                "ancho": 68,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 16,
+            "archivo": "Afueras_suelo_016.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 224,
+                "y": 195,
+                "ancho": 69,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 17,
+            "archivo": "Afueras_suelo_017.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 297,
+                "y": 195,
+                "ancho": 68,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 18,
+            "archivo": "Afueras_suelo_018.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 370,
+                "y": 195,
+                "ancho": 70,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 19,
+            "archivo": "Afueras_suelo_019.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1439,
+                "y": 126,
+                "ancho": 77,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 20,
+            "archivo": "Afueras_suelo_020.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 289,
+                "ancho": 69,
+                "alto": 89
+            }
+        },
+        {
+            "numero": 21,
+            "archivo": "Afueras_suelo_021.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 80,
+                "y": 289,
+                "ancho": 68,
+                "alto": 89
+            }
+        },
+        {
+            "numero": 22,
+            "archivo": "Afueras_suelo_022.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 154,
+                "y": 289,
+                "ancho": 67,
+                "alto": 89
+            }
+        },
+        {
+            "numero": 23,
+            "archivo": "Afueras_suelo_023.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 370,
+                "y": 289,
+                "ancho": 69,
+                "alto": 89
+            }
+        },
+        {
+            "numero": 24,
+            "archivo": "Afueras_suelo_024.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1438,
+                "y": 329,
+                "ancho": 79,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 25,
+            "archivo": "Afueras_suelo_025.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 382,
+                "ancho": 69,
+                "alto": 81
+            }
+        },
+        {
+            "numero": 26,
+            "archivo": "Afueras_suelo_026.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 81,
+                "y": 382,
+                "ancho": 68,
+                "alto": 80
+            }
+        },
+        {
+            "numero": 27,
+            "archivo": "Afueras_suelo_027.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 154,
+                "y": 382,
+                "ancho": 67,
+                "alto": 80
+            }
+        },
+        {
+            "numero": 28,
+            "archivo": "Afueras_suelo_028.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 370,
+                "y": 382,
+                "ancho": 69,
+                "alto": 81
+            }
+        },
+        {
+            "numero": 29,
+            "archivo": "Afueras_suelo_029.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 902,
+                "y": 735,
+                "ancho": 82,
+                "alto": 65
+            }
+        },
+        {
+            "numero": 30,
+            "archivo": "Afueras_suelo_030.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 134,
+                "y": 779,
+                "ancho": 82,
+                "alto": 64
+            }
+        },
+        {
+            "numero": 31,
+            "archivo": "Afueras_suelo_031.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 225,
+                "y": 778,
+                "ancho": 83,
+                "alto": 65
+            }
+        },
+        {
+            "numero": 32,
+            "archivo": "Afueras_suelo_032.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 507,
+                "y": 838,
+                "ancho": 85,
+                "alto": 65
+            }
+        },
+        {
+            "numero": 33,
+            "archivo": "Afueras_suelo_033.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 338,
+                "y": 916,
+                "ancho": 76,
+                "alto": 65
+            }
+        },
+        {
+            "numero": 34,
+            "archivo": "Afueras_objeto_001.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 458,
+                "y": 5,
+                "ancho": 122,
+                "alto": 105
+            }
+        },
+        {
+            "numero": 35,
+            "archivo": "Afueras_objeto_002.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 592,
+                "y": 5,
+                "ancho": 129,
+                "alto": 105
+            }
+        },
+        {
+            "numero": 36,
+            "archivo": "Afueras_objeto_003.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 731,
+                "y": 5,
+                "ancho": 134,
+                "alto": 161
+            }
+        },
+        {
+            "numero": 37,
+            "archivo": "Afueras_objeto_004.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 887,
+                "y": 5,
+                "ancho": 124,
+                "alto": 97
+            }
+        },
+        {
+            "numero": 38,
+            "archivo": "Afueras_objeto_005.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1021,
+                "y": 5,
+                "ancho": 118,
+                "alto": 97
+            }
+        },
+        {
+            "numero": 39,
+            "archivo": "Afueras_objeto_006.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1162,
+                "y": 13,
+                "ancho": 131,
+                "alto": 116
+            }
+        },
+        {
+            "numero": 40,
+            "archivo": "Afueras_objeto_007.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1304,
+                "y": 4,
+                "ancho": 116,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 41,
+            "archivo": "Afueras_objeto_008.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1433,
+                "y": 13,
+                "ancho": 95,
+                "alto": 106
+            }
+        },
+        {
+            "numero": 42,
+            "archivo": "Afueras_objeto_009.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 887,
+                "y": 106,
+                "ancho": 124,
+                "alto": 102
+            }
+        },
+        {
+            "numero": 43,
+            "archivo": "Afueras_objeto_010.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1021,
+                "y": 106,
+                "ancho": 118,
+                "alto": 103
+            }
+        },
+        {
+            "numero": 44,
+            "archivo": "Afueras_objeto_011.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 460,
+                "y": 119,
+                "ancho": 126,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 45,
+            "archivo": "Afueras_objeto_012.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 602,
+                "y": 119,
+                "ancho": 178,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 46,
+            "archivo": "Afueras_objeto_013.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 744,
+                "y": 176,
+                "ancho": 121,
+                "alto": 133
+            }
+        },
+        {
+            "numero": 47,
+            "archivo": "Afueras_objeto_014.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1176,
+                "y": 133,
+                "ancho": 102,
+                "alto": 67
+            }
+        },
+        {
+            "numero": 48,
+            "archivo": "Afueras_objeto_015.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1306,
+                "y": 130,
+                "ancho": 110,
+                "alto": 72
+            }
+        },
+        {
+            "numero": 49,
+            "archivo": "Afueras_objeto_016.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 3,
+            "origen": {
+                "x": 461,
+                "y": 216,
+                "ancho": 125,
+                "alto": 202
+            }
+        },
+        {
+            "numero": 50,
+            "archivo": "Afueras_objeto_017.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 3,
+            "origen": {
+                "x": 604,
+                "y": 217,
+                "ancho": 125,
+                "alto": 200
+            }
+        },
+        {
+            "numero": 51,
+            "archivo": "Afueras_objeto_018.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 887,
+                "y": 218,
+                "ancho": 135,
+                "alto": 92
+            }
+        },
+        {
+            "numero": 52,
+            "archivo": "Afueras_objeto_019.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1034,
+                "y": 217,
+                "ancho": 105,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 53,
+            "archivo": "Afueras_objeto_020.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1162,
+                "y": 217,
+                "ancho": 131,
+                "alto": 118
+            }
+        },
+        {
+            "numero": 54,
+            "archivo": "Afueras_objeto_021.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1304,
+                "y": 206,
+                "ancho": 116,
+                "alto": 114
+            }
+        },
+        {
+            "numero": 55,
+            "archivo": "Afueras_objeto_022.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1433,
+                "y": 217,
+                "ancho": 95,
+                "alto": 107
+            }
+        },
+        {
+            "numero": 56,
+            "archivo": "Afueras_objeto_023.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 226,
+                "y": 289,
+                "ancho": 139,
+                "alto": 174
+            }
+        },
+        {
+            "numero": 57,
+            "archivo": "Afueras_objeto_024.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 755,
+                "y": 315,
+                "ancho": 110,
+                "alto": 102
+            }
+        },
+        {
+            "numero": 58,
+            "archivo": "Afueras_objeto_025.png",
+            "categoria": "objeto",
+            "casillasAncho": 3,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 888,
+                "y": 323,
+                "ancho": 202,
+                "alto": 94
+            }
+        },
+        {
+            "numero": 59,
+            "archivo": "Afueras_objeto_026.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1107,
+                "y": 323,
+                "ancho": 33,
+                "alto": 94
+            }
+        },
+        {
+            "numero": 60,
+            "archivo": "Afueras_objeto_027.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1177,
+                "y": 338,
+                "ancho": 102,
+                "alto": 72
+            }
+        },
+        {
+            "numero": 61,
+            "archivo": "Afueras_objeto_028.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1306,
+                "y": 336,
+                "ancho": 110,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 62,
+            "archivo": "Afueras_objeto_029.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 3,
+            "origen": {
+                "x": 576,
+                "y": 433,
+                "ancho": 132,
+                "alto": 199
+            }
+        },
+        {
+            "numero": 63,
+            "archivo": "Afueras_objeto_030.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 8,
+                "y": 477,
+                "ancho": 155,
+                "alto": 124
+            }
+        },
+        {
+            "numero": 64,
+            "archivo": "Afueras_objeto_031.png",
+            "categoria": "objeto",
+            "casillasAncho": 3,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 175,
+                "y": 477,
+                "ancho": 275,
+                "alto": 125
+            }
+        },
+        {
+            "numero": 65,
+            "archivo": "Afueras_objeto_032.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 459,
+                "y": 440,
+                "ancho": 82,
+                "alto": 161
+            }
+        },
+        {
+            "numero": 66,
+            "archivo": "Afueras_objeto_033.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 3,
+            "origen": {
+                "x": 723,
+                "y": 436,
+                "ancho": 117,
+                "alto": 198
+            }
+        },
+        {
+            "numero": 67,
+            "archivo": "Afueras_objeto_034.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 3,
+            "origen": {
+                "x": 853,
+                "y": 436,
+                "ancho": 113,
+                "alto": 198
+            }
+        },
+        {
+            "numero": 68,
+            "archivo": "Afueras_objeto_035.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 981,
+                "y": 436,
+                "ancho": 121,
+                "alto": 197
+            }
+        },
+        {
+            "numero": 69,
+            "archivo": "Afueras_objeto_036.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1125,
+                "y": 437,
+                "ancho": 123,
+                "alto": 151
+            }
+        },
+        {
+            "numero": 70,
+            "archivo": "Afueras_objeto_037.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1266,
+                "y": 437,
+                "ancho": 131,
+                "alto": 149
+            }
+        },
+        {
+            "numero": 71,
+            "archivo": "Afueras_objeto_038.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1410,
+                "y": 439,
+                "ancho": 122,
+                "alto": 148
+            }
+        },
+        {
+            "numero": 72,
+            "archivo": "Afueras_objeto_039.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 7,
+                "y": 615,
+                "ancho": 124,
+                "alto": 148
+            }
+        },
+        {
+            "numero": 73,
+            "archivo": "Afueras_objeto_040.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 130,
+                "y": 615,
+                "ancho": 101,
+                "alto": 143
+            }
+        },
+        {
+            "numero": 74,
+            "archivo": "Afueras_objeto_041.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 231,
+                "y": 616,
+                "ancho": 109,
+                "alto": 146
+            }
+        },
+        {
+            "numero": 75,
+            "archivo": "Afueras_objeto_042.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 341,
+                "y": 615,
+                "ancho": 103,
+                "alto": 144
+            }
+        },
+        {
+            "numero": 76,
+            "archivo": "Afueras_objeto_043.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 445,
+                "y": 612,
+                "ancho": 96,
+                "alto": 150
+            }
+        },
+        {
+            "numero": 77,
+            "archivo": "Afueras_objeto_044.png",
+            "categoria": "objeto",
+            "casillasAncho": 3,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 552,
+                "y": 646,
+                "ancho": 218,
+                "alto": 180
+            }
+        },
+        {
+            "numero": 78,
+            "archivo": "Afueras_objeto_045.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 788,
+                "y": 648,
+                "ancho": 98,
+                "alto": 139
+            }
+        },
+        {
+            "numero": 79,
+            "archivo": "Afueras_objeto_046.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 938,
+                "y": 658,
+                "ancho": 95,
+                "alto": 63
+            }
+        },
+        {
+            "numero": 80,
+            "archivo": "Afueras_objeto_047.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1060,
+                "y": 642,
+                "ancho": 57,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 81,
+            "archivo": "Afueras_objeto_048.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1146,
+                "y": 610,
+                "ancho": 41,
+                "alto": 117
+            }
+        },
+        {
+            "numero": 82,
+            "archivo": "Afueras_objeto_049.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1219,
+                "y": 614,
+                "ancho": 30,
+                "alto": 113
+            }
+        },
+        {
+            "numero": 83,
+            "archivo": "Afueras_objeto_050.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1271,
+                "y": 614,
+                "ancho": 70,
+                "alto": 113
+            }
+        },
+        {
+            "numero": 84,
+            "archivo": "Afueras_objeto_051.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1364,
+                "y": 611,
+                "ancho": 43,
+                "alto": 116
+            }
+        },
+        {
+            "numero": 85,
+            "archivo": "Afueras_objeto_052.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1437,
+                "y": 609,
+                "ancho": 57,
+                "alto": 119
+            }
+        },
+        {
+            "numero": 86,
+            "archivo": "Afueras_objeto_053.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 999,
+                "y": 743,
+                "ancho": 49,
+                "alto": 57
+            }
+        },
+        {
+            "numero": 87,
+            "archivo": "Afueras_objeto_054.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1069,
+                "y": 740,
+                "ancho": 51,
+                "alto": 61
+            }
+        },
+        {
+            "numero": 88,
+            "archivo": "Afueras_objeto_055.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1142,
+                "y": 745,
+                "ancho": 43,
+                "alto": 44
+            }
+        },
+        {
+            "numero": 89,
+            "archivo": "Afueras_objeto_056.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1251,
+                "y": 745,
+                "ancho": 122,
+                "alto": 48
+            }
+        },
+        {
+            "numero": 90,
+            "archivo": "Afueras_objeto_057.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1399,
+                "y": 745,
+                "ancho": 120,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 91,
+            "archivo": "Afueras_objeto_058.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 10,
+                "y": 778,
+                "ancho": 110,
+                "alto": 68
+            }
+        },
+        {
+            "numero": 92,
+            "archivo": "Afueras_objeto_059.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 326,
+                "y": 782,
+                "ancho": 54,
+                "alto": 46
+            }
+        },
+        {
+            "numero": 93,
+            "archivo": "Afueras_objeto_060.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 397,
+                "y": 785,
+                "ancho": 57,
+                "alto": 42
+            }
+        },
+        {
+            "numero": 94,
+            "archivo": "Afueras_objeto_061.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 471,
+                "y": 783,
+                "ancho": 51,
+                "alto": 43
+            }
+        },
+        {
+            "numero": 95,
+            "archivo": "Afueras_objeto_062.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 804,
+                "y": 821,
+                "ancho": 36,
+                "alto": 39
+            }
+        },
+        {
+            "numero": 96,
+            "archivo": "Afueras_objeto_063.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 864,
+                "y": 820,
+                "ancho": 41,
+                "alto": 41
+            }
+        },
+        {
+            "numero": 97,
+            "archivo": "Afueras_objeto_064.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 930,
+                "y": 821,
+                "ancho": 35,
+                "alto": 40
+            }
+        },
+        {
+            "numero": 98,
+            "archivo": "Afueras_objeto_065.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 986,
+                "y": 811,
+                "ancho": 50,
+                "alto": 60
+            }
+        },
+        {
+            "numero": 99,
+            "archivo": "Afueras_objeto_066.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1055,
+                "y": 819,
+                "ancho": 39,
+                "alto": 40
+            }
+        },
+        {
+            "numero": 100,
+            "archivo": "Afueras_objeto_067.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1102,
+                "y": 813,
+                "ancho": 40,
+                "alto": 40
+            }
+        },
+        {
+            "numero": 101,
+            "archivo": "Afueras_objeto_068.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1168,
+                "y": 813,
+                "ancho": 67,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 102,
+            "archivo": "Afueras_objeto_069.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1188,
+                "y": 754,
+                "ancho": 43,
+                "alto": 40
+            }
+        },
+        {
+            "numero": 103,
+            "archivo": "Afueras_objeto_070.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1256,
+                "y": 813,
+                "ancho": 43,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 104,
+            "archivo": "Afueras_objeto_071.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1322,
+                "y": 809,
+                "ancho": 93,
+                "alto": 54
+            }
+        },
+        {
+            "numero": 105,
+            "archivo": "Afueras_objeto_072.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1432,
+                "y": 809,
+                "ancho": 94,
+                "alto": 51
+            }
+        },
+        {
+            "numero": 106,
+            "archivo": "Afueras_objeto_073.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 17,
+                "y": 863,
+                "ancho": 59,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 107,
+            "archivo": "Afueras_objeto_074.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 94,
+                "y": 862,
+                "ancho": 50,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 108,
+            "archivo": "Afueras_objeto_075.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 161,
+                "y": 861,
+                "ancho": 65,
+                "alto": 53
+            }
+        },
+        {
+            "numero": 109,
+            "archivo": "Afueras_objeto_076.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 247,
+                "y": 859,
+                "ancho": 53,
+                "alto": 55
+            }
+        },
+        {
+            "numero": 110,
+            "archivo": "Afueras_objeto_077.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 321,
+                "y": 854,
+                "ancho": 36,
+                "alto": 35
+            }
+        },
+        {
+            "numero": 111,
+            "archivo": "Afueras_objeto_078.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 377,
+                "y": 855,
+                "ancho": 40,
+                "alto": 33
+            }
+        },
+        {
+            "numero": 112,
+            "archivo": "Afueras_objeto_079.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 433,
+                "y": 847,
+                "ancho": 59,
+                "alto": 42
+            }
+        },
+        {
+            "numero": 113,
+            "archivo": "Afueras_objeto_080.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 609,
+                "y": 856,
+                "ancho": 47,
+                "alto": 29
+            }
+        },
+        {
+            "numero": 114,
+            "archivo": "Afueras_objeto_081.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 672,
+                "y": 851,
+                "ancho": 47,
+                "alto": 33
+            }
+        },
+        {
+            "numero": 115,
+            "archivo": "Afueras_objeto_082.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 745,
+                "y": 869,
+                "ancho": 193,
+                "alto": 144
+            }
+        },
+        {
+            "numero": 116,
+            "archivo": "Afueras_objeto_083.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 955,
+                "y": 882,
+                "ancho": 115,
+                "alto": 131
+            }
+        },
+        {
+            "numero": 117,
+            "archivo": "Afueras_objeto_084.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1092,
+                "y": 871,
+                "ancho": 176,
+                "alto": 142
+            }
+        },
+        {
+            "numero": 118,
+            "archivo": "Afueras_objeto_085.png",
+            "categoria": "objeto",
+            "casillasAncho": 3,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1288,
+                "y": 880,
+                "ancho": 242,
+                "alto": 133
+            }
+        },
+        {
+            "numero": 119,
+            "archivo": "Afueras_objeto_086.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 14,
+                "y": 932,
+                "ancho": 166,
+                "alto": 54
+            }
+        },
+        {
+            "numero": 120,
+            "archivo": "Afueras_objeto_087.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 205,
+                "y": 932,
+                "ancho": 120,
+                "alto": 54
+            }
+        },
+        {
+            "numero": 121,
+            "archivo": "Afueras_objeto_088.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 449,
+                "y": 914,
+                "ancho": 105,
+                "alto": 65
+            }
+        },
+        {
+            "numero": 122,
+            "archivo": "Afueras_objeto_089.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 566,
+                "y": 919,
+                "ancho": 157,
+                "alto": 69
+            }
+        }
+    ]
+}

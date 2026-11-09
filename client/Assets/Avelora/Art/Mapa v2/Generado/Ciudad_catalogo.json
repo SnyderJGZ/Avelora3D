@@ -1,0 +1,2373 @@
+{
+    "fuente": "Ciudad.png",
+    "casilla": 64,
+    "celdaOrigen": 82.0,
+    "piezas": [
+        {
+            "numero": 1,
+            "archivo": "Ciudad_suelo_001.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 5,
+                "ancho": 82,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 2,
+            "archivo": "Ciudad_suelo_002.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 92,
+                "y": 5,
+                "ancho": 78,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 3,
+            "archivo": "Ciudad_suelo_003.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 174,
+                "y": 5,
+                "ancho": 81,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 4,
+            "archivo": "Ciudad_suelo_004.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 258,
+                "y": 5,
+                "ancho": 80,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 5,
+            "archivo": "Ciudad_suelo_005.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 341,
+                "y": 5,
+                "ancho": 79,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 6,
+            "archivo": "Ciudad_suelo_006.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 423,
+                "y": 5,
+                "ancho": 83,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 7,
+            "archivo": "Ciudad_suelo_007.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 509,
+                "y": 5,
+                "ancho": 79,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 8,
+            "archivo": "Ciudad_suelo_008.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 98,
+                "ancho": 82,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 9,
+            "archivo": "Ciudad_suelo_009.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 92,
+                "y": 97,
+                "ancho": 78,
+                "alto": 84
+            }
+        },
+        {
+            "numero": 10,
+            "archivo": "Ciudad_suelo_010.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 174,
+                "y": 98,
+                "ancho": 81,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 11,
+            "archivo": "Ciudad_suelo_011.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 259,
+                "y": 98,
+                "ancho": 79,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 12,
+            "archivo": "Ciudad_suelo_012.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 341,
+                "y": 97,
+                "ancho": 79,
+                "alto": 84
+            }
+        },
+        {
+            "numero": 13,
+            "archivo": "Ciudad_suelo_013.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 423,
+                "y": 97,
+                "ancho": 83,
+                "alto": 84
+            }
+        },
+        {
+            "numero": 14,
+            "archivo": "Ciudad_suelo_014.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 509,
+                "y": 97,
+                "ancho": 80,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 15,
+            "archivo": "Ciudad_suelo_015.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 184,
+                "ancho": 82,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 16,
+            "archivo": "Ciudad_suelo_016.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 92,
+                "y": 184,
+                "ancho": 78,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 17,
+            "archivo": "Ciudad_suelo_017.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 174,
+                "y": 184,
+                "ancho": 81,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 18,
+            "archivo": "Ciudad_suelo_018.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 259,
+                "y": 184,
+                "ancho": 79,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 19,
+            "archivo": "Ciudad_suelo_019.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 341,
+                "y": 183,
+                "ancho": 79,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 20,
+            "archivo": "Ciudad_suelo_020.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 424,
+                "y": 184,
+                "ancho": 81,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 21,
+            "archivo": "Ciudad_suelo_021.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 509,
+                "y": 184,
+                "ancho": 80,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 22,
+            "archivo": "Ciudad_suelo_022.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 6,
+                "y": 263,
+                "ancho": 79,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 23,
+            "archivo": "Ciudad_suelo_023.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 92,
+                "y": 263,
+                "ancho": 76,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 24,
+            "archivo": "Ciudad_suelo_024.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 174,
+                "y": 263,
+                "ancho": 80,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 25,
+            "archivo": "Ciudad_suelo_025.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 259,
+                "y": 263,
+                "ancho": 79,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 26,
+            "archivo": "Ciudad_suelo_026.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 341,
+                "y": 263,
+                "ancho": 78,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 27,
+            "archivo": "Ciudad_suelo_027.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 425,
+                "y": 263,
+                "ancho": 78,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 28,
+            "archivo": "Ciudad_suelo_028.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 509,
+                "y": 263,
+                "ancho": 79,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 29,
+            "archivo": "Ciudad_suelo_029.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 852,
+                "y": 262,
+                "ancho": 95,
+                "alto": 95
+            }
+        },
+        {
+            "numero": 30,
+            "archivo": "Ciudad_suelo_030.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 956,
+                "y": 262,
+                "ancho": 93,
+                "alto": 95
+            }
+        },
+        {
+            "numero": 31,
+            "archivo": "Ciudad_suelo_031.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1061,
+                "y": 262,
+                "ancho": 98,
+                "alto": 95
+            }
+        },
+        {
+            "numero": 32,
+            "archivo": "Ciudad_suelo_032.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1170,
+                "y": 263,
+                "ancho": 77,
+                "alto": 94
+            }
+        },
+        {
+            "numero": 33,
+            "archivo": "Ciudad_suelo_033.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 9,
+                "y": 495,
+                "ancho": 71,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 34,
+            "archivo": "Ciudad_suelo_034.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 86,
+                "y": 495,
+                "ancho": 73,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 35,
+            "archivo": "Ciudad_suelo_035.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 168,
+                "y": 495,
+                "ancho": 69,
+                "alto": 93
+            }
+        },
+        {
+            "numero": 36,
+            "archivo": "Ciudad_suelo_036.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 910,
+                "y": 499,
+                "ancho": 94,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 37,
+            "archivo": "Ciudad_suelo_037.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 8,
+                "y": 601,
+                "ancho": 84,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 38,
+            "archivo": "Ciudad_suelo_038.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 360,
+                "y": 604,
+                "ancho": 98,
+                "alto": 80
+            }
+        },
+        {
+            "numero": 39,
+            "archivo": "Ciudad_suelo_039.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 472,
+                "y": 594,
+                "ancho": 94,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 40,
+            "archivo": "Ciudad_suelo_040.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 946,
+                "y": 602,
+                "ancho": 75,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 41,
+            "archivo": "Ciudad_suelo_041.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 424,
+                "y": 692,
+                "ancho": 82,
+                "alto": 86
+            }
+        },
+        {
+            "numero": 42,
+            "archivo": "Ciudad_suelo_042.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 509,
+                "y": 690,
+                "ancho": 80,
+                "alto": 84
+            }
+        },
+        {
+            "numero": 43,
+            "archivo": "Ciudad_suelo_043.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 590,
+                "y": 690,
+                "ancho": 86,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 44,
+            "archivo": "Ciudad_suelo_044.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 809,
+                "y": 693,
+                "ancho": 92,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 45,
+            "archivo": "Ciudad_suelo_045.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 916,
+                "y": 695,
+                "ancho": 93,
+                "alto": 87
+            }
+        },
+        {
+            "numero": 46,
+            "archivo": "Ciudad_suelo_046.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1099,
+                "y": 702,
+                "ancho": 66,
+                "alto": 77
+            }
+        },
+        {
+            "numero": 47,
+            "archivo": "Ciudad_suelo_047.png",
+            "categoria": "suelo",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 149,
+                "y": 818,
+                "ancho": 77,
+                "alto": 70
+            }
+        },
+        {
+            "numero": 48,
+            "archivo": "Ciudad_objeto_001.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 602,
+                "y": 5,
+                "ancho": 121,
+                "alto": 124
+            }
+        },
+        {
+            "numero": 49,
+            "archivo": "Ciudad_objeto_002.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 726,
+                "y": 5,
+                "ancho": 115,
+                "alto": 123
+            }
+        },
+        {
+            "numero": 50,
+            "archivo": "Ciudad_objeto_003.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 850,
+                "y": 5,
+                "ancho": 96,
+                "alto": 123
+            }
+        },
+        {
+            "numero": 51,
+            "archivo": "Ciudad_objeto_004.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 959,
+                "y": 5,
+                "ancho": 87,
+                "alto": 123
+            }
+        },
+        {
+            "numero": 52,
+            "archivo": "Ciudad_objeto_005.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1062,
+                "y": 5,
+                "ancho": 90,
+                "alto": 124
+            }
+        },
+        {
+            "numero": 53,
+            "archivo": "Ciudad_objeto_006.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1159,
+                "y": 5,
+                "ancho": 88,
+                "alto": 125
+            }
+        },
+        {
+            "numero": 54,
+            "archivo": "Ciudad_objeto_007.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 608,
+                "y": 134,
+                "ancho": 112,
+                "alto": 121
+            }
+        },
+        {
+            "numero": 55,
+            "archivo": "Ciudad_objeto_008.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 729,
+                "y": 134,
+                "ancho": 108,
+                "alto": 121
+            }
+        },
+        {
+            "numero": 56,
+            "archivo": "Ciudad_objeto_009.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 846,
+                "y": 135,
+                "ancho": 94,
+                "alto": 119
+            }
+        },
+        {
+            "numero": 57,
+            "archivo": "Ciudad_objeto_010.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 964,
+                "y": 135,
+                "ancho": 91,
+                "alto": 119
+            }
+        },
+        {
+            "numero": 58,
+            "archivo": "Ciudad_objeto_011.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1063,
+                "y": 135,
+                "ancho": 85,
+                "alto": 115
+            }
+        },
+        {
+            "numero": 59,
+            "archivo": "Ciudad_objeto_012.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1166,
+                "y": 135,
+                "ancho": 81,
+                "alto": 115
+            }
+        },
+        {
+            "numero": 60,
+            "archivo": "Ciudad_objeto_013.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 606,
+                "y": 264,
+                "ancho": 108,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 61,
+            "archivo": "Ciudad_objeto_014.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 734,
+                "y": 264,
+                "ancho": 108,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 62,
+            "archivo": "Ciudad_objeto_015.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 369,
+                "ancho": 90,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 63,
+            "archivo": "Ciudad_objeto_016.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 103,
+                "y": 369,
+                "ancho": 92,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 64,
+            "archivo": "Ciudad_objeto_017.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 200,
+                "y": 368,
+                "ancho": 84,
+                "alto": 112
+            }
+        },
+        {
+            "numero": 65,
+            "archivo": "Ciudad_objeto_018.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 290,
+                "y": 368,
+                "ancho": 83,
+                "alto": 115
+            }
+        },
+        {
+            "numero": 66,
+            "archivo": "Ciudad_objeto_019.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 555,
+                "y": 369,
+                "ancho": 76,
+                "alto": 113
+            }
+        },
+        {
+            "numero": 67,
+            "archivo": "Ciudad_objeto_020.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 636,
+                "y": 369,
+                "ancho": 77,
+                "alto": 113
+            }
+        },
+        {
+            "numero": 68,
+            "archivo": "Ciudad_objeto_021.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 380,
+                "y": 372,
+                "ancho": 76,
+                "alto": 111
+            }
+        },
+        {
+            "numero": 69,
+            "archivo": "Ciudad_objeto_022.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 463,
+                "y": 370,
+                "ancho": 87,
+                "alto": 114
+            }
+        },
+        {
+            "numero": 70,
+            "archivo": "Ciudad_objeto_023.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 718,
+                "y": 370,
+                "ancho": 78,
+                "alto": 111
+            }
+        },
+        {
+            "numero": 71,
+            "archivo": "Ciudad_objeto_024.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 798,
+                "y": 374,
+                "ancho": 68,
+                "alto": 107
+            }
+        },
+        {
+            "numero": 72,
+            "archivo": "Ciudad_objeto_025.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 871,
+                "y": 373,
+                "ancho": 58,
+                "alto": 109
+            }
+        },
+        {
+            "numero": 73,
+            "archivo": "Ciudad_objeto_026.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 934,
+                "y": 373,
+                "ancho": 39,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 74,
+            "archivo": "Ciudad_objeto_027.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 980,
+                "y": 373,
+                "ancho": 96,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 75,
+            "archivo": "Ciudad_objeto_028.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1081,
+                "y": 373,
+                "ancho": 66,
+                "alto": 109
+            }
+        },
+        {
+            "numero": 76,
+            "archivo": "Ciudad_objeto_029.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1153,
+                "y": 373,
+                "ancho": 47,
+                "alto": 109
+            }
+        },
+        {
+            "numero": 77,
+            "archivo": "Ciudad_objeto_030.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1205,
+                "y": 373,
+                "ancho": 42,
+                "alto": 110
+            }
+        },
+        {
+            "numero": 78,
+            "archivo": "Ciudad_objeto_031.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 248,
+                "y": 506,
+                "ancho": 47,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 79,
+            "archivo": "Ciudad_objeto_032.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 305,
+                "y": 499,
+                "ancho": 56,
+                "alto": 88
+            }
+        },
+        {
+            "numero": 80,
+            "archivo": "Ciudad_objeto_033.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 369,
+                "y": 493,
+                "ancho": 107,
+                "alto": 98
+            }
+        },
+        {
+            "numero": 81,
+            "archivo": "Ciudad_objeto_034.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 485,
+                "y": 490,
+                "ancho": 111,
+                "alto": 101
+            }
+        },
+        {
+            "numero": 82,
+            "archivo": "Ciudad_objeto_035.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 598,
+                "y": 488,
+                "ancho": 105,
+                "alto": 103
+            }
+        },
+        {
+            "numero": 83,
+            "archivo": "Ciudad_objeto_036.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 713,
+                "y": 492,
+                "ancho": 182,
+                "alto": 99
+            }
+        },
+        {
+            "numero": 84,
+            "archivo": "Ciudad_objeto_037.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1018,
+                "y": 494,
+                "ancho": 105,
+                "alto": 88
+            }
+        },
+        {
+            "numero": 85,
+            "archivo": "Ciudad_objeto_038.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1134,
+                "y": 499,
+                "ancho": 111,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 86,
+            "archivo": "Ciudad_objeto_039.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 103,
+                "y": 601,
+                "ancho": 117,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 87,
+            "archivo": "Ciudad_objeto_040.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 232,
+                "y": 599,
+                "ancho": 111,
+                "alto": 85
+            }
+        },
+        {
+            "numero": 88,
+            "archivo": "Ciudad_objeto_041.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 591,
+                "y": 604,
+                "ancho": 37,
+                "alto": 80
+            }
+        },
+        {
+            "numero": 89,
+            "archivo": "Ciudad_objeto_042.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 639,
+                "y": 605,
+                "ancho": 37,
+                "alto": 79
+            }
+        },
+        {
+            "numero": 90,
+            "archivo": "Ciudad_objeto_043.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 687,
+                "y": 604,
+                "ancho": 37,
+                "alto": 80
+            }
+        },
+        {
+            "numero": 91,
+            "archivo": "Ciudad_objeto_044.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 736,
+                "y": 602,
+                "ancho": 38,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 92,
+            "archivo": "Ciudad_objeto_045.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 788,
+                "y": 601,
+                "ancho": 30,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 93,
+            "archivo": "Ciudad_objeto_046.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 835,
+                "y": 601,
+                "ancho": 34,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 94,
+            "archivo": "Ciudad_objeto_047.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 886,
+                "y": 602,
+                "ancho": 49,
+                "alto": 82
+            }
+        },
+        {
+            "numero": 95,
+            "archivo": "Ciudad_objeto_048.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1033,
+                "y": 601,
+                "ancho": 54,
+                "alto": 86
+            }
+        },
+        {
+            "numero": 96,
+            "archivo": "Ciudad_objeto_049.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1100,
+                "y": 597,
+                "ancho": 41,
+                "alto": 89
+            }
+        },
+        {
+            "numero": 97,
+            "archivo": "Ciudad_objeto_050.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1152,
+                "y": 598,
+                "ancho": 42,
+                "alto": 88
+            }
+        },
+        {
+            "numero": 98,
+            "archivo": "Ciudad_objeto_051.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1207,
+                "y": 599,
+                "ancho": 37,
+                "alto": 87
+            }
+        },
+        {
+            "numero": 99,
+            "archivo": "Ciudad_objeto_052.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 8,
+                "y": 693,
+                "ancho": 157,
+                "alto": 104
+            }
+        },
+        {
+            "numero": 100,
+            "archivo": "Ciudad_objeto_053.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 172,
+                "y": 693,
+                "ancho": 125,
+                "alto": 104
+            }
+        },
+        {
+            "numero": 101,
+            "archivo": "Ciudad_objeto_054.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 303,
+                "y": 692,
+                "ancho": 116,
+                "alto": 101
+            }
+        },
+        {
+            "numero": 102,
+            "archivo": "Ciudad_objeto_055.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 694,
+                "y": 693,
+                "ancho": 99,
+                "alto": 87
+            }
+        },
+        {
+            "numero": 103,
+            "archivo": "Ciudad_objeto_056.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1026,
+                "y": 703,
+                "ancho": 60,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 104,
+            "archivo": "Ciudad_objeto_057.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1175,
+                "y": 702,
+                "ancho": 64,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 105,
+            "archivo": "Ciudad_objeto_058.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 13,
+                "y": 807,
+                "ancho": 134,
+                "alto": 83
+            }
+        },
+        {
+            "numero": 106,
+            "archivo": "Ciudad_objeto_059.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 234,
+                "y": 801,
+                "ancho": 168,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 107,
+            "archivo": "Ciudad_objeto_060.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 419,
+                "y": 797,
+                "ancho": 36,
+                "alto": 97
+            }
+        },
+        {
+            "numero": 108,
+            "archivo": "Ciudad_objeto_061.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 474,
+                "y": 788,
+                "ancho": 30,
+                "alto": 106
+            }
+        },
+        {
+            "numero": 109,
+            "archivo": "Ciudad_objeto_062.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 516,
+                "y": 787,
+                "ancho": 56,
+                "alto": 107
+            }
+        },
+        {
+            "numero": 110,
+            "archivo": "Ciudad_objeto_063.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 585,
+                "y": 796,
+                "ancho": 54,
+                "alto": 97
+            }
+        },
+        {
+            "numero": 111,
+            "archivo": "Ciudad_objeto_064.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 660,
+                "y": 812,
+                "ancho": 52,
+                "alto": 64
+            }
+        },
+        {
+            "numero": 112,
+            "archivo": "Ciudad_objeto_065.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 730,
+                "y": 808,
+                "ancho": 56,
+                "alto": 76
+            }
+        },
+        {
+            "numero": 113,
+            "archivo": "Ciudad_objeto_066.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 807,
+                "y": 803,
+                "ancho": 56,
+                "alto": 68
+            }
+        },
+        {
+            "numero": 114,
+            "archivo": "Ciudad_objeto_067.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 884,
+                "y": 801,
+                "ancho": 56,
+                "alto": 75
+            }
+        },
+        {
+            "numero": 115,
+            "archivo": "Ciudad_objeto_068.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 900,
+                "y": 820,
+                "ancho": 44,
+                "alto": 44
+            }
+        },
+        {
+            "numero": 116,
+            "archivo": "Ciudad_objeto_069.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 963,
+                "y": 785,
+                "ancho": 61,
+                "alto": 99
+            }
+        },
+        {
+            "numero": 117,
+            "archivo": "Ciudad_objeto_070.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1038,
+                "y": 794,
+                "ancho": 61,
+                "alto": 92
+            }
+        },
+        {
+            "numero": 118,
+            "archivo": "Ciudad_objeto_071.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1110,
+                "y": 795,
+                "ancho": 63,
+                "alto": 91
+            }
+        },
+        {
+            "numero": 119,
+            "archivo": "Ciudad_objeto_072.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1184,
+                "y": 795,
+                "ancho": 61,
+                "alto": 90
+            }
+        },
+        {
+            "numero": 120,
+            "archivo": "Ciudad_objeto_073.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 7,
+                "y": 901,
+                "ancho": 149,
+                "alto": 116
+            }
+        },
+        {
+            "numero": 121,
+            "archivo": "Ciudad_objeto_074.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 169,
+                "y": 903,
+                "ancho": 124,
+                "alto": 115
+            }
+        },
+        {
+            "numero": 122,
+            "archivo": "Ciudad_objeto_075.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 306,
+                "y": 904,
+                "ancho": 123,
+                "alto": 114
+            }
+        },
+        {
+            "numero": 123,
+            "archivo": "Ciudad_objeto_076.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 444,
+                "y": 905,
+                "ancho": 119,
+                "alto": 113
+            }
+        },
+        {
+            "numero": 124,
+            "archivo": "Ciudad_objeto_077.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 575,
+                "y": 905,
+                "ancho": 80,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 125,
+            "archivo": "Ciudad_objeto_078.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 663,
+                "y": 903,
+                "ancho": 77,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 126,
+            "archivo": "Ciudad_objeto_079.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 748,
+                "y": 904,
+                "ancho": 75,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 127,
+            "archivo": "Ciudad_objeto_080.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 837,
+                "y": 894,
+                "ancho": 51,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 128,
+            "archivo": "Ciudad_objeto_081.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 896,
+                "y": 895,
+                "ancho": 53,
+                "alto": 45
+            }
+        },
+        {
+            "numero": 129,
+            "archivo": "Ciudad_objeto_082.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 959,
+                "y": 893,
+                "ancho": 49,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 130,
+            "archivo": "Ciudad_objeto_083.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1016,
+                "y": 894,
+                "ancho": 50,
+                "alto": 46
+            }
+        },
+        {
+            "numero": 131,
+            "archivo": "Ciudad_objeto_084.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1075,
+                "y": 890,
+                "ancho": 62,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 132,
+            "archivo": "Ciudad_objeto_085.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1145,
+                "y": 895,
+                "ancho": 47,
+                "alto": 44
+            }
+        },
+        {
+            "numero": 133,
+            "archivo": "Ciudad_objeto_086.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1200,
+                "y": 893,
+                "ancho": 50,
+                "alto": 46
+            }
+        },
+        {
+            "numero": 134,
+            "archivo": "Ciudad_objeto_087.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 13,
+                "y": 1022,
+                "ancho": 166,
+                "alto": 147
+            }
+        },
+        {
+            "numero": 135,
+            "archivo": "Ciudad_objeto_088.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 577,
+                "y": 973,
+                "ancho": 50,
+                "alto": 45
+            }
+        },
+        {
+            "numero": 136,
+            "archivo": "Ciudad_objeto_089.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 634,
+                "y": 973,
+                "ancho": 55,
+                "alto": 45
+            }
+        },
+        {
+            "numero": 137,
+            "archivo": "Ciudad_objeto_090.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 698,
+                "y": 982,
+                "ancho": 38,
+                "alto": 35
+            }
+        },
+        {
+            "numero": 138,
+            "archivo": "Ciudad_objeto_091.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 743,
+                "y": 970,
+                "ancho": 34,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 139,
+            "archivo": "Ciudad_objeto_092.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 783,
+                "y": 973,
+                "ancho": 48,
+                "alto": 45
+            }
+        },
+        {
+            "numero": 140,
+            "archivo": "Ciudad_objeto_093.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 837,
+                "y": 957,
+                "ancho": 44,
+                "alto": 59
+            }
+        },
+        {
+            "numero": 141,
+            "archivo": "Ciudad_objeto_094.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 864,
+                "y": 1023,
+                "ancho": 69,
+                "alto": 145
+            }
+        },
+        {
+            "numero": 142,
+            "archivo": "Ciudad_objeto_095.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 891,
+                "y": 955,
+                "ancho": 47,
+                "alto": 60
+            }
+        },
+        {
+            "numero": 143,
+            "archivo": "Ciudad_objeto_096.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 945,
+                "y": 979,
+                "ancho": 29,
+                "alto": 32
+            }
+        },
+        {
+            "numero": 144,
+            "archivo": "Ciudad_objeto_097.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 959,
+                "y": 1024,
+                "ancho": 82,
+                "alto": 145
+            }
+        },
+        {
+            "numero": 145,
+            "archivo": "Ciudad_objeto_098.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 979,
+                "y": 956,
+                "ancho": 55,
+                "alto": 57
+            }
+        },
+        {
+            "numero": 146,
+            "archivo": "Ciudad_objeto_099.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1051,
+                "y": 954,
+                "ancho": 57,
+                "alto": 54
+            }
+        },
+        {
+            "numero": 147,
+            "archivo": "Ciudad_objeto_100.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1069,
+                "y": 1015,
+                "ancho": 62,
+                "alto": 152
+            }
+        },
+        {
+            "numero": 148,
+            "archivo": "Ciudad_objeto_101.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1122,
+                "y": 963,
+                "ancho": 50,
+                "alto": 44
+            }
+        },
+        {
+            "numero": 149,
+            "archivo": "Ciudad_objeto_102.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 1150,
+                "y": 1020,
+                "ancho": 69,
+                "alto": 147
+            }
+        },
+        {
+            "numero": 150,
+            "archivo": "Ciudad_objeto_103.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1188,
+                "y": 953,
+                "ancho": 58,
+                "alto": 58
+            }
+        },
+        {
+            "numero": 151,
+            "archivo": "Ciudad_objeto_104.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 195,
+                "y": 1037,
+                "ancho": 118,
+                "alto": 131
+            }
+        },
+        {
+            "numero": 152,
+            "archivo": "Ciudad_objeto_105.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 335,
+                "y": 1042,
+                "ancho": 96,
+                "alto": 62
+            }
+        },
+        {
+            "numero": 153,
+            "archivo": "Ciudad_objeto_106.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 447,
+                "y": 1041,
+                "ancho": 77,
+                "alto": 61
+            }
+        },
+        {
+            "numero": 154,
+            "archivo": "Ciudad_objeto_107.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 536,
+                "y": 1040,
+                "ancho": 53,
+                "alto": 59
+            }
+        },
+        {
+            "numero": 155,
+            "archivo": "Ciudad_objeto_108.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 602,
+                "y": 1040,
+                "ancho": 61,
+                "alto": 66
+            }
+        },
+        {
+            "numero": 156,
+            "archivo": "Ciudad_objeto_109.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 672,
+                "y": 1044,
+                "ancho": 37,
+                "alto": 62
+            }
+        },
+        {
+            "numero": 157,
+            "archivo": "Ciudad_objeto_110.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 718,
+                "y": 1059,
+                "ancho": 34,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 158,
+            "archivo": "Ciudad_objeto_111.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 763,
+                "y": 1043,
+                "ancho": 41,
+                "alto": 122
+            }
+        },
+        {
+            "numero": 159,
+            "archivo": "Ciudad_objeto_112.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 2,
+            "origen": {
+                "x": 809,
+                "y": 1033,
+                "ancho": 39,
+                "alto": 132
+            }
+        },
+        {
+            "numero": 160,
+            "archivo": "Ciudad_objeto_113.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 12,
+                "y": 1182,
+                "ancho": 98,
+                "alto": 41
+            }
+        },
+        {
+            "numero": 161,
+            "archivo": "Ciudad_objeto_114.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 123,
+                "y": 1182,
+                "ancho": 98,
+                "alto": 45
+            }
+        },
+        {
+            "numero": 162,
+            "archivo": "Ciudad_objeto_115.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 236,
+                "y": 1183,
+                "ancho": 108,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 163,
+            "archivo": "Ciudad_objeto_116.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 341,
+                "y": 1126,
+                "ancho": 34,
+                "alto": 41
+            }
+        },
+        {
+            "numero": 164,
+            "archivo": "Ciudad_objeto_117.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 355,
+                "y": 1182,
+                "ancho": 109,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 165,
+            "archivo": "Ciudad_objeto_118.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 386,
+                "y": 1132,
+                "ancho": 36,
+                "alto": 33
+            }
+        },
+        {
+            "numero": 166,
+            "archivo": "Ciudad_objeto_119.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 431,
+                "y": 1129,
+                "ancho": 18,
+                "alto": 36
+            }
+        },
+        {
+            "numero": 167,
+            "archivo": "Ciudad_objeto_120.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 455,
+                "y": 1118,
+                "ancho": 19,
+                "alto": 47
+            }
+        },
+        {
+            "numero": 168,
+            "archivo": "Ciudad_objeto_121.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 476,
+                "y": 1182,
+                "ancho": 117,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 169,
+            "archivo": "Ciudad_objeto_122.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 485,
+                "y": 1111,
+                "ancho": 33,
+                "alto": 53
+            }
+        },
+        {
+            "numero": 170,
+            "archivo": "Ciudad_objeto_123.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 534,
+                "y": 1124,
+                "ancho": 62,
+                "alto": 39
+            }
+        },
+        {
+            "numero": 171,
+            "archivo": "Ciudad_objeto_124.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 604,
+                "y": 1126,
+                "ancho": 49,
+                "alto": 34
+            }
+        },
+        {
+            "numero": 172,
+            "archivo": "Ciudad_objeto_125.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 612,
+                "y": 1183,
+                "ancho": 69,
+                "alto": 50
+            }
+        },
+        {
+            "numero": 173,
+            "archivo": "Ciudad_objeto_126.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 661,
+                "y": 1126,
+                "ancho": 48,
+                "alto": 34
+            }
+        },
+        {
+            "numero": 174,
+            "archivo": "Ciudad_objeto_127.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 693,
+                "y": 1183,
+                "ancho": 43,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 175,
+            "archivo": "Ciudad_objeto_128.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 717,
+                "y": 1130,
+                "ancho": 39,
+                "alto": 32
+            }
+        },
+        {
+            "numero": 176,
+            "archivo": "Ciudad_objeto_129.png",
+            "categoria": "objeto",
+            "casillasAncho": 2,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 747,
+                "y": 1183,
+                "ancho": 125,
+                "alto": 49
+            }
+        },
+        {
+            "numero": 177,
+            "archivo": "Ciudad_objeto_130.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 883,
+                "y": 1183,
+                "ancho": 109,
+                "alto": 52
+            }
+        },
+        {
+            "numero": 178,
+            "archivo": "Ciudad_objeto_131.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1001,
+                "y": 1183,
+                "ancho": 39,
+                "alto": 51
+            }
+        },
+        {
+            "numero": 179,
+            "archivo": "Ciudad_objeto_132.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1049,
+                "y": 1182,
+                "ancho": 34,
+                "alto": 52
+            }
+        },
+        {
+            "numero": 180,
+            "archivo": "Ciudad_objeto_133.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1092,
+                "y": 1183,
+                "ancho": 33,
+                "alto": 33
+            }
+        },
+        {
+            "numero": 181,
+            "archivo": "Ciudad_objeto_134.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1132,
+                "y": 1182,
+                "ancho": 37,
+                "alto": 48
+            }
+        },
+        {
+            "numero": 182,
+            "archivo": "Ciudad_objeto_135.png",
+            "categoria": "objeto",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1178,
+                "y": 1182,
+                "ancho": 65,
+                "alto": 64
+            }
+        }
+    ]
+}
