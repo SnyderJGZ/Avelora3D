@@ -53,19 +53,27 @@ namespace Avelora.EditorTools
             public static readonly Pieza[] Empedrado =
             {
                 new Pieza("Ciudad_suelo_001.png", 1, 1, 1),
-                new Pieza("Ciudad_suelo_002.png", 1, 1, 2),
-                new Pieza("Ciudad_suelo_003.png", 1, 1, 3),
-                new Pieza("Ciudad_suelo_004.png", 1, 1, 4)
+                new Pieza("Ciudad_suelo_002.png", 1, 1, 2)
             };
 
-            public static readonly Pieza[] Plaza =
+            public static readonly Pieza[] PlazaBase =
+            {
+                new Pieza("Ciudad_suelo_001.png", 1, 1, 1),
+                new Pieza("Ciudad_suelo_002.png", 1, 1, 2)
+            };
+
+            public static readonly Pieza[] Acento =
             {
                 new Pieza("Ciudad_suelo_005.png", 1, 1, 5),
                 new Pieza("Ciudad_suelo_006.png", 1, 1, 6),
+                new Pieza("Ciudad_suelo_007.png", 1, 1, 7),
                 new Pieza("Ciudad_suelo_013.png", 1, 1, 13)
             };
 
-            // No hay una pieza de agua limpia en las hojas; el generador toma Water de Art/Map.
+            // Las hojas no traen agua lisa de 1x1 (la 84 es un estandarte): se usa el agua vieja.
+            public static readonly Pieza AguaMar = new Pieza("Water", 1, 1, 0);
+            // Las piezas de orilla disponibles son de 2x2 o 1x2; se mantiene el tile 1x1 antiguo.
+            public static readonly Pieza OrillaAgua = new Pieza("Water", 1, 1, 0);
             public static readonly Pieza Agua = new Pieza("Water", 1, 1, 0);
 
             public static readonly Pieza[] Muro =
@@ -81,10 +89,20 @@ namespace Avelora.EditorTools
                 new Pieza("Afueras_objeto_037.png", 2, 2, 70),
                 new Pieza("Afueras_objeto_038.png", 2, 2, 71)
             };
-            public static readonly Pieza[] Casa =
+            public static readonly Pieza[] CasaFachada =
             {
-                new Pieza("Afueras_objeto_030.png", 2, 2, 63),
-                new Pieza("Afueras_objeto_035.png", 2, 2, 68)
+                new Pieza("Ciudad_objeto_015.png", 1, 1, 62),
+                new Pieza("Ciudad_objeto_019.png", 1, 1, 66),
+                new Pieza("Ciudad_objeto_023.png", 1, 1, 70),
+                new Pieza("Ciudad_objeto_027.png", 1, 1, 74)
+            };
+            public static readonly Pieza CasaPuerta = new Pieza("Ciudad_objeto_031.png", 1, 1, 78);
+            public static readonly Pieza[] CasaTejado =
+            {
+                new Pieza("Ciudad_objeto_052.png", 2, 1, 99),
+                new Pieza("Ciudad_objeto_053.png", 2, 1, 100),
+                new Pieza("Ciudad_objeto_054.png", 1, 1, 101),
+                new Pieza("Ciudad_objeto_055.png", 1, 1, 102)
             };
             public static readonly Pieza[] Farola =
             {
@@ -174,15 +192,23 @@ namespace Avelora.EditorTools
             public int Ancho { get; private set; }
             public int Alto { get; private set; }
             public bool Solido { get; private set; }
+            public bool Rotada { get; private set; }
+            public bool Tejado { get; private set; }
+            public int AnchoSprite { get; private set; }
+            public int AltoSprite { get; private set; }
 
-            internal Objeto(Pieza pieza, int x, int y, bool solido)
+            internal Objeto(Pieza pieza, int x, int y, bool solido, bool rotada, bool tejado)
             {
                 Archivo = pieza.Archivo;
                 X = x;
                 Y = y;
-                Ancho = pieza.Ancho;
-                Alto = pieza.Alto;
+                AnchoSprite = pieza.Ancho;
+                AltoSprite = pieza.Alto;
+                Ancho = rotada ? pieza.Alto : pieza.Ancho;
+                Alto = rotada ? pieza.Ancho : pieza.Alto;
                 Solido = solido;
+                Rotada = rotada;
+                Tejado = tejado;
             }
         }
 
@@ -269,7 +295,11 @@ namespace Avelora.EditorTools
                 {
                     int i = r.Indice(x, y);
                     r.Suelo[i] = Seleccionar(Piezas.Hierba, Hash(x, y, 1));
-                    if (Hash(x, y, 2) < 0.12f)
+                    if (DentroCiudad(x, y))
+                    {
+                        r.Suelo[i] = ElegirBase(Piezas.PlazaBase, Hash(x, y, 2));
+                    }
+                    else if (Hash(x, y, 2) < 0.12f)
                     {
                         r.Suelo[i] = Seleccionar(Piezas.Tierra, Hash(x, y, 3));
                     }
@@ -289,10 +319,11 @@ namespace Avelora.EditorTools
                 for (int x = -1; x <= 0; x++)
                 {
                     int i = r.Indice(x, y);
-                    r.Camino[i] = null;
-                    r.Suelo[i] = Seleccionar(Piezas.Plaza, Hash(x, y, 5));
+                    r.Camino[i] = null!;
+                    r.Suelo[i] = ElegirBase(Piezas.PlazaBase, Hash(x, y, 5));
                 }
             }
+            PintarAcentos(r);
             // Exterior: granjas al norte, bosque al oeste, puente sur, meseta/arena al este.
             PintarLinea(r, 0, 22, 0, 34, 3);
             PintarLinea(r, -31, 0, -51, 6, 3);
@@ -329,6 +360,8 @@ namespace Avelora.EditorTools
                     }
                 }
             }
+
+            PintarOrillasAgua(r);
 
             // Meseta: perímetro de acantilado de una casilla; rampa oeste abierta (y -2..1).
             for (int y = -14; y <= 16; y++)
@@ -385,7 +418,7 @@ namespace Avelora.EditorTools
                         if (i >= 0)
                         {
                             r.Bloqueado[i] = false;
-                            r.Camino[i] = null;
+                            r.Camino[i] = null!;
                             r.Suelo[i] = Seleccionar(Piezas.Hierba, Hash(x, y, claro.TypeId));
                         }
                     }
@@ -395,48 +428,71 @@ namespace Avelora.EditorTools
 
         private static void ColocarMuralla(Resultado r, bool[] reservado)
         {
-            // Objetos decorativos de muro sobre las celdas que ya son sólidas.
-            for (int x = -27; x <= 25; x += 6)
+            // Cada módulo ocupa dos casillas; las aberturas coinciden con las cuatro puertas.
+            Pieza tramo = Piezas.Muro[0];
+            for (int x = -30; x <= -29; x++)
             {
-                Añadir(r, reservado, Piezas.Muro[(x + 27) % Piezas.Muro.Length], x, -22, false, true);
-                Añadir(r, reservado, Piezas.Muro[(x + 27) % Piezas.Muro.Length], x, 20, false, true);
+                for (int y = -22; y <= -4; y += 2)
+                    Añadir(r, reservado, tramo, x, y, false, true);
+                for (int y = 2; y <= 20; y += 2)
+                    Añadir(r, reservado, tramo, x, y, false, true);
             }
-            for (int y = -19; y <= 17; y += 6)
+            for (int x = 28; x <= 29; x++)
             {
-                if (y >= -3 && y <= 1) continue;
-                Añadir(r, reservado, Piezas.Muro[(y + 19) % Piezas.Muro.Length], -30, y, false, true);
-                Añadir(r, reservado, Piezas.Muro[(y + 19) % Piezas.Muro.Length], 28, y, false, true);
+                for (int y = -22; y <= -4; y += 2)
+                    Añadir(r, reservado, tramo, x, y, false, true);
+                for (int y = 2; y <= 20; y += 2)
+                    Añadir(r, reservado, tramo, x, y, false, true);
             }
 
-            // Pórticos a ambos lados de cada entrada; no invaden las cuatro celdas del hueco.
-            Añadir(r, reservado, Piezas.Puerta, -5, 19, false, true);
-            Añadir(r, reservado, Piezas.Puerta, 2, 19, false, true);
-            Añadir(r, reservado, Piezas.Puerta, -5, -22, false, true);
-            Añadir(r, reservado, Piezas.Puerta, 2, -22, false, true);
-            Añadir(r, reservado, Piezas.Puerta, -30, 3, false, true);
-            Añadir(r, reservado, Piezas.Puerta, -30, -5, false, true);
-            Añadir(r, reservado, Piezas.Puerta, 28, 3, false, true);
-            Añadir(r, reservado, Piezas.Puerta, 28, -5, false, true);
+            for (int x = -30; x <= -4; x += 2)
+            {
+                AñadirRotado(r, reservado, tramo, x, -22, false, true, false);
+                AñadirRotado(r, reservado, tramo, x, -21, false, true, false);
+            }
+            for (int x = 2; x <= 26; x += 2)
+            {
+                AñadirRotado(r, reservado, tramo, x, -22, false, true, false);
+                AñadirRotado(r, reservado, tramo, x, -21, false, true, false);
+            }
+            for (int x = -30; x <= -4; x += 2)
+            {
+                AñadirRotado(r, reservado, tramo, x, 20, false, true, false);
+                AñadirRotado(r, reservado, tramo, x, 21, false, true, false);
+            }
+            for (int x = 2; x <= 26; x += 2)
+            {
+                AñadirRotado(r, reservado, tramo, x, 20, false, true, false);
+                AñadirRotado(r, reservado, tramo, x, 21, false, true, false);
+            }
+
+            Añadir(r, reservado, Piezas.Puerta, -2, -22, false, true);
+            Añadir(r, reservado, Piezas.Puerta, -2, 20, false, true);
+            AñadirRotado(r, reservado, Piezas.Puerta, -30, -2, false, true, false);
+            AñadirRotado(r, reservado, Piezas.Puerta, 28, -2, false, true, false);
         }
 
         private static void ColocarCiudad(Resultado r, bool[] reservado)
         {
             Añadir(r, reservado, Piezas.Fuente, -1, -1, false, false);
 
-            // Doce casas, tres por cuadrante; ramales de acceso dejan la puerta hacia una calle.
-            ColocarCasa(r, reservado, -25, 10, true, true, 0);
-            ColocarCasa(r, reservado, -17, 14, true, true, 1);
-            ColocarCasa(r, reservado, -24, -16, false, true, 2);
-            ColocarCasa(r, reservado, -16, -11, false, true, 0);
-            ColocarCasa(r, reservado, 26, 14, true, false, 1);
-            ColocarCasa(r, reservado, 24, 9, true, false, 0);
-            ColocarCasa(r, reservado, 17, -16, false, false, 0);
-            ColocarCasa(r, reservado, 24, -11, false, false, 1);
-            // Cuatro casas adicionales en los cuadrantes para alcanzar el mínimo con holgura.
-            ColocarCasa(r, reservado, -24, 3, true, true, 1);
-            ColocarCasa(r, reservado, -12, -6, false, true, 0);
-            ColocarCasa(r, reservado, 22, 3, true, false, 0);
-            ColocarCasa(r, reservado, 12, -5, false, false, 0);
+            // Casas compuestas: fachada 4x2 y tejado encima de 4x1, cuatro por cuadrante.
+            ColocarCasa(r, reservado, -27, 5, 1, 0);
+            ColocarCasa(r, reservado, -21, 5, 1, 1);
+            ColocarCasa(r, reservado, -18, 12, 1, 2);
+            ColocarCasa(r, reservado, -12, 12, 1, 3);
+            ColocarCasa(r, reservado, -27, -15, -2, 0);
+            ColocarCasa(r, reservado, -21, -15, -2, 1);
+            ColocarCasa(r, reservado, -18, -8, -2, 2);
+            ColocarCasa(r, reservado, -12, -8, -2, 3);
+            ColocarCasa(r, reservado, 3, 8, 1, 0);
+            ColocarCasa(r, reservado, 20, 8, 1, 1);
+            ColocarCasa(r, reservado, 3, 15, 1, 2);
+            ColocarCasa(r, reservado, 20, 15, 1, 3);
+            ColocarCasa(r, reservado, 3, -15, -2, 0);
+            ColocarCasa(r, reservado, 20, -15, -2, 1);
+            ColocarCasa(r, reservado, 3, -8, -2, 2);
+            ColocarCasa(r, reservado, 20, -8, -2, 3);
 
             // Mercado al este de la plaza, en dos filas con un pasillo de tres casillas.
             for (int fila = 0; fila < 2; fila++)
@@ -466,36 +522,50 @@ namespace Avelora.EditorTools
                     Añadir(r, reservado, Piezas.Farola[(x + 27) % Piezas.Farola.Length], x, 3, false, false);
             }
 
-            // Estandartes en la plaza y junto a las puertas, no sobre su casilla de paso.
+            // Estandartes en la plaza y a ambos lados de cada puerta, sin tapar el paso.
             Añadir(r, reservado, Piezas.Estandarte, -6, -5, false, false);
             Añadir(r, reservado, Piezas.Estandarte, 5, -5, false, false);
             Añadir(r, reservado, Piezas.Estandarte, -6, 4, false, false);
             Añadir(r, reservado, Piezas.Estandarte, 5, 4, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, -4, 19, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, 2, 19, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, -4, -22, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, 2, -22, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, -30, 3, false, false);
-            Añadir(r, reservado, Piezas.Estandarte, 28, 3, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, -4, 18, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, 2, 18, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, -4, -20, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, 2, -20, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, -28, -3, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, -28, 2, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, 26, -3, false, false);
+            Añadir(r, reservado, Piezas.Estandarte, 26, 2, false, false);
         }
 
-        private static void ColocarCasa(Resultado r, bool[] reservado, int x, int y, bool norte,
-            bool oeste, int variante)
+        private static void ColocarCasa(Resultado r, bool[] reservado, int x, int y, int calleY, int variante)
         {
-            int centroX = x + 1;
-            int borde = norte ? y - 1 : y + 2;
-            int calle = norte ? 1 : -2;
-            if (norte)
+            const int anchoFachada = 4;
+            const int altoFachada = 2;
+            int centroX = x + (anchoFachada / 2);
+            bool calleAlSur = calleY < y;
+            int accesoY = calleAlSur ? y - 1 : y + altoFachada + 1;
+            int pasilloX = calleAlSur ? x + anchoFachada : x - 1;
+            PintarLinea(r, centroX, accesoY, pasilloX, accesoY, 1);
+            PintarLinea(r, pasilloX, accesoY, pasilloX, calleY, 1);
+            PintarLinea(r, pasilloX, calleY, centroX, calleY, 1);
+
+            Pieza fachada = Piezas.CasaFachada[variante % Piezas.CasaFachada.Length];
+            for (int fila = 0; fila < altoFachada; fila++)
             {
-                PintarLinea(r, centroX, calle, centroX, borde, 1);
-            }
-            else
-            {
-                PintarLinea(r, centroX, borde, centroX, calle, 1);
+                for (int columna = 0; columna < anchoFachada; columna++)
+                {
+                    Pieza pieza = fila == (calleAlSur ? 0 : altoFachada - 1) &&
+                        columna == anchoFachada / 2
+                        ? Piezas.CasaPuerta : fachada;
+                    Añadir(r, reservado, pieza, x + columna, y + fila, fila == 0, false);
+                }
             }
 
-            Pieza casa = Piezas.Casa[variante % Piezas.Casa.Length];
-            Añadir(r, reservado, casa, x, y, true, false);
+            Pieza tejado = Piezas.CasaTejado[variante % Piezas.CasaTejado.Length];
+            for (int columna = 0; columna < anchoFachada; columna += tejado.Ancho)
+            {
+                AñadirTejado(r, reservado, tejado, x + columna, y + altoFachada);
+            }
         }
 
         private static void ColocarGranjas(Resultado r, bool[] reservado)
@@ -766,25 +836,45 @@ namespace Avelora.EditorTools
         private static bool Añadir(Resultado r, bool[] reservado, Pieza pieza, int x, int y,
             bool solido, bool permitirCamino)
         {
-            for (int oy = 0; oy < pieza.Alto; oy++)
+            return AñadirOrientado(r, reservado, pieza, x, y, solido, permitirCamino, false, false);
+        }
+
+        private static bool AñadirRotado(Resultado r, bool[] reservado, Pieza pieza, int x, int y,
+            bool solido, bool permitirCamino, bool tejado)
+        {
+            return AñadirOrientado(r, reservado, pieza, x, y, solido, permitirCamino, true, tejado);
+        }
+
+        private static bool AñadirTejado(Resultado r, bool[] reservado, Pieza pieza, int x, int y)
+        {
+            return AñadirOrientado(r, reservado, pieza, x, y, false, false, false, true);
+        }
+
+        private static bool AñadirOrientado(Resultado r, bool[] reservado, Pieza pieza, int x, int y,
+            bool solido, bool permitirCamino, bool rotada, bool tejado)
+        {
+            int ancho = rotada ? pieza.Alto : pieza.Ancho;
+            int alto = rotada ? pieza.Ancho : pieza.Alto;
+            bool esPuerta = pieza.Archivo == Piezas.Puerta.Archivo;
+            for (int oy = 0; oy < alto; oy++)
             {
-                for (int ox = 0; ox < pieza.Ancho; ox++)
+                for (int ox = 0; ox < ancho; ox++)
                 {
                     int i = r.Indice(x + ox, y + oy);
-                    if (i < 0 || reservado[i] || EsZonaProtegida(x + ox, y + oy)) return false;
+                    if (i < 0 || reservado[i] || (!esPuerta && EsZonaProtegida(x + ox, y + oy))) return false;
                     if (!permitirCamino && r.Camino[i] != null) return false;
                 }
             }
 
-            var objeto = new Objeto(pieza, x, y, solido);
+            var objeto = new Objeto(pieza, x, y, solido, rotada, tejado);
             r.Objetos.Add(objeto);
-            for (int oy = 0; oy < pieza.Alto; oy++)
+            for (int oy = 0; oy < alto; oy++)
             {
-                for (int ox = 0; ox < pieza.Ancho; ox++) reservado[r.Indice(x + ox, y + oy)] = true;
+                for (int ox = 0; ox < ancho; ox++) reservado[r.Indice(x + ox, y + oy)] = true;
             }
             if (solido)
             {
-                for (int ox = 0; ox < pieza.Ancho; ox++)
+                for (int ox = 0; ox < ancho; ox++)
                 {
                     int i = r.Indice(x + ox, y);
                     if (i >= 0) r.Bloqueado[i] = true;
@@ -814,10 +904,11 @@ namespace Avelora.EditorTools
             foreach (Objeto objeto in r.Objetos)
             {
                 bool esCasa = false;
-                foreach (Pieza casa in Piezas.Casa)
+                foreach (Pieza casa in Piezas.CasaFachada)
                 {
                     if (casa.Archivo == objeto.Archivo) { esCasa = true; break; }
                 }
+                if (!esCasa && objeto.Archivo == Piezas.CasaPuerta.Archivo) esCasa = true;
                 if (!esCasa) continue;
                 if (x <= objeto.X + objeto.Ancho && x + ancho - 1 >= objeto.X - 1 &&
                     y <= objeto.Y + objeto.Alto && y + alto - 1 >= objeto.Y - 1) return true;
@@ -859,12 +950,12 @@ namespace Avelora.EditorTools
                     if (i < 0) continue;
                     if (calle)
                     {
-                        r.Camino[i] = Seleccionar(Piezas.Empedrado, Hash(cx, cy, 4));
+                        r.Camino[i] = ElegirBase(Piezas.Empedrado, Hash(cx, cy, 4));
                         r.Suelo[i] = r.Camino[i];
                     }
                     else if (plaza)
                     {
-                        r.Suelo[i] = Seleccionar(Piezas.Plaza, Hash(cx, cy, 5));
+                        r.Suelo[i] = ElegirBase(Piezas.PlazaBase, Hash(cx, cy, 5));
                     }
                 }
             }
@@ -885,6 +976,55 @@ namespace Avelora.EditorTools
             if (i < 0) return;
             r.Suelo[i] = Piezas.Agua.Archivo;
             r.Bloqueado[i] = true;
+        }
+
+        private static void PintarAcentos(Resultado r)
+        {
+            // Un parche de 6x4 en torno a la fuente y el cruce principal de 4x4.
+            PintarAcento(r, -3, -2, 6, 4, 51);
+            PintarAcento(r, -3, -2, 4, 4, 52);
+        }
+
+        private static void PintarAcento(Resultado r, int x, int y, int ancho, int alto, int canal)
+        {
+            for (int cy = y; cy < y + alto; cy++)
+            {
+                for (int cx = x; cx < x + ancho; cx++)
+                {
+                    int i = r.Indice(cx, cy);
+                    if (i < 0) continue;
+                    string acento = Seleccionar(Piezas.Acento, Hash(cx, cy, canal));
+                    r.Suelo[i] = acento;
+                    if (r.Camino[i] != null) r.Camino[i] = acento;
+                }
+            }
+        }
+
+        private static void PintarOrillasAgua(Resultado r)
+        {
+            for (int y = OrigenY; y < OrigenY + Alto; y++)
+            {
+                for (int x = OrigenX; x < OrigenX + Ancho; x++)
+                {
+                    int i = r.Indice(x, y);
+                    if (!EsAgua(r.Suelo[i])) continue;
+                    bool orilla = EsTierraAdyacente(r, x + 1, y) || EsTierraAdyacente(r, x - 1, y) ||
+                        EsTierraAdyacente(r, x, y + 1) || EsTierraAdyacente(r, x, y - 1);
+                    r.Suelo[i] = orilla ? Piezas.OrillaAgua.Archivo : Piezas.AguaMar.Archivo;
+                }
+            }
+        }
+
+        private static bool EsTierraAdyacente(Resultado r, int x, int y)
+        {
+            int i = r.Indice(x, y);
+            return i < 0 || !EsAgua(r.Suelo[i]);
+        }
+
+        private static bool EsAgua(string suelo)
+        {
+            return suelo == Piezas.Agua.Archivo || suelo == Piezas.AguaMar.Archivo ||
+                suelo == Piezas.OrillaAgua.Archivo;
         }
 
         private static void Bloquear(Resultado r, int x, int y)
@@ -920,6 +1060,11 @@ namespace Avelora.EditorTools
         {
             int indice = Math.Min(piezas.Length - 1, (int)(valor * piezas.Length));
             return piezas[indice].Archivo;
+        }
+
+        private static string ElegirBase(Pieza[] piezas, float valor)
+        {
+            return piezas[valor < 0.85f ? 0 : 1].Archivo;
         }
 
         private static float Hash(int x, int y, int canal)

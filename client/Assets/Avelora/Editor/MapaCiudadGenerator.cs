@@ -59,8 +59,6 @@ namespace Avelora.EditorTools
             Transform props = new GameObject("Props").transform;
             props.SetParent(grid.transform, false);
             TileBase block = BlockTile();
-            var agua = TileFor(MapaCiudadLayout.Piezas.Agua.Archivo);
-
             for (int y = layout.OrigenY; y < layout.OrigenY + layout.Alto; y++)
             {
                 for (int x = layout.OrigenX; x < layout.OrigenX + layout.Ancho; x++)
@@ -68,9 +66,11 @@ namespace Avelora.EditorTools
                     int i = layout.Indice(x, y);
                     var cell = new Vector3Int(x, y, 0);
                     string nombreSuelo = layout.Suelo[i];
-                    if (nombreSuelo == MapaCiudadLayout.Piezas.Agua.Archivo)
+                    if (nombreSuelo == MapaCiudadLayout.Piezas.Agua.Archivo ||
+                        nombreSuelo == MapaCiudadLayout.Piezas.AguaMar.Archivo ||
+                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAgua.Archivo)
                     {
-                        water.SetTile(cell, agua);
+                        water.SetTile(cell, TileFor(nombreSuelo));
                     }
                     else
                     {
@@ -93,7 +93,8 @@ namespace Avelora.EditorTools
             foreach (MapaCiudadLayout.Objeto objeto in layout.Objetos)
             {
                 var posicion = new Vector2(objeto.X + (objeto.Ancho / 2f), objeto.Y + (objeto.Alto / 2f));
-                Prop(props, objeto.Archivo, posicion, 1000 - objeto.Y);
+                int orden = 1000 - objeto.Y + (objeto.Tejado ? 10000 : 0);
+                Prop(props, objeto.Archivo, posicion, orden, objeto.AnchoSprite, objeto.AltoSprite, objeto.Rotada);
             }
 
             EditorSceneManager.MarkSceneDirty(grid.gameObject.scene);
@@ -195,14 +196,19 @@ namespace Avelora.EditorTools
             return tilemap;
         }
 
-        private static void Prop(Transform parent, string spriteName, Vector2 position, int order)
+        private static void Prop(Transform parent, string spriteName, Vector2 position, int order,
+            int ancho, int alto, bool rotada)
         {
             var go = new GameObject(spriteName);
             go.transform.SetParent(parent, false);
             go.transform.position = position;
+            if (rotada) go.transform.rotation = Quaternion.Euler(0f, 0f, 90f);
             var renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = SpriteFor(spriteName);
             renderer.sortingOrder = order;
+            renderer.transform.localScale = new Vector3(
+                ancho / (renderer.sprite.rect.width / 64f),
+                alto / (renderer.sprite.rect.height / 64f), 1f);
         }
 
         private static void ExportAndReport(MapaCiudadLayout.Resultado layout)

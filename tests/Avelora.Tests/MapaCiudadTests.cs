@@ -18,7 +18,7 @@ namespace Avelora.Tests
 {
     public sealed class MapaCiudadTests
     {
-        private const string HuellaEsperada = "4d86b0d9788c143607d664d15d93243d6634bf2192da86ad5992e397305418f6";
+        private const string HuellaEsperada = "8bd5c8c768ad7abb41f62ac65a458af8a14cb422ac428c15140caa68b4529bc2";
 
         [Fact]
         public void Mapa_Mide_160x120_Con_Origen_Y_Anillo_Bloqueado()
@@ -165,7 +165,7 @@ namespace Avelora.Tests
             foreach (MapaCiudadLayout.Objeto objeto in layout.Objetos)
             {
                 Assert.True(dimensiones.TryGetValue(objeto.Archivo, out var tamano), $"No está catalogado {objeto.Archivo}.");
-                Assert.Equal((objeto.Ancho, objeto.Alto), tamano);
+                Assert.Equal((objeto.AnchoSprite, objeto.AltoSprite), tamano);
             }
         }
 
@@ -186,8 +186,10 @@ namespace Avelora.Tests
                 }
 
                 AssertNoCubre(objeto, MapaCiudadLayout.Aparicion.CasillaX, MapaCiudadLayout.Aparicion.CasillaY);
+                // El arco de la muralla se dibuja sobre su puerta; que se pueda pasar lo comprueba la BFS.
                 foreach (MapaCiudadLayout.Punto puerta in MapaCiudadLayout.Puertas)
                 {
+                    if (objeto.Archivo == MapaCiudadLayout.Piezas.Puerta.Archivo) continue;
                     AssertNoCubre(objeto, puerta.CasillaX, puerta.CasillaY);
                 }
                 foreach (MapaCiudadLayout.Claro claro in layout.Claros)
@@ -198,6 +200,74 @@ namespace Avelora.Tests
                     }
                 }
             }
+        }
+
+        [Fact]
+        public void Muralla_Es_Un_Anillo_Continuo_Con_Cuatro_Puertas()
+        {
+            MapaCiudadLayout.Resultado layout = MapaCiudadLayout.Generar();
+            MapCollisionGrid mapa = Grid(layout);
+            MapaCiudadLayout.Rectangulo ciudad = MapaCiudadLayout.CiudadRect;
+
+            for (int y = ciudad.Y; y < ciudad.Y + ciudad.Alto; y++)
+            {
+                for (int x = ciudad.X; x < ciudad.X + ciudad.Ancho; x++)
+                {
+                    bool anillo = x < ciudad.X + 2 || x >= ciudad.X + ciudad.Ancho - 2 ||
+                        y < ciudad.Y + 2 || y >= ciudad.Y + ciudad.Alto - 2;
+                    if (!anillo) continue;
+
+                    bool puerta = ((x >= -2 && x <= 1) &&
+                            (y < ciudad.Y + 2 || y >= ciudad.Y + ciudad.Alto - 2)) ||
+                        ((y >= -2 && y <= 1) &&
+                            (x < ciudad.X + 2 || x >= ciudad.X + ciudad.Ancho - 2));
+                    Assert.Equal(!puerta, mapa.IsTileBlocked(x, y));
+                }
+            }
+        }
+
+        [Fact]
+        public void Ciudad_Usa_Un_Empedrado_Base_Y_Pocos_Acentos()
+        {
+            MapaCiudadLayout.Resultado layout = MapaCiudadLayout.Generar();
+            MapaCiudadLayout.Rectangulo ciudad = MapaCiudadLayout.CiudadRect;
+            var bases = new HashSet<string>(MapaCiudadLayout.Piezas.Empedrado.Select(pieza => pieza.Archivo),
+                StringComparer.Ordinal);
+            bases.UnionWith(MapaCiudadLayout.Piezas.PlazaBase.Select(pieza => pieza.Archivo));
+            var acentos = new HashSet<string>(MapaCiudadLayout.Piezas.Acento.Select(pieza => pieza.Archivo),
+                StringComparer.Ordinal);
+            var frecuencias = new Dictionary<string, int>(StringComparer.Ordinal);
+            int totalEmpedrado = 0;
+            int totalAcentos = 0;
+
+            for (int y = ciudad.Y; y < ciudad.Y + ciudad.Alto; y++)
+            {
+                for (int x = ciudad.X; x < ciudad.X + ciudad.Ancho; x++)
+                {
+                    int indice = layout.Indice(x, y);
+                    string pieza = layout.Camino[indice] ?? layout.Suelo[indice];
+                    if (pieza == null) continue;
+                    totalEmpedrado++;
+
+                    if (bases.Contains(pieza))
+                    {
+                        frecuencias.TryGetValue(pieza, out int frecuencia);
+                        frecuencias[pieza] = frecuencia + 1;
+                    }
+
+                    if (acentos.Contains(pieza))
+                    {
+                        totalAcentos++;
+                        bool parcheCentral = x >= -3 && x < 3 && y >= -2 && y < 2;
+                        Assert.True(parcheCentral, $"El acento {pieza} aparece fuera del parche/plaza en ({x},{y}).");
+                    }
+                }
+            }
+
+            Assert.True(frecuencias.Values.Max() > totalEmpedrado * 0.70,
+                "La pieza base más frecuente debe cubrir más del 70 % del empedrado.");
+            Assert.True(totalAcentos <= totalEmpedrado * 0.10,
+                "Los acentos deben cubrir como máximo el 10 % del empedrado.");
         }
 
         private static MapCollisionGrid LeerMapa() => MapFile.Load(Path.Combine(AppContext.BaseDirectory, "maps", "avelora-ciudad.avmap"));

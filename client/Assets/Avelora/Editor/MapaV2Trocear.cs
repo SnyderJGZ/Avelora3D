@@ -13,6 +13,7 @@ namespace Avelora.EditorTools
         private const string CarpetaOrigen = "Assets/Avelora/Art/Mapa v2";
         private const string CarpetaSalida = "Assets/Avelora/Art/Mapa v2/Generado";
         private const int Casilla = 64;
+        private const int MargenSuelo = 4;
         private const int UmbralNegroBajo = 16;
         private const int UmbralNegroAlto = 48;
         private const int DilatacionPx = 0;
@@ -259,6 +260,10 @@ namespace Avelora.EditorTools
             {
                 Candidato pieza = piezas[i];
                 Componente componente = pieza.componente;
+                if (pieza.suelo && (componente.Ancho < 40 || componente.Alto < 40))
+                {
+                    Debug.LogWarning(fuente + ": suelo " + pieza.archivo + " mide menos de 40 px; no se recorta el margen.");
+                }
                 int salidaAncho = pieza.suelo ? Casilla : Casilla * pieza.casillasAncho;
                 int salidaAlto = pieza.suelo ? Casilla : Casilla * pieza.casillasAlto;
                 Color32[] pixelesPieza = Renderizar(pieza, pixeles, alfa, etiquetas, ancho, alto, salidaAncho, salidaAlto);
@@ -460,8 +465,14 @@ namespace Avelora.EditorTools
         {
             var salida = new Color32[anchoSalida * altoSalida];
             Componente componente = candidato.componente;
-            float sx = candidato.suelo ? Casilla / (float)componente.Ancho : 0f;
-            float sy = candidato.suelo ? Casilla / (float)componente.Alto : 0f;
+            bool recortarSuelo = candidato.suelo && componente.Ancho >= 40 && componente.Alto >= 40;
+            int margen = recortarSuelo ? MargenSuelo : 0;
+            int xMinimo = componente.x0 + margen;
+            int xMaximo = componente.x1 + 1 - margen;
+            int yMinimo = componente.y0 + margen;
+            int yMaximo = componente.y1 + 1 - margen;
+            float sx = candidato.suelo ? Casilla / (float)(componente.Ancho - 2 * margen) : 0f;
+            float sy = candidato.suelo ? Casilla / (float)(componente.Alto - 2 * margen) : 0f;
             float escala = candidato.suelo ? 0f : Math.Min(anchoSalida / (float)componente.Ancho,
                 altoSalida / (float)componente.Alto);
             float ox = candidato.suelo ? 0f : (anchoSalida - componente.Ancho * escala) / 2f;
@@ -478,14 +489,14 @@ namespace Avelora.EditorTools
                         continue;
                     }
 
-                    float u0 = candidato.suelo ? componente.x0 + x / sx : componente.x0 + (x - ox) / escala;
-                    float u1 = candidato.suelo ? componente.x0 + (x + 1) / sx : componente.x0 + (x + 1 - ox) / escala;
-                    float v0 = candidato.suelo ? componente.y0 + y / sy : componente.y0 + (y - oy) / escala;
-                    float v1 = candidato.suelo ? componente.y0 + (y + 1) / sy : componente.y0 + (y + 1 - oy) / escala;
-                    u0 = Mathf.Clamp(u0, componente.x0, componente.x1 + 1f);
-                    u1 = Mathf.Clamp(u1, componente.x0, componente.x1 + 1f);
-                    v0 = Mathf.Clamp(v0, componente.y0, componente.y1 + 1f);
-                    v1 = Mathf.Clamp(v1, componente.y0, componente.y1 + 1f);
+                    float u0 = candidato.suelo ? xMinimo + x / sx : componente.x0 + (x - ox) / escala;
+                    float u1 = candidato.suelo ? xMinimo + (x + 1) / sx : componente.x0 + (x + 1 - ox) / escala;
+                    float v0 = candidato.suelo ? yMinimo + y / sy : componente.y0 + (y - oy) / escala;
+                    float v1 = candidato.suelo ? yMinimo + (y + 1) / sy : componente.y0 + (y + 1 - oy) / escala;
+                    u0 = Mathf.Clamp(u0, xMinimo, xMaximo);
+                    u1 = Mathf.Clamp(u1, xMinimo, xMaximo);
+                    v0 = Mathf.Clamp(v0, yMinimo, yMaximo);
+                    v1 = Mathf.Clamp(v1, yMinimo, yMaximo);
 
                     int x0 = Mathf.Clamp(Mathf.FloorToInt(u0), componente.x0, componente.x1);
                     int x1 = Mathf.Clamp(Mathf.CeilToInt(u1) - 1, componente.x0, componente.x1);
