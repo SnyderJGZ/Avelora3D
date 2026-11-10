@@ -1162,13 +1162,17 @@ namespace Avelora.Shared.Protocol
             float range,
             ushort damage,
             string name, byte effect = 0, float radius = 0f,
-            StatusKind statusKind = StatusKind.None, ushort statusTicks = 0, ushort statusAmount = 0)
+            StatusKind statusKind = StatusKind.None, ushort statusTicks = 0, ushort statusAmount = 0,
+            byte hits = 1, byte areaCenter = 0, ushort critBonus = 0)
         {
             Effect = effect;
             Radius = radius;
             StatusKind = statusKind;
             StatusTicks = statusTicks;
             StatusAmount = statusAmount;
+            Hits = hits;
+            AreaCenter = areaCenter;
+            CritBonus = critBonus;
             Id = id;
             RequiredLevel = requiredLevel;
             DamageType = damageType;
@@ -1185,6 +1189,12 @@ namespace Avelora.Shared.Protocol
         public StatusKind StatusKind { get; }
         public ushort StatusTicks { get; }
         public ushort StatusAmount { get; }
+        /// <summary>Cantidad de golpes que aplica la habilidad en el mismo tick.</summary>
+        public byte Hits { get; }
+        /// <summary>Centro del área: 0 objetivo, 1 lanzador.</summary>
+        public byte AreaCenter { get; }
+        /// <summary>Incremento al multiplicador del daño crítico, en porcentaje.</summary>
+        public ushort CritBonus { get; }
         public byte RequiredLevel { get; }
         public byte DamageType { get; }
         public ushort ResourceCost { get; }
@@ -1197,14 +1207,17 @@ namespace Avelora.Shared.Protocol
     /// <summary>Catálogo de habilidades enviado al entrar (I-16). Solo incluye las de la clase del personaje.</summary>
     public readonly struct SkillCatalogMessage
     {
-        public SkillCatalogMessage(string resourceName, SkillCatalogEntry[] skills)
+        public SkillCatalogMessage(string resourceName, SkillCatalogEntry[] skills, ushort globalCooldownTicks = 0)
         {
             ResourceName = resourceName ?? string.Empty;
             Skills = skills ?? Array.Empty<SkillCatalogEntry>();
+            GlobalCooldownTicks = globalCooldownTicks;
         }
 
         public string ResourceName { get; }
         public SkillCatalogEntry[] Skills { get; }
+        /// <summary>Recarga global de habilidades en ticks.</summary>
+        public ushort GlobalCooldownTicks { get; }
     }
 
     /// <summary>Confirmación de que el servidor aceptó el uso de la habilidad (I-16).</summary>

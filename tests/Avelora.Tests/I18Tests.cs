@@ -139,7 +139,7 @@ namespace Avelora.Tests
         public void Catalogo_Del_Repo_Incluye_Los_Cuatro_Estados()
         {
             SkillCatalog catalog = SkillCatalog.Load(Path.Combine(AppContext.BaseDirectory, "skills.json"), ClassCatalog.Default);
-            Assert.Equal(10, catalog.Skills!.Count);
+            Assert.Equal(17, catalog.Skills!.Count);
             Assert.Equal(80, catalog.Find(4007)!.StatusTicks);
             Assert.Equal(60, catalog.Find(4008)!.StatusTicks);
             Assert.Equal(StatusKind.Slow, catalog.Find(4008)!.StatusKind);

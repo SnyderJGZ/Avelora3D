@@ -169,8 +169,19 @@ namespace Avelora.Server.Progression
                     throw new InvalidOperationException("skills.json: " + where + ".maxTargets solo vale con radius.");
                 if (skill.Radius > 0 && (skill.MaxTargets < 2 || skill.MaxTargets > MaxAreaTargets))
                     throw new InvalidOperationException("skills.json: " + where + ".maxTargets debe estar entre 2 y 16.");
-                if (skill.IsHeal && skill.Radius > 0)
-                    throw new InvalidOperationException("skills.json: " + where + ".radius: la curación en área no existe todavía.");
+                if (skill.Hits < 1 || skill.Hits > 5 ||
+                    (skill.Hits > 1 && (!skill.IsDamage || skill.Radius > 0)))
+                    throw new InvalidOperationException("skills.json: " + where + ".hits fuera de rango o incompatible con effect/radius.");
+                if (skill.CritBonus < 0 || skill.CritBonus > 500 || (skill.CritBonus > 0 && skill.Effect == "none"))
+                    throw new InvalidOperationException("skills.json: " + where + ".critBonus fuera de rango o incompatible con effect.");
+                if (skill.AreaCenter != "target" && skill.AreaCenter != "self")
+                    throw new InvalidOperationException("skills.json: " + where + ".areaCenter debe ser target o self.");
+                if (skill.AreaSelf && !((skill.Radius > 0 && (skill.IsDamage || skill.IsHeal)) ||
+                    (skill.Radius == 0 && skill.Effect == "none" &&
+                     (skill.Status == "bonus" || skill.Status == "shield"))))
+                    throw new InvalidOperationException("skills.json: " + where + ".areaCenter self no es válido para este efecto.");
+                if (skill.IsHeal && skill.Radius > 0 && !skill.AreaSelf)
+                    throw new InvalidOperationException("skills.json: " + where + ".areaCenter debe ser self para curación en área.");
                 if (skill.IsHeal && skill.Damage < 1)
                     throw new InvalidOperationException("skills.json: " + where + ".damage de una cura debe ser al menos 1.");
 
@@ -186,11 +197,12 @@ namespace Avelora.Server.Progression
                     throw new InvalidOperationException("skills.json: " + where + ".effect none necesita status.");
                 if (skill.Effect == "none" && skill.Damage != 0)
                     throw new InvalidOperationException("skills.json: " + where + ".damage debe ser 0 con effect none.");
-                if (skill.IsHeal && status != string.Empty)
-                    throw new InvalidOperationException("skills.json: " + where + ".status no vale en una cura.");
-                if ((status == "bonus" || status == "shield" || status == "taunt") && skill.Effect != "none")
+                bool areaHealShield = skill.IsHeal && skill.Radius > 0 && status == "shield";
+                if (skill.IsHeal && status != string.Empty && !areaHealShield)
+                    throw new InvalidOperationException("skills.json: " + where + ".status en una cura solo admite shield en curación en área.");
+                if ((status == "bonus" || status == "shield" || status == "taunt") && skill.Effect != "none" && !areaHealShield)
                     throw new InvalidOperationException("skills.json: " + where + ".status " + status + " necesita effect none.");
-                if (status != string.Empty && skill.Radius > 0)
+                if (status != string.Empty && skill.Radius > 0 && !areaHealShield)
                     throw new InvalidOperationException("skills.json: " + where + ".status: los estados en área no existen todavía.");
                 if ((status == "slow" && (skill.StatusAmount < 10 || skill.StatusAmount > 80)) ||
                     (status == "shield" && (skill.StatusAmount < 1 || skill.StatusAmount > 10000)) ||
@@ -289,6 +301,11 @@ namespace Avelora.Server.Progression
         public string Status { get; set; } = string.Empty;
         public double StatusSeconds { get; set; }
         public int StatusAmount { get; set; }
+        public int Hits { get; set; } = 1;
+        public int CritBonus { get; set; }
+        public string AreaCenter { get; set; } = "target";
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool AreaSelf => AreaCenter == "self";
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsHeal => Effect == "heal";
         [System.Text.Json.Serialization.JsonIgnore]

@@ -228,23 +228,15 @@ namespace Avelora.Bots
         private long _pvpRejects;
         private long _pvpModeRequests;
         private readonly bool _useSkills;
-        private SkillCatalogEntry _skill;
-        private bool _hasSkill;
-        private SkillCatalogEntry _healSkill;
-        private bool _hasHealSkill;
-        private long _nextHealAt;
+        private SkillCatalogEntry[] _skillEntries = Array.Empty<SkillCatalogEntry>();
+        private long[] _skillReadyAt = Array.Empty<long>();
+        private long _globalSkillReadyAt;
+        private int _globalCooldownMs;
         private long _healsSent;
-        private SkillCatalogEntry _debuffSkill;
-        private bool _hasDebuffSkill;
-        private long _nextDebuffAt;
-        private SkillCatalogEntry _buffSkill;
-        private bool _hasBuffSkill;
-        private long _nextBuffAt;
         private long _statusSkillsSent;
         private long _statusMessages;
         private long _slowMessages;
         private ushort _resource;
-        private long _nextSkillAt;
         private long _skillsSent;
         private long _skillsOk;
         private long _skillsRejected;
@@ -818,7 +810,6 @@ namespace Avelora.Bots
                     {
                         UpdateItemActions(_pendingFightSnapshot);
                         SendSelfHealIfNeeded(now);
-                        SendSelfBuffIfNeeded(now);
                         _itemDecisionPending = false;
                     }
 
@@ -1073,11 +1064,10 @@ namespace Avelora.Bots
             _hasProgress = false;
             _hasStats = false;
             _classId = 0;
-            _hasSkill = false;
-            _hasHealSkill = false;
-            _hasDebuffSkill = false;
-            _hasBuffSkill = false;
-            _nextHealAt = 0;
+            _skillEntries = Array.Empty<SkillCatalogEntry>();
+            _skillReadyAt = Array.Empty<long>();
+            _globalSkillReadyAt = 0;
+            _globalCooldownMs = 0;
             _resource = 0;
             _lastFreePoints = 0;
             _pendingAllocationPoints = 0;
@@ -1538,34 +1528,10 @@ namespace Avelora.Bots
 
             if (MessageCodec.TryReadSkillCatalog(buffer, offset, length, out SkillCatalogMessage skillCatalog))
             {
-                _hasSkill = false;
-                _hasHealSkill = false;
-                _hasDebuffSkill = false;
-                _hasBuffSkill = false;
-                foreach (SkillCatalogEntry entry in skillCatalog.Skills)
-                {
-                    if (entry.Effect == 1 && !_hasHealSkill)
-                    {
-                        _healSkill = entry;
-                        _hasHealSkill = true;
-                    }
-                    if (entry.Effect == 0 && entry.StatusKind == StatusKind.None &&
-                        (!_hasSkill || (_skill.Radius == 0 && entry.Radius > 0)))
-                    {
-                        _skill = entry;
-                        _hasSkill = true;
-                    }
-                    if (!_hasDebuffSkill && (entry.StatusKind == StatusKind.Slow || entry.StatusKind == StatusKind.Taunt))
-                    {
-                        _debuffSkill = entry;
-                        _hasDebuffSkill = true;
-                    }
-                    if (!_hasBuffSkill && (entry.StatusKind == StatusKind.Bonus || entry.StatusKind == StatusKind.Shield))
-                    {
-                        _buffSkill = entry;
-                        _hasBuffSkill = true;
-                    }
-                }
+                _skillEntries = skillCatalog.Skills;
+                _skillReadyAt = new long[_skillEntries.Length];
+                _globalCooldownMs = skillCatalog.GlobalCooldownTicks * 1000 / SimulationConstants.TickRate;
+                _globalSkillReadyAt = 0;
 
                 return;
             }
@@ -2313,25 +2279,26 @@ namespace Avelora.Bots
             }
             _lastAttackTick = _lastSnapshotTick;
 
-            // Habilidad (I-16): misma cola que el ataque, con su propia recarga y su recurso. Solo
-            // se manda si el servidor ya anunció catálogo y recurso suficiente.
-            if (_useSkills && _hasSkill && _resource >= _skill.ResourceCost && now >= _nextSkillAt &&
-                distanceSq <= _skill.Range * _skill.Range)
+            if (_useSkills)
             {
-                byte[] useSkill = MessageCodec.EncodeUseSkill(new UseSkillMessage(_skill.Id, target));
-                _transport!.Send(useSkill, useSkill.Length, DeliveryMode.ReliableOrdered);
-                Interlocked.Increment(ref _skillsSent);
-                _nextSkillAt = now + (_skill.CooldownTicks * 1000 / SimulationConstants.TickRate) + AttackSlackMs;
-            }
-
-            if (_useSkills && _hasDebuffSkill && _resource >= _debuffSkill.ResourceCost && now >= _nextDebuffAt &&
-                distanceSq <= _debuffSkill.Range * _debuffSkill.Range &&
-                (_debuffSkill.StatusKind != StatusKind.Taunt || !_npcs[target].Player))
-            {
-                byte[] useSkill = MessageCodec.EncodeUseSkill(new UseSkillMessage(_debuffSkill.Id, target));
-                _transport!.Send(useSkill, useSkill.Length, DeliveryMode.ReliableOrdered);
-                Interlocked.Increment(ref _statusSkillsSent);
-                _nextDebuffAt = now + _debuffSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+                int selected = BotSkillRotation.Pick(_skillEntries, checked((byte)_level), _resource, now,
+                    _skillReadyAt, _globalSkillReadyAt, MathF.Sqrt(distanceSq), _npcs[target].Player,
+                    _ownHealthPercent);
+                if (selected >= 0)
+                {
+                    SkillCatalogEntry skill = _skillEntries[selected];
+                    bool selfTarget = skill.Effect == 1 ||
+                        (skill.Effect == 2 && (skill.StatusKind == StatusKind.Bonus || skill.StatusKind == StatusKind.Shield)) ||
+                        skill.AreaCenter == 1;
+                    byte[] useSkill = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id,
+                        selfTarget ? EntityId : target));
+                    _transport!.Send(useSkill, useSkill.Length, DeliveryMode.ReliableOrdered);
+                    if (skill.Effect == 0) Interlocked.Increment(ref _skillsSent);
+                    else if (skill.Effect == 2) Interlocked.Increment(ref _statusSkillsSent);
+                    else if (skill.Effect == 1) Interlocked.Increment(ref _healsSent);
+                    _skillReadyAt[selected] = now + skill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+                    _globalSkillReadyAt = now + _globalCooldownMs + AttackSlackMs;
+                }
             }
 
             // La recarga del bot es la del servidor más un margen: si saliera justo en el tick,
@@ -2373,22 +2340,16 @@ namespace Avelora.Bots
         /// <summary>Usa la cura propia bajo el 70 % de vida, con recurso y recarga suficientes.</summary>
         private void SendSelfHealIfNeeded(long now)
         {
-            if (!_useSkills || !_hasHealSkill || _ownHealthPercent >= 70 || _resource < _healSkill.ResourceCost ||
-                now < _nextHealAt || EntityId <= 0) return;
-            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(_healSkill.Id, EntityId));
+            if (!_useSkills || EntityId <= 0) return;
+            int selected = BotSkillRotation.Pick(_skillEntries, checked((byte)_level), _resource, now,
+                _skillReadyAt, _globalSkillReadyAt, float.NaN, false, _ownHealthPercent);
+            if (selected < 0) return;
+            SkillCatalogEntry skill = _skillEntries[selected];
+            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, EntityId));
             _transport!.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             Interlocked.Increment(ref _healsSent);
-            _nextHealAt = now + _healSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
-        }
-
-        private void SendSelfBuffIfNeeded(long now)
-        {
-            if (!_useSkills || !_hasBuffSkill || _npcs.Count == 0 || _resource < _buffSkill.ResourceCost ||
-                now < _nextBuffAt || EntityId <= 0) return;
-            byte[] bytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(_buffSkill.Id, EntityId));
-            _transport!.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
-            Interlocked.Increment(ref _statusSkillsSent);
-            _nextBuffAt = now + _buffSkill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+            _skillReadyAt[selected] = now + skill.CooldownTicks * 1000 / SimulationConstants.TickRate + AttackSlackMs;
+            _globalSkillReadyAt = now + _globalCooldownMs + AttackSlackMs;
         }
 
         /// <summary>Recoge un objeto cercano y usa una poción si la vida bajó del 40 %.</summary>

@@ -2096,11 +2096,13 @@ namespace Avelora.Server.Net
                         checked((ushort)skill.Damage),
                         skill.Name.Trim(), skill.IsHeal ? (byte)1 : skill.Effect == "none" ? (byte)2 : (byte)0,
                         skill.Radius, skill.StatusKind, checked((ushort)skill.StatusTicks),
-                        checked((ushort)skill.StatusAmount)));
+                        checked((ushort)skill.StatusAmount), checked((byte)skill.Hits),
+                        skill.AreaSelf ? (byte)1 : (byte)0, checked((ushort)skill.CritBonus)));
                 }
             }
 
-            return MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage(resourceName, entries.ToArray()));
+            return MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage(resourceName, entries.ToArray(),
+                checked((ushort)catalog.GlobalCooldownTicks)));
         }
 
         private void HandleChatSend(int connectionId, int senderEntityId, byte[] buffer, int offset, int length)

@@ -299,7 +299,7 @@ namespace Avelora.Server.Simulation
                 attacker.Statuses.Bonus);
 
             ApplyDamage(entities, attacker, hitTarget, victim, npc, damage, damageType,
-                baseRange > RangedMinRange, attackerStats.CritChancePb, tick);
+                baseRange > RangedMinRange, attackerStats.CritChancePb, _classes.CritMultiplier, tick);
 
             attacker.LastAttackTick = tick;
             AttacksOk++;
@@ -364,6 +364,12 @@ namespace Avelora.Server.Simulation
                 return;
             }
 
+            if (skill.AreaSelf)
+            {
+                ResolveSelfArea(entities, caster, skill, intent, tick);
+                return;
+            }
+
             TargetCheck targetCheck = CheckTarget(entities, caster, intent.TargetId, out Entity? target, out PlayerEntity? victim, out NpcEntity? npc);
             switch (targetCheck)
             {
@@ -419,7 +425,9 @@ namespace Avelora.Server.Simulation
 
             if (skill.IsDamage)
             {
-                int found = skill.Radius > 0f ? CollectAreaTargets(entities, caster, hitTarget, skill) : 0;
+                int found = skill.Radius > 0f
+                    ? CollectAreaTargets(entities, caster, hitTarget, skill, skill.MaxTargets - 1)
+                    : 0;
                 int damage = CombatMath.GetSkillAmount(
                     _classes,
                     caster.ClassId,
@@ -439,15 +447,19 @@ namespace Avelora.Server.Simulation
                     caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
                     _catalog, caster.Equipment).CritChancePb;
 
-                ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType,
-                    skill.Range > RangedMinRange, critChancePb, tick);
+                for (int hit = 0; hit < skill.Hits; hit++)
+                {
+                    if (hit > 0 && hitTarget.Action == EntityAction.Dead) break;
+                    ApplyDamage(entities, caster, hitTarget, victim, npc, damage, damageType,
+                        skill.Range > RangedMinRange, critChancePb, _classes.CritMultiplier + skill.CritBonus, tick);
+                }
 
                 for (int k = 0; k < found; k++)
                 {
                     if (CheckTarget(entities, caster, _areaIds[k], out Entity? t, out PlayerEntity? v, out NpcEntity? n) != TargetCheck.Ok)
                         continue;
                     ApplyDamage(entities, caster, t!, v, n, damage, damageType,
-                        skill.Range > RangedMinRange, critChancePb, tick);
+                        skill.Range > RangedMinRange, critChancePb, _classes.CritMultiplier + skill.CritBonus, tick);
                 }
                 AreaTargetsHit += found;
             }
@@ -486,9 +498,51 @@ namespace Avelora.Server.Simulation
             }
         }
 
-        private int CollectAreaTargets(EntityStore entities, PlayerEntity caster, Entity center, SkillDefinition skill)
+        private void ResolveSelfArea(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
+            in AttackIntent intent, long tick)
         {
-            int limit = skill.MaxTargets - 1;
+            if (OnCooldown(caster, skill, tick))
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
+                return;
+            }
+            if (caster.Mana < skill.ResourceCost)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NotEnoughResource);
+                return;
+            }
+
+            int found = CollectAreaTargets(entities, caster, caster, skill, skill.MaxTargets);
+            if (found == 0)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.InvalidTarget);
+                return;
+            }
+
+            caster.Mana -= skill.ResourceCost;
+            StartCooldown(caster, skill, tick);
+            int damage = CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level,
+                caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage,
+                skill.WeaponPercent, WeaponDamage(caster), _catalog, caster.Equipment, caster.Statuses.Bonus);
+            int critChancePb = CharacterStats.Calculate(_classes, caster.ClassId, caster.Level,
+                caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
+                _catalog, caster.Equipment).CritChancePb;
+            for (int k = 0; k < found; k++)
+            {
+                if (CheckTarget(entities, caster, _areaIds[k], out Entity? target,
+                    out PlayerEntity? victim, out NpcEntity? npc) != TargetCheck.Ok)
+                    continue;
+                ApplyDamage(entities, caster, target!, victim, npc, damage, skill.DamageType,
+                    false, critChancePb, _classes.CritMultiplier + skill.CritBonus, tick);
+            }
+            AreaTargetsHit += found;
+            SkillsUsed++;
+            SkillUsed?.Invoke(caster, (ushort)skill.Id, caster.Id);
+        }
+
+        private int CollectAreaTargets(EntityStore entities, PlayerEntity caster, Entity center,
+            SkillDefinition skill, int limit)
+        {
             int count = 0;
             bool capped = false;
             float r2 = skill.Radius * skill.Radius;
@@ -523,6 +577,11 @@ namespace Avelora.Server.Simulation
 
         private void ResolveHeal(EntityStore entities, PlayerEntity caster, SkillDefinition skill, in AttackIntent intent, long tick)
         {
+            if (skill.Radius > 0)
+            {
+                ResolveAreaHeal(entities, caster, skill, intent, tick);
+                return;
+            }
             if (!CheckFriendlyTarget(entities, caster, skill, intent, out PlayerEntity? target)) return;
             PlayerEntity healTarget = target!;
             if (healTarget.Health >= healTarget.MaxHealth)
@@ -549,7 +608,7 @@ namespace Avelora.Server.Simulation
                 caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
                 _catalog, caster.Equipment).CritChancePb;
             bool crit = critChancePb > 0 && _random.Next(10000) < critChancePb;
-            if (crit) raw = CombatMath.CritDamage(raw, _classes.CritMultiplier);
+            if (crit) raw = CombatMath.CritDamage(raw, _classes.CritMultiplier + skill.CritBonus);
             int healed = Math.Min(raw, healTarget.MaxHealth - healTarget.Health);
             healTarget.Health += healed;
             HealsDone++;
@@ -560,6 +619,120 @@ namespace Avelora.Server.Simulation
                 (ushort)Math.Min(healed, ushort.MaxValue), flags));
             SkillsUsed++;
             SkillUsed?.Invoke(caster, (ushort)skill.Id, healTarget.Id);
+        }
+
+        private void ResolveAreaHeal(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
+            in AttackIntent intent, long tick)
+        {
+            int found = CollectAreaAllies(entities, caster, skill);
+            if (skill.StatusKind == StatusKind.None)
+            {
+                bool injured = false;
+                for (int i = 0; i < found; i++)
+                    if (entities.TryGet(_areaIds[i], out Entity? entity) && entity is PlayerEntity player &&
+                        player.Health < player.MaxHealth)
+                    {
+                        injured = true;
+                        break;
+                    }
+                if (!injured)
+                {
+                    Reject(caster, intent.SkillId, SkillRejectReason.FullHealth);
+                    return;
+                }
+            }
+            if (OnCooldown(caster, skill, tick))
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
+                return;
+            }
+            if (caster.Mana < skill.ResourceCost)
+            {
+                Reject(caster, intent.SkillId, SkillRejectReason.NotEnoughResource);
+                return;
+            }
+
+            caster.Mana -= skill.ResourceCost;
+            StartCooldown(caster, skill, tick);
+            int raw = CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.Damage, skill.WeaponPercent,
+                WeaponDamage(caster), _catalog, caster.Equipment);
+            int critChancePb = CharacterStats.Calculate(_classes, caster.ClassId, caster.Level,
+                caster.AllocStr, caster.AllocDex, caster.AllocInt, caster.AllocVit,
+                _catalog, caster.Equipment).CritChancePb;
+            int shieldAmount = skill.StatusKind == StatusKind.Shield
+                ? CombatMath.GetSkillAmount(_classes, caster.ClassId, caster.Level, caster.AllocStr,
+                    caster.AllocDex, caster.AllocInt, caster.AllocVit, skill.StatusAmount,
+                    skill.WeaponPercent, WeaponDamage(caster), _catalog, caster.Equipment)
+                : 0;
+
+            for (int i = 0; i < found; i++)
+            {
+                if (!entities.TryGet(_areaIds[i], out Entity? entity) || !(entity is PlayerEntity ally))
+                    continue;
+                bool crit = critChancePb > 0 && _random.Next(10000) < critChancePb;
+                int amount = crit ? CombatMath.CritDamage(raw, _classes.CritMultiplier + skill.CritBonus) : raw;
+                int healed = Math.Min(amount, ally.MaxHealth - ally.Health);
+                if (healed > 0)
+                {
+                    ally.Health += healed;
+                    HealsDone++;
+                    HealAmount += healed;
+                    CombatEventFlags flags = CombatEventFlags.Heal;
+                    if (crit) flags |= CombatEventFlags.Critical;
+                    _events?.Add(new CombatEventEntry(caster.Id, ally.Id,
+                        (ushort)Math.Min(healed, ushort.MaxValue), flags));
+                }
+                if (skill.StatusKind == StatusKind.Shield)
+                {
+                    bool applied = ally.Statuses.Apply(skill.StatusKind, (ushort)skill.Id, caster.Id,
+                        shieldAmount, tick + skill.StatusTicks);
+                    if (applied) _statusApplied[(int)skill.StatusKind]++;
+                    else StatusesIgnoredWeaker++;
+                }
+            }
+            SkillsUsed++;
+            SkillUsed?.Invoke(caster, (ushort)skill.Id, caster.Id);
+        }
+
+        private int CollectAreaAllies(EntityStore entities, PlayerEntity caster, SkillDefinition skill)
+        {
+            int count = 1;
+            int limit = skill.MaxTargets;
+            float radiusSquared = skill.Radius * skill.Radius;
+            _areaIds[0] = caster.Id;
+            _areaDistSq[0] = 0;
+            bool capped = false;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                Entity entity = entities[i];
+                if (!(entity is PlayerEntity player) || player.Id == caster.Id || player.IsDead) continue;
+                float dx = player.Position.X - caster.Position.X;
+                float dy = player.Position.Y - caster.Position.Y;
+                float distanceSquared = dx * dx + dy * dy;
+                if (distanceSquared > radiusSquared) continue;
+                ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
+                ZoneKind playerZone = _zones.KindAt(player.Position.X, player.Position.Y);
+                if (player.IsPvpEffective(playerZone) && !caster.IsPvpEffective(casterZone)) continue;
+                if (_map != null && !_map.HasLineOfSight(caster.Position, player.Position)) continue;
+                if (count == limit)
+                {
+                    capped = true;
+                    if (distanceSquared >= _areaDistSq[count - 1]) continue;
+                }
+                else count++;
+                int slot = count - 1;
+                while (slot > 0 && distanceSquared < _areaDistSq[slot - 1])
+                {
+                    _areaIds[slot] = _areaIds[slot - 1];
+                    _areaDistSq[slot] = _areaDistSq[slot - 1];
+                    slot--;
+                }
+                _areaIds[slot] = player.Id;
+                _areaDistSq[slot] = distanceSquared;
+            }
+            if (capped) AreaCapped++;
+            return count;
         }
 
         private bool CheckFriendlyTarget(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
@@ -595,7 +768,9 @@ namespace Avelora.Server.Simulation
         private void ResolveBeneficial(EntityStore entities, PlayerEntity caster, SkillDefinition skill,
             in AttackIntent intent, long tick)
         {
-            if (!CheckFriendlyTarget(entities, caster, skill, intent, out PlayerEntity? target)) return;
+            PlayerEntity? target;
+            if (skill.AreaSelf) target = caster;
+            else if (!CheckFriendlyTarget(entities, caster, skill, intent, out target)) return;
             if (OnCooldown(caster, skill, tick))
             {
                 Reject(caster, intent.SkillId, SkillRejectReason.Cooldown);
@@ -766,13 +941,14 @@ namespace Avelora.Server.Simulation
             string damageType,
             bool ranged,
             int critChancePb,
+            int critMultiplier,
             long tick)
         {
             int damage = rawDamage;
             bool crit = critChancePb > 0 && _random.Next(10000) < critChancePb;
             if (crit)
             {
-                damage = CombatMath.CritDamage(damage, _classes.CritMultiplier);
+                damage = CombatMath.CritDamage(damage, critMultiplier);
             }
             int defense;
             if (victim != null)

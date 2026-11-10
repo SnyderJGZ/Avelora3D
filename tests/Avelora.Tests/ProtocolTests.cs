@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using Avelora.Shared;
 using Avelora.Shared.Protocol;
 using Xunit;
@@ -186,7 +187,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)24, ProtocolConstants.Version);
+            Assert.Equal((ushort)25, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -684,7 +685,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_Pvp_Usa_La_Version_23()
         {
-            Assert.Equal((ushort)24, ProtocolConstants.Version);
+            Assert.Equal((ushort)25, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -1776,19 +1777,25 @@ namespace Avelora.Tests
 
             var original = new SkillCatalogMessage("Energía", new[]
             {
-                new SkillCatalogEntry(4002, 1, 1, 20, 80, 6f, 18, "Proyectil arcano"),
+                new SkillCatalogEntry(4008, 1, 1, 20, 80, 6f, 18, "Rayo helado", hits: 3, areaCenter: 1, critBonus: 50),
                 new SkillCatalogEntry(4003, 2, 0, 25, 100, 7f, 18, "Cañón certero"),
-            });
+            }, 20);
             byte[] bytes = MessageCodec.EncodeSkillCatalog(original);
             Assert.True(MessageCodec.TryReadSkillCatalog(bytes, 0, bytes.Length, out SkillCatalogMessage decoded));
             Assert.Equal("Energía", decoded.ResourceName);
             Assert.Equal(2, decoded.Skills.Length);
-            Assert.Equal(4002, decoded.Skills[0].Id);
+            Assert.Equal(20, decoded.GlobalCooldownTicks);
+            Assert.Equal(4008, decoded.Skills[0].Id);
             Assert.Equal((byte)1, decoded.Skills[0].DamageType);
             Assert.Equal((ushort)80, decoded.Skills[0].CooldownTicks);
             Assert.Equal(6f, decoded.Skills[0].Range);
-            Assert.Equal("Proyectil arcano", decoded.Skills[0].Name);
+            Assert.Equal("Rayo helado", decoded.Skills[0].Name);
+            Assert.Equal((byte)3, decoded.Skills[0].Hits);
+            Assert.Equal((byte)1, decoded.Skills[0].AreaCenter);
+            Assert.Equal((ushort)50, decoded.Skills[0].CritBonus);
             Assert.Equal("Cañón certero", decoded.Skills[1].Name);
+            Assert.Equal(1 + 2 + Encoding.UTF8.GetByteCount("Energía") + 2 + 1 +
+                30 + Encoding.UTF8.GetByteCount("Rayo helado") + 30 + Encoding.UTF8.GetByteCount("Cañón certero"), bytes.Length);
 
             Assert.False(MessageCodec.TryReadSkillCatalog(bytes, 0, bytes.Length - 1, out _));
             byte[] longer = new byte[bytes.Length + 1];
@@ -1829,7 +1836,17 @@ namespace Avelora.Tests
             {
                 Assert.ThrowsAny<ArgumentException>(() => MessageCodec.EncodeSkillCatalog(
                     new SkillCatalogMessage("Furia", new[] { entry })));
-    }
+            }
+
+            foreach (SkillCatalogEntry entry in new[]
+            {
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe", hits: 0),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe", hits: 6),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe", areaCenter: 2),
+                new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe", critBonus: 501),
+            })
+                Assert.Throws<ArgumentOutOfRangeException>(() => MessageCodec.EncodeSkillCatalog(
+                    new SkillCatalogMessage("Furia", new[] { entry })));
 }
 
         [Fact]
@@ -1840,7 +1857,7 @@ namespace Avelora.Tests
                 new SkillCatalogEntry(4001, 1, 0, 30, 120, 1.2f, 22, "Golpe"),
             });
             byte[] bytes = MessageCodec.EncodeSkillCatalog(message);
-            int entryStart = 1 + 2 + 5 + 1; // tipo + longitud/nombre + count
+            int entryStart = 1 + 2 + 5 + 2 + 1; // tipo + longitud/nombre + recarga global + count
 
             byte[] zeroId = (byte[])bytes.Clone();
             zeroId[entryStart] = 0;
@@ -1861,15 +1878,28 @@ namespace Avelora.Tests
             Assert.False(MessageCodec.TryReadSkillCatalog(zeroCooldown, 0, zeroCooldown.Length, out _));
 
             byte[] emptyName = (byte[])bytes.Clone();
-            emptyName[entryStart + 24] = 0;
-            emptyName[entryStart + 25] = 0;
+            emptyName[entryStart + 28] = 0;
+            emptyName[entryStart + 29] = 0;
             Assert.False(MessageCodec.TryReadSkillCatalog(emptyName, 0, emptyName.Length, out _));
+
+            foreach (Action<byte[]> corrupt in new Action<byte[]>[]
+            {
+                b => b[entryStart + 24] = 0,
+                b => b[entryStart + 24] = 6,
+                b => b[entryStart + 25] = 2,
+                b => { b[entryStart + 26] = 245; b[entryStart + 27] = 1; },
+            })
+            {
+                byte[] invalid = (byte[])bytes.Clone();
+                corrupt(invalid);
+                Assert.False(MessageCodec.TryReadSkillCatalog(invalid, 0, invalid.Length, out _));
+            }
         }
 
         [Fact]
-        public void El_Protocolo_De_Habilidades_Usa_La_Version_23()
+        public void El_Protocolo_De_Habilidades_Usa_La_Version_25()
         {
-            Assert.Equal((ushort)24, ProtocolConstants.Version);
+            Assert.Equal((ushort)25, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);
@@ -1971,8 +2001,9 @@ namespace Avelora.Tests
             Assert.Equal((ushort)40, decoded.Skills[0].StatusAmount);
             Assert.Equal(StatusKind.Shield, decoded.Skills[1].StatusKind);
             Assert.Equal((byte)2, decoded.Skills[1].Effect);
+            Assert.Equal((ushort)0, decoded.GlobalCooldownTicks);
 
-            int entryStart = 1 + 2 + 5 + 1;
+            int entryStart = 1 + 2 + 5 + 2 + 1;
             foreach (Action<byte[]> corrupt in new Action<byte[]>[]
             {
                 b => b[entryStart + 14] = 3, // effect > 2
@@ -2020,7 +2051,7 @@ namespace Avelora.Tests
             var entry=new SkillCatalogEntry(4005,1,1,35,160,6,14,"área",effect,radius);
             Assert.Throws<ArgumentOutOfRangeException>(()=>MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage("M",new[]{entry})));
             byte[] bytes=MessageCodec.EncodeSkillCatalog(new SkillCatalogMessage("M",new[]{new SkillCatalogEntry(4005,1,1,35,160,6,14,"área")}));
-            int start=5;bytes[start+14]=effect;Array.Copy(BitConverter.GetBytes(radius),0,bytes,start+15,4);
+            int start=7;bytes[start+14]=effect;Array.Copy(BitConverter.GetBytes(radius),0,bytes,start+15,4);
             Assert.False(MessageCodec.TryReadSkillCatalog(bytes,0,bytes.Length,out _));
         }
     }

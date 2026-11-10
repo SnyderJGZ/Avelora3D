@@ -448,7 +448,11 @@ namespace Avelora.Tests
             Assert.Equal(DeliveryMode.ReliableOrdered, sent.Mode);
             Assert.True(MessageCodec.TryReadSkillCatalog(sent.Data, 0, sent.Data.Length, out var catalog));
             Assert.Equal(Assert.IsType<CharacterResource>(ClassCatalog.Default.Find(2)!.Resource).Name, catalog.ResourceName);
-            Assert.Equal(new ushort[] { 4002, 4005, 4008, 4009 }, catalog.Skills.Select(s => s.Id));
+            Assert.Equal((ushort)20, catalog.GlobalCooldownTicks);
+            Assert.Equal(new ushort[] { 4008, 4009, 4005, 4013 }, catalog.Skills.Select(s => s.Id));
+            Assert.All(catalog.Skills, skill => Assert.Equal((byte)1, skill.Hits));
+            Assert.Equal((byte)0, catalog.Skills[3].AreaCenter);
+            Assert.Equal((ushort)0, catalog.Skills[3].CritBonus);
             harness.Transport.Sent.Clear();
             harness.Zone.Tick();
             harness.Server.PollOnce();
@@ -537,8 +541,11 @@ namespace Avelora.Tests
         [Fact]
         public void Bonus_En_Red_Envia_Estado_Propio_Stats_Y_Mascara_A_Observadores()
         {
+            SkillCatalog skills = CargarHabilidades();
+            skills.Find(4010)!.RequiredLevel = 1;
+            skills.Validate(ClassCatalog.Default);
             using var harness = new Harness(config => config.SnapshotEveryTicks = 1,
-                classes: ClassCatalog.Default, skills: CargarHabilidades());
+                classes: ClassCatalog.Default, skills: skills);
             harness.Connect(1);
             harness.Handshake(1, classId: 4);
             harness.Pump();

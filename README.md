@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-29 de servidor implementadas (clientes I-15b e I-15pb hechos; I-15q ajusta tiempos y rótulos PvP; I-16 añade habilidades, cliente I-16b por hacer).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-29 de servidor implementadas (I-19 añade habilidades y protocolo v25; cliente I-19b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -31,7 +31,7 @@ calcular igual (movimiento y colisión).
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
 > I-17 añade áreas y curación: **protocolo v22, esquema v8**. I-18 añade estados temporales:
 > **protocolo v23**, sin cambiar el esquema.
-> I-28 añade crítico, prisa, daño PvP y recarga global: **protocolo v24**, sin cambiar el esquema.
+> I-28 añade crítico, prisa, daño PvP y recarga global (protocolo v24); I-19 amplía `SkillCatalog` y sube a **v25**, sin cambiar el esquema.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -413,7 +413,7 @@ Canales:
 > **v14** al retirar `DropItem` y repartir `ItemCatalog` en mensajes de hasta 1400 B. I-10 sube a
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
 > I-17 sube a **v22** por los campos de área, curación y objetivo; I-18 sube a **v23** por estados temporales y sus mensajes. El esquema sigue en v8.
-> I-28 sube a **v24** por `Stats` (crítico y prisa) y `CombatEventFlags.Critical`.
+> I-28 sube a **v24** por `Stats` (crítico y prisa) y `CombatEventFlags.Critical`; I-19 sube a **v25** por la recarga global y los campos `hits`, `areaCenter` y `critBonus` de `SkillCatalog`.
 > I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
@@ -875,7 +875,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v24** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v25** y el saludo solo autentica la cuenta |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1139,6 +1139,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-27** | Modelo de daño, vida y defensa (§2.2–§2.3 del plan); datos de franjas 1 y 5 y orcos (sin cambio de protocolo ni esquema) | ✅ servidor, datos y pruebas |
 | **I-28** | Crítico, velocidad de ataque, PvP y recarga global (§2.4–§2.5, §2.8 del plan); protocolo v24 | ✅ servidor, datos y pruebas; cliente I-28b pendiente |
 | **I-29** | Velocidad de movimiento (§2.6 del plan): moveSpeed de botas, moveCap 115, PNJ a 3,0-3,4; protocolo v24 sin cambios | ✅ servidor, datos y pruebas; cliente sin cambios |
+| **I-19** | Cuatro habilidades por clase (A-4 del plan): hits, critBonus, área propia, cura en área, rotación de bots; protocolo v25 | ✅ servidor, datos y pruebas; cliente I-19b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -2028,8 +2029,8 @@ Verificación y comprobaciones pendientes en Play: [informe I-16c](docs/agentes/
 #### Áreas y curación (I-17, protocolo v22)
 
 El catálogo contiene seis habilidades. `effect` vale `damage` (por defecto) o `heal`;
-`radius` vale 0 para un objetivo o 0.5..8 para área; `maxTargets` vale 2..16 e incluye
-al principal (sin radio debe ser 0). La curación con radio se rechaza al cargar.
+`radius` vale 0 para un objetivo o 0.5..8 para área; `maxTargets` vale 2..16 (sin radio debe ser 0).
+I-19 añade curación con radio centrada en el lanzador; el área ofensiva de I-17 sigue centrada en el objetivo.
 
 El área se centra en el objetivo principal, validado con las reglas de I-16, alcance y visión
 desde el lanzador. Incluye el borde del radio sin tolerancia. Los secundarios pasan por
@@ -2059,9 +2060,10 @@ publican `hab_curas_enviadas`. Suite: **898/898** pruebas (39 nuevas). Validaci�
 `skills.json` añade `status` (`bonus`, `shield`, `slow` o `taunt`), `statusSeconds` y
 `statusAmount`. `effect` admite `damage`, `heal` o `none`; este último requiere daño 0 y un estado.
 En `SkillCatalogEntry`, `effect` vale 0/1/2 y se añaden `statusKind u8`, `statusTicks u16` y
-`statusAmount u16` (5 B por habilidad).
+`statusAmount u16` (5 B por habilidad). I-19 añade `hits u8`, `areaCenter u8` y `critBonus u16`;
+la cabecera de `SkillCatalog` lleva `globalCooldownTicks u16` (protocolo v25).
 El servidor valida duración de 0,5..30 s, convierte a ticks con redondeo hacia arriba y rechaza
-estados en área. Hay cuatro tipos y como máximo uno de cada tipo por entidad; una aplicación más
+estados en área salvo `shield` aplicado por una cura en área. Hay cuatro tipos y como máximo uno de cada tipo por entidad; una aplicación más
 débil se ignora —en el escudo se compara la cantidad restante— y una igual o mayor reemplaza
 cantidad, lanzador y caducidad. Caducan al principio
 del tick límite; la muerte limpia todos los estados y no se guardan en SQLite.
@@ -2077,14 +2079,14 @@ la lista para que predicción y reconciliación usen la velocidad nueva. Provoca
 contra el lanzador; si vuelve o cambia de objetivo, el estado se rompe, y al caducar no restaura un
 objetivo anterior.
 
-El guerrero recibe Provocar; el mago, Rayo helado y Escudo arcano; el sanador, Bendición. El ranger
-recibirá su estado en I-19. `StatusEffects` (40) lleva velocidad y tipos, habilidades, ticks restantes
+El guerrero recibe Provocar; el mago, Rayo helado y Escudo arcano; el sanador, Bendición; el ranger,
+Tiro a las piernas. `StatusEffects` (40) lleva velocidad y tipos, habilidades, ticks restantes
 y cantidades solo al dueño; `StatusEvent` (41) anuncia máscaras a los observadores visibles cuando
 cambian, sin duración. Ninguno modifica el snapshot. Métricas: `est_bonus`, `est_escudo`, `est_lento`,
 `est_provocar`, `est_ignorados`, `est_expirados`, `est_muerte`, `est_provocar_roto`, `est_absorbido`,
 `est_msgs`, `est_bytes`, `est_evt_msgs` y `est_evt_bytes`; los bots informan `est_enviadas`, `est_msgs`
 y `est_lento_msgs`. Suite: **933/933** pruebas. El cliente compatible queda pendiente de I-18b.
-No hay estados en área, periódicos, aturdimiento ni desplazamiento forzado.
+No hay estados en área fuera del escudo de una cura en área, estados periódicos, aturdimiento ni desplazamiento forzado.
 
 #### Simulador de equilibrio (I-26)
 
@@ -2102,7 +2104,7 @@ La vida y las defensas derivadas de clase crecen por nivel; el daño usa un mult
 
 #### Crítico, prisa y PvP (I-28)
 
-El ataque básico esperado suma el crítico (`critBase + DES × critPerDex`, limitado por `critCap`) y reduce su recarga con la prisa (`DES × hastePerDex`); ambos usan la DES efectiva con equipo. En PvP el daño se mitiga primero y luego se multiplica por `pvpDamagePercent` (60 %); las curas no se reducen. Stats v24 comunica crítico y prisa en puntos básicos; el servidor usa una semilla de combate configurable y las habilidades comparten una recarga global de 1 s.
+El ataque básico esperado suma el crítico (`critBase + DES × critPerDex`, limitado por `critCap`) y reduce su recarga con la prisa (`DES × hastePerDex`); ambos usan la DES efectiva con equipo. En PvP el daño se mitiga primero y luego se multiplica por `pvpDamagePercent` (60 %); las curas no se reducen. `Stats` (formato introducido en v24) comunica crítico y prisa en puntos básicos; el servidor usa una semilla de combate configurable y las habilidades comparten una recarga global de 1 s.
 
 | Nivel | Build | Guerrero | Mago | Ranger | Sanador | Sanador / media |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
@@ -2116,6 +2118,64 @@ El ataque básico esperado suma el crítico (`critBase + DES × critPerDex`, lim
 | 20 | equilibrado | 29,52 | 28,42 | 30,16 | 21,33 | 72,6 % |
 
 Objetivo 7 (paridad de duelos) y objetivo 1 en niveles 10 y 20 quedan en modo informe hasta I-30; el duelo actual usa solo ataques básicos y todavía no incluye las habilidades ni la cura del sanador. La suite contiene **1.024** pruebas.
+
+#### Habilidades por clase (I-19, protocolo v25)
+
+`skills.json` define cuatro habilidades por clase (cinco para el sanador), desbloqueadas en niveles 1, 5, 10 y 20; se retira el id 4002. `hits` aplica 1..5 golpes con un crítico independiente por golpe, `critBonus` suma al multiplicador crítico, `areaCenter: self` centra el área en el lanzador y las curas en área siguen las reglas PvP y de línea de vista de la curación individual. El bot selecciona por catálogo, nivel, recurso, alcances y recargas. `SkillCatalog` v25 incluye recarga global en la cabecera y `hits`, `areaCenter` y `critBonus` por entrada.
+
+| Clase | Id | Habilidad | Nivel | Coste | Recarga (s) |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Guerrero | 4001 | Golpe poderoso | 1 | 25 | 6 |
+| Guerrero | 4007 | Provocar | 5 | 20 | 10 |
+| Guerrero | 4011 | Torbellino | 10 | 15 | 10 |
+| Guerrero | 4012 | Furia imparable | 20 | 40 | 60 |
+| Mago | 4008 | Rayo helado | 1 | 25 | 6 |
+| Mago | 4009 | Escudo arcano | 5 | 30 | 15 |
+| Mago | 4005 | Bola de fuego | 10 | 20 | 8 |
+| Mago | 4013 | Lluvia de meteoros | 20 | 10 | 45 |
+| Ranger | 4003 | Disparo certero | 1 | 20 | 6 |
+| Ranger | 4014 | Tiro a las piernas | 5 | 15 | 8 |
+| Ranger | 4015 | Ráfaga | 10 | 25 | 10 |
+| Ranger | 4016 | Lluvia de flechas | 20 | 10 | 45 |
+| Sanador | 4006 | Curación | 1 | 25 | 3 |
+| Sanador | 4004 | Castigo | 1 | 20 | 5 |
+| Sanador | 4010 | Bendición | 5 | 30 | 20 |
+| Sanador | 4017 | Curación en área | 10 | 45 | 12 |
+| Sanador | 4018 | Renovación divina | 20 | 70 | 60 |
+
+Objetivo 8, rotación equilibrada con equipo de franja (porcentaje del daño total):
+
+| Nivel | Clase | Habilidad | Lanzamientos | Daño (%) |
+| ---: | --- | --- | ---: | ---: |
+| 1 | Guerrero | Golpe poderoso | 30 | 28,0 |
+| 1 | Mago | Rayo helado | 25 | 22,8 |
+| 1 | Ranger | Disparo certero | 30 | 22,2 |
+| 1 | Sanador | Castigo | 32 | 24,2 |
+| 5 | Guerrero | Golpe poderoso | 30 | 32,4 |
+| 5 | Mago | Rayo helado | 27 | 23,4 |
+| 5 | Ranger | Disparo certero | 30 | 18,6 |
+| 5 | Ranger | Tiro a las piernas | 23 | 15,1 |
+| 5 | Sanador | Castigo | 33 | 21,9 |
+| 10 | Guerrero | Golpe poderoso | 21 | 20,6 |
+| 10 | Guerrero | Torbellino | 18 | 16,5 |
+| 10 | Mago | Rayo helado | 14 | 11,6 |
+| 10 | Mago | Bola de fuego | 18 | 13,9 |
+| 10 | Ranger | Disparo certero | 20 | 11,5 |
+| 10 | Ranger | Tiro a las piernas | 21 | 12,5 |
+| 10 | Ranger | Ráfaga | 18 | 13,4 |
+| 10 | Sanador | Castigo | 35 | 22,9 |
+| 20 | Guerrero | Golpe poderoso | 21 | 20,7 |
+| 20 | Guerrero | Torbellino | 18 | 16,4 |
+| 20 | Mago | Rayo helado | 15 | 11,2 |
+| 20 | Mago | Bola de fuego | 19 | 13,2 |
+| 20 | Mago | Lluvia de meteoros | 4 | 10,1 |
+| 20 | Ranger | Disparo certero | 20 | 10,3 |
+| 20 | Ranger | Tiro a las piernas | 21 | 11,2 |
+| 20 | Ranger | Ráfaga | 16 | 10,5 |
+| 20 | Ranger | Lluvia de flechas | 4 | 8,6 |
+| 20 | Sanador | Castigo | 36 | 23,9 |
+
+La supervisión sube Disparo certero (4003) a `weaponPercent` 120. `Objetivo_8_Rotacion` afirma 10–35 % en todos los niveles probados, salvo Lluvia de flechas (4016) en nivel 20: 8–35 % por decisión del usuario (variante A). Su 8,6 % se mide contra un solo objetivo, con daño 40, arma 400 % y recarga 45 s, topes de §9.1. El objetivo 7 queda en modo informe en niveles 1 y 5: no se cumplen los topes de victorias/duración para las seis parejas; los desequilibrios y cifras están en [informe I-19](docs/agentes/informes/I-19.md). Niveles 10 y 20 también son informativos hasta I-30. La versión del cliente anterior a I-19b (v24) es incompatible con el servidor v25.
 
 
 ### Chat (I-07, protocolo v10)
@@ -2215,7 +2275,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-29**, con persistencia SQLite en esquema v8 y protocolo v24, incluidos I-15p/I-15q, I-16, I-17 e I-18.
-El cliente usa v21 (I-17b/I-18b e I-28b pendientes; incompatible con el servidor v24) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
+El servidor ya implementa **I-04 a I-29**, con persistencia SQLite en esquema v8 y protocolo v25, incluidos I-15p/I-15q, I-16, I-17, I-18 e I-19.
+El cliente usa v21 (I-19b pendiente; incompatible con el servidor v25) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

@@ -25,7 +25,7 @@ namespace Avelora.Balance
                 return 2;
             if (options.Help)
             {
-                output.WriteLine("Uso: Avelora.Balance [--datos carpeta] [--niveles 1,5,10,25] [--build puro|equilibrado] [--equipo ninguno|franja] [--sin-habilidades] [--duelos] [--salida archivo]");
+                output.WriteLine("Uso: Avelora.Balance [--datos carpeta] [--niveles 1,5,10,25] [--build puro|equilibrado] [--equipo ninguno|franja] [--sin-habilidades] [--duelos] [--rotacion] [--duelos-habilidades N] [--salida archivo]");
                 return 0;
             }
 
@@ -67,13 +67,18 @@ namespace Avelora.Balance
                     options.IncludeDuels = true;
                     continue;
                 }
+                if (argument == "--rotacion")
+                {
+                    options.IncludeRotation = true;
+                    continue;
+                }
                 if (argument == "--help")
                 {
                     options.Help = true;
                     continue;
                 }
                 if (argument != "--datos" && argument != "--niveles" && argument != "--build" &&
-                    argument != "--equipo" && argument != "--salida")
+                    argument != "--equipo" && argument != "--salida" && argument != "--duelos-habilidades")
                 {
                     output.WriteLine("Argumento desconocido: " + argument);
                     return false;
@@ -116,6 +121,14 @@ namespace Avelora.Balance
                         break;
                     case "--salida":
                         options.OutputFile = value;
+                        break;
+                    case "--duelos-habilidades":
+                        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int duels) || duels < 1)
+                        {
+                            output.WriteLine("El número de duelos con habilidades debe ser mayor que cero.");
+                            return false;
+                        }
+                        options.SkillDuels = duels;
                         break;
                 }
             }
@@ -215,6 +228,47 @@ namespace Avelora.Balance
                     }
                 }
             }
+            if (options.IncludeRotation)
+            {
+                report.AppendLine();
+                report.AppendLine("## Rotación (objetivo 8)");
+                report.AppendLine();
+                report.AppendLine("| Nivel | Clase | Habilidad | Lanzamientos | % del daño |");
+                report.AppendLine("| ---: | --- | --- | ---: | ---: |");
+                for (int levelIndex = 0; levelIndex < options.Levels.Count; levelIndex++)
+                    for (int classIndex = 0; classIndex < classes.Classes!.Count; classIndex++)
+                    {
+                        CharacterClass characterClass = classes.Classes[classIndex];
+                        RotationResult rotation = simulator.MeasureRotation(characterClass.Id,
+                            options.Levels[levelIndex], options.Build, options.Equipment);
+                        foreach (SkillShare skill in rotation.Skills)
+                            report.Append("| ").Append(options.Levels[levelIndex]).Append(" | ")
+                                .Append(characterClass.Name).Append(" | ").Append(skill.Name).Append(" | ")
+                                .Append(skill.Casts).Append(" | ").Append(Format(skill.Percent)).AppendLine(" | ");
+                    }
+            }
+            if (options.SkillDuels is int duelCount)
+            {
+                report.AppendLine();
+                report.AppendLine("## Duelos con habilidades (objetivo 7)");
+                report.AppendLine();
+                report.AppendLine("| Nivel | A | B | Gana A | Gana B | Empates | Duración media (s) | Máx. victorias |");
+                report.AppendLine("| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |");
+                for (int levelIndex = 0; levelIndex < options.Levels.Count; levelIndex++)
+                    for (int aIndex = 0; aIndex < classes.Classes!.Count; aIndex++)
+                        for (int bIndex = aIndex + 1; bIndex < classes.Classes.Count; bIndex++)
+                        {
+                            CharacterClass a = classes.Classes[aIndex];
+                            CharacterClass b = classes.Classes[bIndex];
+                            DuelSeriesResult duel = simulator.SimulateDuels(a.Id, b.Id,
+                                options.Levels[levelIndex], options.Build, options.Equipment, duelCount, 1);
+                            report.Append("| ").Append(options.Levels[levelIndex]).Append(" | ").Append(a.Name)
+                                .Append(" | ").Append(b.Name).Append(" | ").Append(duel.WinsA).Append(" | ")
+                                .Append(duel.WinsB).Append(" | ").Append(duel.Draws).Append(" | ")
+                                .Append(Format(duel.MeanSeconds)).Append(" | ").Append(Format(duel.MaxWinRate * 100))
+                                .AppendLine("% |");
+                        }
+            }
             return report.ToString();
         }
 
@@ -233,6 +287,8 @@ namespace Avelora.Balance
             public string? OutputFile { get; set; }
             public bool IncludeSkills { get; set; } = true;
             public bool IncludeDuels { get; set; }
+            public bool IncludeRotation { get; set; }
+            public int? SkillDuels { get; set; }
             public bool Help { get; set; }
         }
 

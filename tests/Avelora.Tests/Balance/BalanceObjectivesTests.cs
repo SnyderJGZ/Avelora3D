@@ -183,6 +183,51 @@ namespace Avelora.Tests.Balance
             Assert.Equal(0, simulator.SimulateDuel(1, 1, 1, "equilibrado", "franja").WinnerClassId);
         }
 
+        [Theory]
+        [InlineData(1)]
+        [InlineData(5)]
+        [InlineData(10)]
+        [InlineData(20)]
+        public void Objetivo_8_Rotacion(int level)
+        {
+            CombatSimulator simulator = Simulator();
+            foreach (int classId in ClassIds)
+            {
+                RotationResult rotation = simulator.MeasureRotation(classId, level, "equilibrado", "franja");
+                foreach (SkillShare skill in rotation.Skills)
+                {
+                    string status = skill.Percent < 10d || skill.Percent > 35d ? "FUERA DE BANDA" : "OK";
+                    _output.WriteLine("| {0} | {1} | {2} | {3} | {4:0.00}% | {5} |",
+                        level, classId, skill.Name, skill.Casts, skill.Percent, status);
+                    if (level == 20 && skill.SkillId == 4016)
+                    {
+                        // Lluvia de flechas: área medida contra un solo objetivo; con daño 40, arma 400 % y recarga 45 s (topes de §9.1) no llega al 10 %; decisión del usuario.
+                        Assert.InRange(skill.Percent, 8d, 35d);
+                    }
+                    else
+                    {
+                        Assert.InRange(skill.Percent, 10d, 35d);
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public void Objetivo_7_Duelos_Con_Habilidades_Informe()
+        {
+            CombatSimulator simulator = Simulator();
+            foreach (int level in new[] { 1, 5, 10, 20 })
+                for (int aIndex = 0; aIndex < ClassIds.Length; aIndex++)
+                    for (int bIndex = aIndex + 1; bIndex < ClassIds.Length; bIndex++)
+                    {
+                        DuelSeriesResult duel = simulator.SimulateDuels(ClassIds[aIndex], ClassIds[bIndex],
+                            level, "equilibrado", "franja", 200, 1);
+                        _output.WriteLine("| {0} | {1} | {2} | {3} | {4} | {5} | {6:0.00} | {7:0.00} |",
+                            level, ClassIds[aIndex], ClassIds[bIndex], duel.WinsA, duel.WinsB,
+                            duel.Draws, duel.MeanSeconds, duel.MaxWinRate);
+                    }
+        }
+
         private static ExpectedRow Expected(int level, string build)
         {
             if (level == 1 && build == "puro") return new ExpectedRow(

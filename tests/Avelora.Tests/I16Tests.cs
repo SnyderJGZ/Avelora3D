@@ -34,7 +34,7 @@ namespace Avelora.Tests
         }
 
         private const ushort WarriorSkill = 4001;
-        private const ushort MageSkill = 4002;
+        private const ushort MageSkill = 4008;
 
         private static string RepoFile(string name) => Path.Combine(AppContext.BaseDirectory, name);
 
@@ -268,7 +268,7 @@ namespace Avelora.Tests
         {
             SkillCatalog catalog = SkillCatalog.Load(RepoFile("skills.json"), ClassCatalog.Default);
 
-            Assert.Equal(10, catalog.Skills!.Count);
+            Assert.Equal(17, catalog.Skills!.Count);
             for (int classId = 1; classId <= 4; classId++)
             {
                 Assert.Contains(catalog.Skills, skill => skill.ClassId == classId);
@@ -431,9 +431,9 @@ namespace Avelora.Tests
             Use(zone, warrior, npc.Id, WarriorSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, warrior, 6 + 6 * 150 / 100, 50);
+            int expected = ExpectedDamage(zone.Classes, warrior, 10 + 6 * 180 / 100, 50);
             Assert.Equal(1000 - expected, npc.Health);
-            Assert.Equal(manaBefore - 30, warrior.Mana);
+            Assert.Equal(manaBefore - 25, warrior.Mana);
             Assert.Equal(new[] { WarriorSkill }, used);
             Assert.Equal(1, zone.SkillsUsed);
             Assert.Equal(warrior.Id, npc.LootOwnerId);
@@ -453,7 +453,7 @@ namespace Avelora.Tests
             Use(zone, mage, npc.Id, MageSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, mage, 5 + 8 * 100 / 100, 100);
+            int expected = ExpectedDamage(zone.Classes, mage, 6 + 8 * 150 / 100, 100);
             Assert.Equal(1000 - expected, npc.Health);
             Assert.Equal(CombatEventFlags.Ranged | CombatEventFlags.Magical, zone.CombatEvents[0].Flags);
         }

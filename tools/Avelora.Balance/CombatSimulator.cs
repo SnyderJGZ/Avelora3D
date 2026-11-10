@@ -115,6 +115,312 @@ namespace Avelora.Balance
             return new DuelResult(winner, first, secondsA, secondsB, ratio, expectedA, expectedB);
         }
 
+        /// <summary>Mide una rotación de daño de 180 segundos y el reparto por habilidad.</summary>
+        public RotationResult MeasureRotation(int classId, int level, string build, string equipment)
+        {
+            if (equipment != "ninguno" && equipment != "franja")
+                throw new ArgumentException("El equipo debe ser ninguno o franja.", nameof(equipment));
+            CharacterClass characterClass = _classes.Find(classId) ??
+                throw new InvalidOperationException("No existe la clase " + classId + " en classes.json.");
+            ushort[] equipped = CreateEquipment(characterClass, level, equipment);
+            (int str, int dex, int intelligence, int vit) allocation = Allocations(characterClass, level, build);
+            DerivedCharacterStats stats = GetStats(characterClass, level, allocation, equipment);
+            ItemType? weapon = _items.Find(equipped[(int)EquipSlot.Weapon]);
+            int basicDamage = CombatMath.GetAttackDamage(_classes, classId, level,
+                allocation.str, allocation.dex, allocation.intelligence, allocation.vit,
+                weapon?.Damage, out _, _items, equipped, weapon?.DamageType);
+            long basicCooldown = CombatMath.AttackCooldownTicks(
+                weapon?.CooldownSeconds ?? characterClass.Unarmed!.CooldownSeconds,
+                stats.HastePb, _classes.MinAttackTicks);
+            SkillAttack[] skills = GetSkillAttacks(classId, level, allocation.str, allocation.dex,
+                allocation.intelligence, allocation.vit, equipped);
+            long[] nextSkillTicks = new long[skills.Length];
+            long[] casts = new long[skills.Length];
+            double[] skillDamage = new double[skills.Length];
+            long nextBasicTick = 0;
+            long nextGlobalSkillTick = 0;
+            int mana = stats.MaxResource;
+            double basicTotal = 0;
+            double total = 0;
+            int totalTicks = 180 * SimulationConstants.TickRate;
+            for (int tick = 0; tick < totalTicks; tick++)
+            {
+                if (tick % SimulationConstants.TickRate == 0 && characterClass.Resource!.RegenPerSecond > 0)
+                    mana = Math.Min(stats.MaxResource, mana + characterClass.Resource.RegenPerSecond);
+                int best = -1;
+                for (int i = 0; i < skills.Length; i++)
+                {
+                    SkillDefinition skill = skills[i].Definition;
+                    if (tick < nextSkillTicks[i] || tick < nextGlobalSkillTick || mana < skill.ResourceCost)
+                        continue;
+                    if (best < 0 || skills[i].Priority > skills[best].Priority)
+                        best = i;
+                }
+                if (best >= 0)
+                {
+                    SkillDefinition skill = skills[best].Definition;
+                    mana -= skill.ResourceCost;
+                    nextSkillTicks[best] = tick + skill.CooldownTicks;
+                    nextGlobalSkillTick = tick + _skills.GlobalCooldownTicks;
+                    double damage = CombatMath.ExpectedSkillDamage(skills[best].Damage, skill.Hits,
+                        stats.CritChancePb, _classes.CritMultiplier, skill.CritBonus);
+                    total += damage;
+                    skillDamage[best] += damage;
+                    casts[best]++;
+                }
+                else if (tick >= nextBasicTick)
+                {
+                    double damage = CombatMath.ExpectedDamage(basicDamage, stats.CritChancePb,
+                        _classes.CritMultiplier);
+                    total += damage;
+                    basicTotal += damage;
+                    nextBasicTick = tick + basicCooldown;
+                }
+            }
+
+            var shares = new SkillShare[skills.Length];
+            for (int i = 0; i < skills.Length; i++)
+                shares[i] = new SkillShare(skills[i].Definition.Id, skills[i].Definition.Name,
+                    casts[i], skillDamage[i], total == 0 ? 0 : skillDamage[i] * 100d / total);
+            return new RotationResult(total, basicTotal, shares);
+        }
+
+        /// <summary>Simula duelos con crítico, habilidades de daño, curas y escudos.</summary>
+        public DuelSeriesResult SimulateDuels(int classA, int classB, int level, string build,
+            string equipment, int duels, int seed)
+        {
+            if (duels <= 0) throw new ArgumentOutOfRangeException(nameof(duels));
+            if (equipment != "ninguno" && equipment != "franja")
+                throw new ArgumentException("El equipo debe ser ninguno o franja.", nameof(equipment));
+            int winsA = 0;
+            int winsB = 0;
+            int draws = 0;
+            long healsA = 0;
+            long healsB = 0;
+            double totalSeconds = 0;
+            for (int duel = 0; duel < duels; duel++)
+            {
+                Random random = new Random(seed + duel);
+                Duelist a = CreateDuelist(classA, level, build, equipment);
+                Duelist b = CreateDuelist(classB, level, build, equipment);
+                int elapsed = 1200;
+                for (int tick = 0; tick < 1200 && a.Health > 0 && b.Health > 0; tick++)
+                {
+                    Regenerate(a, tick);
+                    Regenerate(b, tick);
+                    if ((duel & 1) == 0)
+                    {
+                        Act(a, b, tick, random);
+                        Act(b, a, tick, random);
+                    }
+                    else
+                    {
+                        Act(b, a, tick, random);
+                        Act(a, b, tick, random);
+                    }
+                    if (a.Health <= 0 || b.Health <= 0)
+                    {
+                        elapsed = tick + 1;
+                        break;
+                    }
+                }
+                healsA += a.Heals;
+                healsB += b.Heals;
+                totalSeconds += elapsed / (double)SimulationConstants.TickRate;
+                if (a.Health <= 0 && b.Health > 0) winsB++;
+                else if (b.Health <= 0 && a.Health > 0) winsA++;
+                else draws++;
+            }
+            return new DuelSeriesResult(winsA, winsB, draws,
+                totalSeconds / duels, (double)Math.Max(winsA, winsB) / duels, healsA, healsB);
+        }
+
+        private Duelist CreateDuelist(int classId, int level, string build, string equipment)
+        {
+            CharacterClass characterClass = _classes.Find(classId) ??
+                throw new InvalidOperationException("No existe la clase " + classId + " en classes.json.");
+            ushort[] equipped = CreateEquipment(characterClass, level, equipment);
+            (int str, int dex, int intelligence, int vit) allocation = Allocations(characterClass, level, build);
+            DerivedCharacterStats stats = GetStats(characterClass, level, allocation, equipment);
+            ItemType? weapon = _items.Find(equipped[(int)EquipSlot.Weapon]);
+            int basicDamage = CombatMath.GetAttackDamage(_classes, classId, level,
+                allocation.str, allocation.dex, allocation.intelligence, allocation.vit,
+                weapon?.Damage, out string basicType, _items, equipped, weapon?.DamageType);
+            long basicCooldown = CombatMath.AttackCooldownTicks(
+                weapon?.CooldownSeconds ?? characterClass.Unarmed!.CooldownSeconds,
+                stats.HastePb, _classes.MinAttackTicks);
+            var skills = new List<SkillDefinition>();
+            var damages = new List<int>();
+            var shields = new List<int>();
+            for (int i = 0; i < _skills.Skills!.Count; i++)
+            {
+                SkillDefinition skill = _skills.Skills[i];
+                if (skill.ClassId != classId || skill.RequiredLevel > level) continue;
+                int raw = CombatMath.GetSkillAmount(_classes, classId, level, allocation.str,
+                    allocation.dex, allocation.intelligence, allocation.vit, skill.Damage,
+                    skill.WeaponPercent, weapon?.Damage, _items, equipped);
+                int shield = skill.StatusKind == StatusKind.Shield
+                    ? CombatMath.GetSkillAmount(_classes, classId, level, allocation.str, allocation.dex,
+                        allocation.intelligence, allocation.vit, skill.StatusAmount, skill.WeaponPercent,
+                        weapon?.Damage, _items, equipped)
+                    : 0;
+                skills.Add(skill);
+                damages.Add(raw);
+                shields.Add(shield);
+            }
+            return new Duelist(characterClass, stats, basicDamage, basicType, basicCooldown,
+                skills.ToArray(), damages.ToArray(), shields.ToArray());
+        }
+
+        private static void Regenerate(Duelist fighter, int tick)
+        {
+            if (tick % SimulationConstants.TickRate == 0 && fighter.Class.Resource!.RegenPerSecond > 0)
+                fighter.Resource = Math.Min(fighter.Stats.MaxResource,
+                    fighter.Resource + fighter.Class.Resource.RegenPerSecond);
+            if (fighter.ShieldUntil <= tick) fighter.Shield = 0;
+        }
+
+        private void Act(Duelist attacker, Duelist target, int tick, Random random)
+        {
+            if (attacker.Health <= 0 || target.Health <= 0) return;
+            int selected = -1;
+            if (attacker.Health * 2 < attacker.Stats.MaxHealth)
+            {
+                for (int i = 0; i < attacker.Skills.Length; i++)
+                {
+                    SkillDefinition skill = attacker.Skills[i];
+                    if (!skill.IsHeal || !Ready(attacker, skill, i, tick)) continue;
+                    if (selected < 0 || attacker.DamageAmounts[i] > attacker.DamageAmounts[selected]) selected = i;
+                }
+                if (selected >= 0)
+                {
+                    SkillDefinition skill = attacker.Skills[selected];
+                    int amount = RollCrit(attacker.DamageAmounts[selected], attacker.Stats.CritChancePb,
+                        _classes.CritMultiplier + skill.CritBonus, random);
+                    attacker.Health = Math.Min(attacker.Stats.MaxHealth, attacker.Health + amount);
+                    attacker.Heals++;
+                    if (skill.StatusKind == StatusKind.Shield)
+                    {
+                        attacker.Shield = attacker.ShieldAmounts[selected];
+                        attacker.ShieldUntil = tick + skill.StatusTicks;
+                    }
+                    StartDuelCooldown(attacker, skill, selected, tick);
+                    return;
+                }
+            }
+
+            if (attacker.Shield <= 0)
+            {
+                for (int i = 0; i < attacker.Skills.Length; i++)
+                {
+                    SkillDefinition skill = attacker.Skills[i];
+                    if (skill.StatusKind != StatusKind.Shield || !Ready(attacker, skill, i, tick)) continue;
+                    if (selected < 0 || attacker.ShieldAmounts[i] > attacker.ShieldAmounts[selected]) selected = i;
+                }
+                if (selected >= 0)
+                {
+                    SkillDefinition skill = attacker.Skills[selected];
+                    attacker.Shield = attacker.ShieldAmounts[selected];
+                    attacker.ShieldUntil = tick + skill.StatusTicks;
+                    StartDuelCooldown(attacker, skill, selected, tick);
+                    return;
+                }
+            }
+
+            selected = -1;
+            double bestPriority = double.NegativeInfinity;
+            for (int i = 0; i < attacker.Skills.Length; i++)
+            {
+                SkillDefinition skill = attacker.Skills[i];
+                if (!skill.IsDamage || !Ready(attacker, skill, i, tick)) continue;
+                double priority = skill.ResourceCost == 0 ? double.PositiveInfinity :
+                    CombatMath.ExpectedSkillDamage(attacker.DamageAmounts[i], skill.Hits, 0, 100, 0) / skill.ResourceCost;
+                if (selected < 0 || priority > bestPriority)
+                {
+                    selected = i;
+                    bestPriority = priority;
+                }
+            }
+            if (selected >= 0)
+            {
+                SkillDefinition skill = attacker.Skills[selected];
+                StartDuelCooldown(attacker, skill, selected, tick);
+                for (int hit = 0; hit < skill.Hits && target.Health > 0; hit++)
+                    DealDuelDamage(attacker, target, attacker.DamageAmounts[selected], skill.DamageType,
+                        _classes.CritMultiplier + skill.CritBonus, random);
+                return;
+            }
+
+            if (tick >= attacker.NextBasicTick)
+            {
+                DealDuelDamage(attacker, target, attacker.BasicDamage, attacker.BasicDamageType,
+                    _classes.CritMultiplier, random);
+                attacker.NextBasicTick = tick + attacker.BasicCooldown;
+            }
+        }
+
+        private static bool Ready(Duelist fighter, SkillDefinition skill, int index, int tick) =>
+            fighter.Resource >= skill.ResourceCost && tick >= fighter.GlobalReadyTick &&
+            tick >= fighter.SkillReadyTicks[index];
+
+        private void StartDuelCooldown(Duelist fighter, SkillDefinition skill, int index, int tick)
+        {
+            fighter.Resource -= skill.ResourceCost;
+            fighter.SkillReadyTicks[index] = tick + skill.CooldownTicks;
+            fighter.GlobalReadyTick = tick + _skills!.GlobalCooldownTicks;
+        }
+
+        private void DealDuelDamage(Duelist attacker, Duelist target, int rawDamage, string damageType,
+            int critMultiplier, Random random)
+        {
+            int damage = RollCrit(rawDamage, attacker.Stats.CritChancePb, critMultiplier, random);
+            int defense = damageType == "physical" ? target.Stats.Defense : target.Stats.MagicResist;
+            damage = CombatMath.PvpDamage(CombatMath.MitigateDamage(damage, defense), _classes.PvpDamagePercent);
+            int absorbed = Math.Min(target.Shield, damage);
+            target.Shield -= absorbed;
+            target.Health = Math.Max(0, target.Health - (damage - absorbed));
+        }
+
+        private static int RollCrit(int damage, int critChancePb, int multiplier, Random random) =>
+            critChancePb > 0 && random.Next(10000) < critChancePb
+                ? CombatMath.CritDamage(damage, multiplier) : damage;
+
+        private sealed class Duelist
+        {
+            public Duelist(CharacterClass characterClass, DerivedCharacterStats stats, int basicDamage,
+                string basicDamageType, long basicCooldown, SkillDefinition[] skills,
+                int[] damageAmounts, int[] shieldAmounts)
+            {
+                Class = characterClass;
+                Stats = stats;
+                Health = stats.MaxHealth;
+                Resource = stats.MaxResource;
+                BasicDamage = basicDamage;
+                BasicDamageType = basicDamageType;
+                BasicCooldown = basicCooldown;
+                Skills = skills;
+                DamageAmounts = damageAmounts;
+                ShieldAmounts = shieldAmounts;
+                SkillReadyTicks = new long[skills.Length];
+            }
+            public CharacterClass Class { get; }
+            public DerivedCharacterStats Stats { get; }
+            public int Health { get; set; }
+            public int Resource { get; set; }
+            public int BasicDamage { get; }
+            public string BasicDamageType { get; }
+            public long BasicCooldown { get; }
+            public long NextBasicTick { get; set; }
+            public SkillDefinition[] Skills { get; }
+            public int[] DamageAmounts { get; }
+            public int[] ShieldAmounts { get; }
+            public long[] SkillReadyTicks { get; }
+            public long GlobalReadyTick { get; set; }
+            public int Shield { get; set; }
+            public long ShieldUntil { get; set; }
+            public int Heals { get; set; }
+        }
+
         private int GetDuelDamage(CharacterClass attacker, int level,
             (int str, int dex, int intelligence, int vit) allocation, string equipment, out long cooldown)
         {
@@ -248,7 +554,7 @@ namespace Avelora.Balance
                 string damageType = skill.DamageType;
                 double priority = skill.ResourceCost == 0
                     ? double.PositiveInfinity
-                    : (double)damage / skill.ResourceCost;
+                    : CombatMath.ExpectedSkillDamage(damage, skill.Hits, 0, 100, 0) / skill.ResourceCost;
                 attacks[index++] = new SkillAttack(skill, damage, damageType, priority);
             }
             return attacks;
@@ -289,7 +595,9 @@ namespace Avelora.Balance
                     mana -= skill.ResourceCost;
                     nextSkillTicks[best] = tick + skill.CooldownTicks;
                     nextGlobalSkillTick = tick + globalCooldownTicks;
-                    totalDamage += CombatMath.ExpectedDamage(skills[best].Damage, critChancePb, multiplierPercent);
+                    totalDamage += CombatMath.ExpectedSkillDamage(skills[best].Damage,
+                        skills[best].Definition.Hits, critChancePb, multiplierPercent,
+                        skills[best].Definition.CritBonus);
                 }
                 else if (tick >= nextBasicTick)
                 {
@@ -332,6 +640,7 @@ namespace Avelora.Balance
 
                 int outgoingDamage = 0;
                 string outgoingType = basicDamageType;
+                SkillAttack? outgoingSkill = null;
                 if (selected >= 0)
                 {
                     SkillAttack attack = skills[selected];
@@ -340,6 +649,7 @@ namespace Avelora.Balance
                     nextGlobalSkillTick = tick + globalCooldownTicks;
                     outgoingDamage = attack.Damage;
                     outgoingType = attack.DamageType;
+                    outgoingSkill = attack;
                 }
                 else if (tick >= nextBasicTick)
                 {
@@ -350,8 +660,11 @@ namespace Avelora.Balance
                 if (outgoingDamage > 0)
                 {
                     int defense = outgoingType == "physical" ? npc.Defense : npc.MagicResist;
-                    npcHealth -= CombatMath.ExpectedHit(outgoingDamage, stats.CritChancePb,
-                        _classes.CritMultiplier, defense);
+                    npcHealth -= outgoingSkill is SkillAttack skillAttack
+                        ? skillAttack.Definition.Hits * CombatMath.ExpectedHit(outgoingDamage,
+                            stats.CritChancePb, _classes.CritMultiplier + skillAttack.Definition.CritBonus, defense)
+                        : CombatMath.ExpectedHit(outgoingDamage, stats.CritChancePb,
+                            _classes.CritMultiplier, defense);
                     if (npcHealth <= 0)
                     {
                         elapsedTicks = tick + 1;
@@ -462,6 +775,76 @@ namespace Avelora.Balance
         public double ExpectedHitA { get; }
         /// <summary>Daño esperado de B por golpe.</summary>
         public double ExpectedHitB { get; }
+    }
+
+    /// <summary>Daño total y contribución de cada habilidad durante una rotación.</summary>
+    public sealed class RotationResult
+    {
+        internal RotationResult(double totalDamage, double basicDamage, IReadOnlyList<SkillShare> skills)
+        {
+            TotalDamage = totalDamage;
+            BasicDamage = basicDamage;
+            Skills = skills;
+        }
+        /// <summary>Daño total de ataques básicos y habilidades.</summary>
+        public double TotalDamage { get; }
+        /// <summary>Daño de los ataques básicos.</summary>
+        public double BasicDamage { get; }
+        /// <summary>Daño y número de lanzamientos por habilidad desbloqueada.</summary>
+        public IReadOnlyList<SkillShare> Skills { get; }
+    }
+
+    /// <summary>Contribución de una habilidad al daño de la rotación.</summary>
+    public sealed class SkillShare
+    {
+        internal SkillShare(int skillId, string name, long casts, double damage, double percent)
+        {
+            SkillId = skillId;
+            Name = name;
+            Casts = casts;
+            Damage = damage;
+            Percent = percent;
+        }
+        /// <summary>Identificador de habilidad.</summary>
+        public int SkillId { get; }
+        /// <summary>Nombre declarado en el catálogo.</summary>
+        public string Name { get; }
+        /// <summary>Cantidad de lanzamientos en la ventana medida.</summary>
+        public long Casts { get; }
+        /// <summary>Daño esperado aportado por esta habilidad.</summary>
+        public double Damage { get; }
+        /// <summary>Porcentaje del daño total de la rotación.</summary>
+        public double Percent { get; }
+    }
+
+    /// <summary>Resultados agregados de una serie de duelos simulados.</summary>
+    public sealed class DuelSeriesResult
+    {
+        internal DuelSeriesResult(int winsA, int winsB, int draws, double meanSeconds,
+            double maxWinRate, long healsA, long healsB)
+        {
+            WinsA = winsA;
+            WinsB = winsB;
+            Draws = draws;
+            MeanSeconds = meanSeconds;
+            MaxWinRate = maxWinRate;
+            HealsA = healsA;
+            HealsB = healsB;
+        }
+        /// <summary>Victorias del combatiente A.</summary>
+        public int WinsA { get; }
+        /// <summary>Victorias del combatiente B.</summary>
+        public int WinsB { get; }
+        /// <summary>Duelos terminados en empate al alcanzar 60 segundos.</summary>
+        public int Draws { get; }
+        /// <summary>Duración media, incluidos los empates de 60 segundos.</summary>
+        public double MeanSeconds { get; }
+        /// <summary>Mayor proporción de victorias entre A y B.</summary>
+        public double MaxWinRate { get; }
+        /// <summary>Curas lanzadas por A.</summary>
+        public long HealsA { get; }
+        /// <summary>Curas lanzadas por B.</summary>
+        public long HealsB { get; }
     }
 
     /// <summary>Tiempo hasta derrotar un PNJ y porcentaje de vida perdido por el jugador.</summary>

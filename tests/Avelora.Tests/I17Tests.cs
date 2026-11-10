@@ -158,7 +158,7 @@ namespace Avelora.Tests
         public void Catalogo_Del_Repo_Tiene_Area_Y_Cura()
         {
             var c = SkillCatalog.Load(Path.Combine(AppContext.BaseDirectory, "skills.json"), ClassCatalog.Default);
-            Assert.Equal(10, c.Skills!.Count);
+            Assert.Equal(17, c.Skills!.Count);
             Assert.Equal(2.5f, c.Find(4005)!.Radius);
             Assert.Equal(6, c.Find(4005)!.MaxTargets);
             Assert.True(c.Find(4006)!.IsHeal);

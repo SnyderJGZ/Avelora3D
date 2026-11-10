@@ -2411,7 +2411,7 @@ namespace Avelora.Shared.Protocol
                 throw new ArgumentException("El nombre del recurso supera " + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
             }
 
-            int size = 1 + 2 + resourceNameBytes + 1;
+            int size = 1 + 2 + resourceNameBytes + 2 + 1;
             for (int i = 0; i < skills.Length; i++)
             {
                 SkillCatalogEntry skill = skills[i];
@@ -2431,6 +2431,12 @@ namespace Avelora.Shared.Protocol
                 {
                     throw new ArgumentOutOfRangeException(nameof(message), "cooldownTicks no puede ser 0.");
                 }
+                if (skill.Hits == 0 || skill.Hits > 5)
+                    throw new ArgumentOutOfRangeException(nameof(message), "hits debe estar entre 1 y 5.");
+                if (skill.AreaCenter > 1)
+                    throw new ArgumentOutOfRangeException(nameof(message), "areaCenter debe ser 0 (objetivo) o 1 (lanzador).");
+                if (skill.CritBonus > 500)
+                    throw new ArgumentOutOfRangeException(nameof(message), "critBonus debe estar entre 0 y 500.");
                 if (float.IsNaN(skill.Range) || float.IsInfinity(skill.Range) || skill.Range <= 0f)
                 {
                     throw new ArgumentOutOfRangeException(nameof(message), "range debe ser finito y > 0.");
@@ -2448,7 +2454,7 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentException("El nombre de la habilidad debe ocupar 1.." + ProtocolConstants.MaxSkillNameBytes + " bytes UTF-8.", nameof(message));
                 }
 
-                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 1 + 4 + 1 + 2 + 2 + 2 + nameBytes;
+                size += 2 + 1 + 1 + 2 + 2 + 4 + 2 + 1 + 4 + 1 + 2 + 2 + 1 + 1 + 2 + 2 + nameBytes;
             }
 
             if (size > ProtocolConstants.MaxMessageSize)
@@ -2460,6 +2466,7 @@ namespace Avelora.Shared.Protocol
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.SkillCatalog);
             writer.WriteString(message.ResourceName, ProtocolConstants.MaxSkillNameBytes);
+            writer.WriteUInt16(message.GlobalCooldownTicks);
             writer.WriteByte((byte)skills.Length);
 
             for (int i = 0; i < skills.Length; i++)
@@ -2477,6 +2484,9 @@ namespace Avelora.Shared.Protocol
                 writer.WriteByte((byte)skill.StatusKind);
                 writer.WriteUInt16(skill.StatusTicks);
                 writer.WriteUInt16(skill.StatusAmount);
+                writer.WriteByte(skill.Hits);
+                writer.WriteByte(skill.AreaCenter);
+                writer.WriteUInt16(skill.CritBonus);
                 writer.WriteString(skill.Name, ProtocolConstants.MaxSkillNameBytes);
             }
 
@@ -2502,6 +2512,8 @@ namespace Avelora.Shared.Protocol
                     return false;
                 }
 
+                ushort globalCooldownTicks = reader.ReadUInt16();
+
                 int count = reader.ReadByte();
                 if (count > ProtocolConstants.MaxSkillsPerClass)
                 {
@@ -2523,6 +2535,9 @@ namespace Avelora.Shared.Protocol
                     StatusKind statusKind = (StatusKind)reader.ReadByte();
                     ushort statusTicks = reader.ReadUInt16();
                     ushort statusAmount = reader.ReadUInt16();
+                    byte hits = reader.ReadByte();
+                    byte areaCenter = reader.ReadByte();
+                    ushort critBonus = reader.ReadUInt16();
                     string name = reader.ReadString(ProtocolConstants.MaxSkillNameBytes);
 
                     if (effect > 2 || float.IsNaN(radius) || float.IsInfinity(radius) || radius < 0f ||
@@ -2530,6 +2545,7 @@ namespace Avelora.Shared.Protocol
                         (statusKind == StatusKind.None && (statusTicks != 0 || statusAmount != 0)) ||
                         (statusKind != StatusKind.None && statusTicks == 0) ||
                         (effect == 2 && statusKind == StatusKind.None) ||
+                        hits == 0 || hits > 5 || areaCenter > 1 || critBonus > 500 ||
                         id == 0 || requiredLevel == 0 || damageType > 1 || cooldownTicks == 0 ||
                         float.IsNaN(range) || float.IsInfinity(range) || range <= 0f ||
                         string.IsNullOrEmpty(name))
@@ -2538,7 +2554,8 @@ namespace Avelora.Shared.Protocol
                     }
 
                     skills[i] = new SkillCatalogEntry(id, requiredLevel, damageType, resourceCost, cooldownTicks,
-                        range, damage, name, effect, radius, statusKind, statusTicks, statusAmount);
+                        range, damage, name, effect, radius, statusKind, statusTicks, statusAmount,
+                        hits, areaCenter, critBonus);
                 }
 
                 if (reader.Remaining != 0)
@@ -2546,7 +2563,7 @@ namespace Avelora.Shared.Protocol
                     return false;
                 }
 
-                message = new SkillCatalogMessage(resourceName, skills);
+                message = new SkillCatalogMessage(resourceName, skills, globalCooldownTicks);
                 return true;
             }
             catch (ProtocolException)

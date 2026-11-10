@@ -135,6 +135,11 @@ namespace Avelora.Server.Progression
         public static double ExpectedDamage(int rawDamage, int critChancePb, int multiplierPercent) =>
             rawDamage + critChancePb / 10000.0 * (CritDamage(rawDamage, multiplierPercent) - rawDamage);
 
+        /// <summary>Calcula el daño esperado total de una habilidad de varios golpes.</summary>
+        public static double ExpectedSkillDamage(int rawDamage, int hits, int critChancePb,
+            int multiplierPercent, int critBonus) =>
+            hits * ExpectedDamage(rawDamage, critChancePb, multiplierPercent + critBonus);
+
         /// <summary>Calcula el daño esperado de un golpe tras mitigación y, si procede, reducción PvP.</summary>
         public static double ExpectedHit(int rawDamage, int critChancePb, int multiplierPercent,
             int defense, int pvpPercent = 100)
