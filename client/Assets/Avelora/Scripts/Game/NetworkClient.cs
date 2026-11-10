@@ -124,6 +124,7 @@ namespace Avelora.Client
             public Vector3 Center;
             public float Radius;
             public float StartTime;
+            public Color Color;
         }
 
         private struct DamageNumber
@@ -192,6 +193,7 @@ namespace Avelora.Client
         private ZoneKind _zoneKind = ZoneKind.Normal;
         private SkillCatalogMessage _skillCatalog;
         private bool _skillCatalogReceived;
+        private int[] _skillDisplayOrder = new int[0];
         private readonly StatusEffectEntry[] _ownStatuses = new StatusEffectEntry[ProtocolConstants.MaxStatusEffects];
         private int _ownStatusCount;
         private float _ownStatusReceivedAt;
@@ -942,6 +944,13 @@ namespace Avelora.Client
                 ShowHint("nivel insuficiente");
                 return;
             }
+            if (skill.AreaCenter == 1 || (skill.Effect == 1 && skill.Radius > 0f))
+            {
+                if (!SkillReady(skill)) return;
+                byte[] selfBytes = MessageCodec.EncodeUseSkill(new UseSkillMessage(skill.Id, _entityId));
+                _transport.Send(selfBytes, selfBytes.Length, DeliveryMode.ReliableOrdered);
+                return;
+            }
             if (IsFriendly(skill) && (target == null || target.Kind != EntityKind.Player))
             {
                 if (!SkillReady(skill)) return;
@@ -975,7 +984,7 @@ namespace Avelora.Client
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
         }
 
-        private static bool IsFriendly(SkillCatalogEntry skill) => skill.Effect == 1 ||
+        private static bool IsFriendly(SkillCatalogEntry skill) => skill.AreaCenter == 1 || skill.Effect == 1 ||
             skill.StatusKind == StatusKind.Bonus || skill.StatusKind == StatusKind.Shield;
 
         private bool SkillReady(SkillCatalogEntry skill)
@@ -1543,6 +1552,7 @@ namespace Avelora.Client
                     {
                         _skillCatalog = skillCatalog;
                         _skillCatalogReceived = true;
+                        RemoveMissingSkillShortcuts();
                     }
                     break;
 
@@ -1596,6 +1606,11 @@ namespace Avelora.Client
                                 Center = center,
                                 Radius = entry.Radius,
                                 StartTime = Time.unscaledTime,
+                                Color = entry.Effect == 1
+                                    ? new Color(0.45f, 1f, 0.55f)
+                                    : entry.Effect == 0 && entry.AreaCenter == 1
+                                        ? new Color(1f, 0.35f, 0.3f)
+                                        : new Color(1f, 0.55f, 0.2f),
                             });
                         }
                     }
@@ -1682,6 +1697,20 @@ namespace Avelora.Client
 
             position = default;
             return false;
+        }
+
+        private void RemoveMissingSkillShortcuts()
+        {
+            bool changed = false;
+            for (int i = 0; i < _hotbar.Length; i++)
+            {
+                HotbarShortcut shortcut = _hotbar[i];
+                if (shortcut.Kind != ShortcutKind.Skill || TryGetSkill(shortcut.Id, out _)) continue;
+                _hotbar[i] = default;
+                changed = true;
+            }
+
+            if (changed) SaveHotbar();
         }
 
         private void UpdateCombatProjectiles()

@@ -486,7 +486,9 @@ namespace Avelora.Client
             for (int i = 0; i < _areaFlashes.Count; i++)
             {
                 AreaFlash flash = _areaFlashes[i];
-                GUI.color = new Color(1f, 0.55f, 0.2f, 1f - (now - flash.StartTime) / 0.35f);
+                Color flashColor = flash.Color;
+                flashColor.a = 1f - (now - flash.StartTime) / 0.35f;
+                GUI.color = flashColor;
                 for (int k = 0; k < 24; k++)
                 {
                     float a = k * 2f * Mathf.PI / 24f;
@@ -1038,9 +1040,23 @@ namespace Avelora.Client
             int count = skills == null ? 0 : skills.Length;
             float rowHeight = count == 0 ? 48f : Mathf.Min(48f, (content.height - 30f) / count);
             Event e = Event.current;
+            if (_skillDisplayOrder.Length != count) _skillDisplayOrder = new int[count];
+            for (int i = 0; i < count; i++) _skillDisplayOrder[i] = i;
+            for (int i = 1; i < count; i++)
+            {
+                int index = _skillDisplayOrder[i];
+                int j = i - 1;
+                while (j >= 0 && skills[_skillDisplayOrder[j]].RequiredLevel > skills[index].RequiredLevel)
+                {
+                    _skillDisplayOrder[j + 1] = _skillDisplayOrder[j];
+                    j--;
+                }
+                _skillDisplayOrder[j + 1] = index;
+            }
+
             for (int i = 0; i < count; i++)
             {
-                SkillCatalogEntry skill = skills[i];
+                SkillCatalogEntry skill = skills[_skillDisplayOrder[i]];
                 var row = new Rect(content.x, content.y + i * rowHeight, content.width, rowHeight);
                 Color previous = GUI.color;
                 bool locked = skill.RequiredLevel > _level;
@@ -1048,9 +1064,11 @@ namespace Avelora.Client
                 GUI.Label(new Rect(row.x, row.y, row.width * 0.34f, row.height),
                     skill.Name + " · " + SkillKindText(skill), _darkSmallStyle);
                 GUI.Label(new Rect(row.x + row.width * 0.34f, row.y, row.width * 0.3f, row.height),
-                    "Coste " + skill.ResourceCost + " " + _skillCatalog.ResourceName, _darkSmallStyle);
+                    locked ? "Se desbloquea a nivel " + skill.RequiredLevel
+                        : "Coste " + skill.ResourceCost + " " + _skillCatalog.ResourceName, _darkSmallStyle);
                 GUI.Label(new Rect(row.x + row.width * 0.64f, row.y, row.width * 0.24f, row.height),
                     "Recarga " + (skill.CooldownTicks / (float)SimulationConstants.TickRate).ToString("0.#") + " s", _darkSmallStyle);
+                if (locked) GUI.color = new Color(0.85f, 0.4f, 0.4f);
                 GUI.Label(new Rect(row.x + row.width * 0.88f, row.y, row.width * 0.12f, row.height),
                     "Nv " + skill.RequiredLevel, _darkSmallStyle);
                 GUI.color = previous;
@@ -1068,14 +1086,21 @@ namespace Avelora.Client
 
         private static string SkillKindText(SkillCatalogEntry skill)
         {
-            string kind = skill.Effect == 1 ? "cura"
+            string radius = skill.Radius.ToString("0.#");
+            string kind = skill.Effect == 1 && skill.Radius > 0f ? "cura en área " + radius + " m"
+                : skill.Effect == 0 && skill.AreaCenter == 1 ? "área " + radius + " m a tu alrededor"
+                : skill.Effect == 1 ? "cura"
                 : skill.Effect == 2 ? string.Empty
-                : skill.Radius > 0f ? "área " + skill.Radius.ToString("0.#") + " m"
+                : skill.Radius > 0f ? "área " + radius + " m"
                 : "un objetivo";
             string status = StatusText(skill);
-            if (kind.Length == 0) return status;
-            if (status.Length == 0) return kind;
-            return kind + " + " + status;
+            if (skill.Effect == 2 && skill.AreaCenter == 1 && status.Length > 0) status += " (a ti)";
+            string text = kind.Length == 0 ? status
+                : status.Length == 0 ? kind
+                : kind + " + " + status;
+            if (skill.Hits > 1) text += " · " + skill.Hits + " golpes";
+            if (skill.CritBonus > 0) text += " · crít. +" + skill.CritBonus + " %";
+            return text;
         }
 
         private static string StatusText(SkillCatalogEntry skill)
