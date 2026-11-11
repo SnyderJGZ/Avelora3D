@@ -56,6 +56,9 @@ namespace Avelora.Net
         /// <summary>Conexiones abiertas ahora mismo.</summary>
         int ConnectionCount { get; }
 
+        /// <summary>Dirección IP remota de una conexión abierta, o cadena vacía si no existe.</summary>
+        string GetRemoteAddress(int connectionId);
+
         /// <summary>Abre el socket y empieza a escuchar.</summary>
         void Start(int port);
 

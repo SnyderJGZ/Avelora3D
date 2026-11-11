@@ -190,7 +190,11 @@ namespace Avelora.Tests
 
             try
             {
-                using var harness = new Harness(repository, config => config.MaxPendingLogins = 1);
+                using var harness = new Harness(repository, config =>
+                {
+                    config.MaxPendingLogins = 1;
+                    config.MaxPendingLoginsPerIp = 1;
+                });
 
                 harness.Connect(1);
                 harness.Handshake(1, "cuenta1");
@@ -267,6 +271,117 @@ namespace Avelora.Tests
                 Assert.True(harness.HasWelcome(4));
                 Assert.Equal(1, harness.Zone.Entities.Count);
                 Assert.Equal(1, harness.Server.Snapshot().LoginsSucceeded);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Una_IP_No_Pasa_Del_Tope_De_Logins_En_Vuelo_Aunque_Cambie_De_Cuenta()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository, config => config.MaxPendingLoginsPerIp = 2);
+
+                for (int id = 1; id <= 3; id++)
+                {
+                    harness.Transport.Addresses[id] = "10.1.1.1";
+                    harness.Connect(id);
+                    harness.Handshake(id, "aa" + id);
+                }
+
+                harness.Server.PollOnce();
+
+                Assert.True(repository.Started.Wait(5_000), "El login de la primera conexión no arrancó.");
+                Assert.True(harness.HasReject(3, out RejectMessage reject));
+                Assert.Equal(RejectReason.RateLimited, reject.Reason);
+                Assert.DoesNotContain("aa3", repository.Accounts);
+
+                repository.Gate.Set();
+                harness.Pump(1);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Otra_IP_Entra_Con_La_Primera_En_El_Tope()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository, config => config.MaxPendingLoginsPerIp = 2);
+
+                harness.Transport.Addresses[1] = "10.1.1.1";
+                harness.Transport.Addresses[2] = "10.1.1.1";
+                harness.Transport.Addresses[3] = "10.2.2.2";
+                harness.Connect(1);
+                harness.Handshake(1, "aa1");
+                harness.Connect(2);
+                harness.Handshake(2, "aa2");
+                harness.Connect(3);
+                harness.Handshake(3, "aa3");
+                harness.Server.PollOnce();
+
+                Assert.True(repository.Started.Wait(5_000), "El login de la primera conexión no arrancó.");
+                Assert.False(harness.HasReject(3, out _));
+
+                repository.Gate.Set();
+                harness.Pump(3);
+                Assert.Contains("aa3", repository.Accounts);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
+        public void El_Hueco_Por_IP_Se_Libera_Al_Recoger_El_Resultado()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository, config => config.MaxPendingLoginsPerIp = 1);
+
+                harness.Transport.Addresses[1] = "10.1.1.1";
+                harness.Connect(1);
+                harness.Handshake(1, "aa1");
+                harness.Server.PollOnce();
+                Assert.True(repository.Started.Wait(5_000), "El login de la primera conexión no arrancó.");
+
+                harness.Transport.RaiseDisconnected(1);
+                harness.Transport.Addresses[2] = "10.1.1.1";
+                harness.Connect(2);
+                harness.Handshake(2, "aa2");
+                harness.Server.PollOnce();
+                Assert.True(harness.HasReject(2, out RejectMessage reject));
+                Assert.Equal(RejectReason.RateLimited, reject.Reason);
+
+                // Este login de otra IP permite esperar a que el hilo procese también el resultado
+                // de la conexión desconectada antes de comprobar que se liberó su hueco.
+                repository.Gate.Set();
+                harness.Transport.Addresses[3] = "10.2.2.2";
+                harness.Connect(3);
+                harness.Handshake(3, "aa3");
+                harness.Pump(3);
+
+                harness.Transport.Addresses[4] = "10.1.1.1";
+                harness.Connect(4);
+                harness.Handshake(4, "aa4");
+                harness.Pump(4);
+                Assert.False(harness.HasReject(4, out _));
             }
             finally
             {
@@ -1070,9 +1185,14 @@ namespace Avelora.Tests
 
             public List<int> DisconnectedConnections { get; } = new List<int>();
 
+            public Dictionary<int, string> Addresses { get; } = new Dictionary<int, string>();
+
             public int Port => 0;
 
             public int ConnectionCount => 0;
+
+            public string GetRemoteAddress(int connectionId) =>
+                Addresses.TryGetValue(connectionId, out string? address) ? address : "10.0.0." + connectionId;
 
             public event TransportConnectedHandler? Connected;
 

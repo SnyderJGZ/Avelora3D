@@ -800,6 +800,9 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 - **`maxPendingLogins` (16)** es el tope de logins *en vuelo*: los que esperan en la cola **y** el
   que se está calculando. Al llenarse, el saludo se rechaza con `RateLimited` sin gastar PBKDF2.
   El hueco solo se libera cuando la red recoge el resultado, así que **desconectar no lo libera**.
+- **`maxPendingLoginsPerIp` (2)** limita los logins *en vuelo* desde una misma IP. Al superar el
+  tope, el saludo se rechaza con `RateLimited` sin gastar PBKDF2; el hueco se libera al recoger el
+  resultado y desconectar no lo libera.
 - **`maxFailedLoginsPerAccountPerMinute` (5)**: los `InvalidCredentials` se cuentan por cuenta y
   minuto. Agotado el tope, los siguientes saludos de esa cuenta se rechazan con `RateLimited` sin
   comprobar la contraseña. Al cambiar de minuto se tira la ventana anterior. Desde H-01 el nombre se
@@ -859,6 +862,7 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 | `registrationInvitationCode` | **vacío** (H-01) | Código para crear cuentas. Vacío cierra el registro. `server.json` y `server-carga.json` lo fijan a `avelora-dev`. |
 | `saveIntervalSeconds` | **60** | Segundos entre guardados periódicos; debe ser positivo. |
 | `maxPendingLogins` | **16** | Logins en vuelo (cola + cálculo) antes de responder `RateLimited`. |
+| `maxPendingLoginsPerIp` | **2** (H-03) | Logins en vuelo desde una misma IP; entre 1 y `maxPendingLogins`. `server-carga.json` lo sube a 16. |
 | `maxFailedLoginsPerAccountPerMinute` | **5** | Fallos de contraseña por cuenta y minuto. |
 | `maxCharactersPerAccount` | **3** | Personajes vivos por cuenta, entre 1 y 10. |
 | `characterSelectTimeoutSeconds` | **300** | Tiempo máximo en la pantalla de selección; al vencer se cierra con `Timeout`. |

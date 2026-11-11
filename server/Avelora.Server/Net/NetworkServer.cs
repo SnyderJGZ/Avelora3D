@@ -93,6 +93,9 @@ namespace Avelora.Server.Net
         /// </summary>
         private readonly Dictionary<string, int> _loginsInFlightPerAccount =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Se liberan al recoger el resultado, incluso si la conexión ya se desconectó.
+        private readonly Dictionary<string, int> _loginsInFlightPerIp = new Dictionary<string, int>();
+        private readonly Dictionary<long, string> _loginAddressByGeneration = new Dictionary<long, string>();
         private readonly Dictionary<int, int> _messagesThisSecond = new Dictionary<int, int>();
         private readonly Dictionary<int, ChatTokenBucket> _chatBuckets = new Dictionary<int, ChatTokenBucket>();
 
@@ -879,6 +882,15 @@ namespace Avelora.Server.Net
                 return;
             }
 
+            string address = _transport.GetRemoteAddress(connectionId);
+            _loginsInFlightPerIp.TryGetValue(address, out int ipInFlight);
+            if (ipInFlight >= _config.MaxPendingLoginsPerIp)
+            {
+                Interlocked.Increment(ref _rateLimited);
+                RejectHandshake(connectionId, RejectReason.RateLimited);
+                return;
+            }
+
             _pendingLogins[connectionId] = hello;
             _handshakeDeadlines.Remove(connectionId);
 
@@ -886,6 +898,8 @@ namespace Avelora.Server.Net
             // sigue ocupando un intento de la cuenta.
             _loginsInFlightPerAccount.TryGetValue(accountName, out int inFlight);
             _loginsInFlightPerAccount[accountName] = inFlight + 1;
+            _loginsInFlightPerIp[address] = ipInFlight + 1;
+            _loginAddressByGeneration[connectionGeneration] = address;
 
             // El alta la resolverá el hilo de login y llegará por la cola de resultados.
             _login!.Enqueue(new LoginRequest(
@@ -915,6 +929,7 @@ namespace Avelora.Server.Net
                 // El intento deja de estar en vuelo aunque la conexión se haya ido: el hueco del
                 // tope global y el de la cuenta se liberan al sacar el resultado, como antes.
                 ReleaseLoginInFlight(result.AccountName);
+                ReleaseIpLoginInFlight(result.ConnectionGeneration);
 
                 if (result.Operation != CharacterOperationKind.Login)
                 {
@@ -1313,6 +1328,29 @@ namespace Avelora.Server.Net
             else
             {
                 _loginsInFlightPerAccount[accountName] = inFlight - 1;
+            }
+        }
+
+        /// <summary>Descuenta un login en vuelo de su IP al recoger el resultado.</summary>
+        private void ReleaseIpLoginInFlight(long generation)
+        {
+            if (!_loginAddressByGeneration.Remove(generation, out string? address))
+            {
+                return;
+            }
+
+            if (!_loginsInFlightPerIp.TryGetValue(address, out int inFlight))
+            {
+                return;
+            }
+
+            if (inFlight <= 1)
+            {
+                _loginsInFlightPerIp.Remove(address);
+            }
+            else
+            {
+                _loginsInFlightPerIp[address] = inFlight - 1;
             }
         }
 

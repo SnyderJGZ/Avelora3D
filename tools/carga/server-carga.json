@@ -36,6 +36,7 @@
   "registrationInvitationCode": "avelora-dev",
   "saveIntervalSeconds": 60,
   "maxPendingLogins": 16,
+  "maxPendingLoginsPerIp": 16,
   "maxFailedLoginsPerAccountPerMinute": 5,
   "playerSpeed": 4,
   "playerHalfWidth": 0.4,

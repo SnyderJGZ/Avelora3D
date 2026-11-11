@@ -165,6 +165,9 @@ namespace Avelora.Server.Configuration
         /// </summary>
         public int MaxPendingLogins { get; set; } = 16;
 
+        /// <summary>Logins en vuelo desde una misma IP; superado, se rechaza con <c>RateLimited</c>.</summary>
+        public int MaxPendingLoginsPerIp { get; set; } = 2;
+
         /// <summary>
         /// Intentos fallidos que admite una misma cuenta por minuto. Superado el tope, el siguiente
         /// saludo se rechaza con <c>RateLimited</c> sin comprobar la contraseña.
@@ -904,6 +907,12 @@ namespace Avelora.Server.Configuration
             if (MaxPendingLogins < 1)
             {
                 throw new InvalidOperationException("maxPendingLogins debe ser >= 1.");
+            }
+
+            if (MaxPendingLoginsPerIp < 1 || MaxPendingLoginsPerIp > MaxPendingLogins)
+            {
+                throw new InvalidOperationException(
+                    "maxPendingLoginsPerIp debe estar entre 1 y maxPendingLogins (" + MaxPendingLogins + ").");
             }
 
             if (MaxFailedLoginsPerAccountPerMinute < 1)

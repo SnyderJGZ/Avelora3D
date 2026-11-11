@@ -61,6 +61,9 @@ namespace Avelora.Net
 
         public int ConnectionCount => _manager.ConnectedPeersCount;
 
+        public string GetRemoteAddress(int connectionId) =>
+            _peers.TryGetValue(connectionId, out NetPeer peer) ? peer.Address.ToString() : string.Empty;
+
         public event TransportConnectedHandler? Connected;
 
         public event TransportDisconnectedHandler? Disconnected;

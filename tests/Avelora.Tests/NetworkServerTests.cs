@@ -1136,7 +1136,11 @@ namespace Avelora.Tests
             {
                 using var saves = new CharacterSaveService(repository);
                 using var harness = new Harness(
-                    config => config.MaxPendingLogins = 1,
+                    config =>
+                    {
+                        config.MaxPendingLogins = 1;
+                        config.MaxPendingLoginsPerIp = 1;
+                    },
                     repository: repository,
                     saves: saves);
 
@@ -3334,6 +3338,8 @@ namespace Avelora.Tests
             public int Port => 0;
 
             public int ConnectionCount => 0;
+
+            public string GetRemoteAddress(int connectionId) => "10.0.0." + connectionId;
 
             public event TransportConnectedHandler? Connected;
 

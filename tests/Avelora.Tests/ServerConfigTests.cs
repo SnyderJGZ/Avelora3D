@@ -52,6 +52,7 @@ namespace Avelora.Tests
             Assert.Equal(string.Empty, config.RegistrationInvitationCode);
             Assert.Equal(60d, config.SaveIntervalSeconds);
             Assert.Equal(16, config.MaxPendingLogins);
+            Assert.Equal(2, config.MaxPendingLoginsPerIp);
             Assert.Equal(5, config.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(500, config.RejectDisconnectDelayMilliseconds);
             Assert.Equal(3, config.MaxCharactersPerAccount);
@@ -180,6 +181,7 @@ namespace Avelora.Tests
                 RegistrationInvitationCode = "invitacion",
                 SaveIntervalSeconds = 12.5d,
                 MaxPendingLogins = 4,
+                MaxPendingLoginsPerIp = 3,
                 MaxFailedLoginsPerAccountPerMinute = 2,
                 PlayerSpeed = 7.5f,
                 PlayerHalfWidth = 0.3f,
@@ -218,6 +220,7 @@ namespace Avelora.Tests
             Assert.Equal(original.RegistrationInvitationCode, loaded.RegistrationInvitationCode);
             Assert.Equal(original.SaveIntervalSeconds, loaded.SaveIntervalSeconds);
             Assert.Equal(original.MaxPendingLogins, loaded.MaxPendingLogins);
+            Assert.Equal(original.MaxPendingLoginsPerIp, loaded.MaxPendingLoginsPerIp);
             Assert.Equal(original.MaxFailedLoginsPerAccountPerMinute, loaded.MaxFailedLoginsPerAccountPerMinute);
             Assert.Equal(original.PlayerSpeed, loaded.PlayerSpeed);
             Assert.Equal(original.PlayerHalfWidth, loaded.PlayerHalfWidth);
@@ -280,6 +283,17 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(new ServerConfig { MetricsWindowTicks = 0 }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { ReportIntervalSeconds = 0d }.Validate);
             Assert.Throws<InvalidOperationException>(new ServerConfig { RunSeconds = -1d }.Validate);
+        }
+
+        [Fact]
+        public void El_Tope_De_Logins_Por_IP_Debe_Estar_Entre_Uno_Y_El_Tope_Global()
+        {
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { MaxPendingLoginsPerIp = 0 }.Validate);
+            Assert.Throws<InvalidOperationException>(
+                new ServerConfig { MaxPendingLoginsPerIp = 17 }.Validate);
+
+            new ServerConfig { MaxPendingLogins = 2, MaxPendingLoginsPerIp = 2 }.Validate();
         }
 
         [Fact]
@@ -359,7 +373,12 @@ namespace Avelora.Tests
             Assert.Throws<InvalidOperationException>(
                 new ServerConfig { MaxFailedLoginsPerAccountPerMinute = 0 }.Validate);
 
-            new ServerConfig { MaxPendingLogins = 1, MaxFailedLoginsPerAccountPerMinute = 1 }.Validate();
+            new ServerConfig
+            {
+                MaxPendingLogins = 1,
+                MaxPendingLoginsPerIp = 1,
+                MaxFailedLoginsPerAccountPerMinute = 1,
+            }.Validate();
         }
 
         [Fact]

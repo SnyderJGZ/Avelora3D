@@ -2283,6 +2283,8 @@ INSERT INTO inventory_items VALUES (@character, 5, 9223372036854775807, 1);";
 
             public int ConnectionCount => 0;
 
+            public string GetRemoteAddress(int connectionId) => "10.0.0." + connectionId;
+
             public event TransportConnectedHandler? Connected;
 
             public event TransportDisconnectedHandler? Disconnected;
