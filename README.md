@@ -2320,10 +2320,11 @@ El servidor y los bots cargan **`maps/avelora-ciudad.avmap`**, mapa de 160×120 
 
 ### Mapa «Valle» (J-02)
 
-Sustituido por la «Ciudad» (J-04); archivo y generador conservados.
+Sustituido por la «Ciudad» (J-04). El archivo y el generador se borraron tras la auditoría de
+2026-11-11; siguen en el historial de git (commit anterior a la limpieza).
 
-El mapa histórico **`maps/avelora-valle.avmap`** mide 80×60 (x de −40 a 39 e y de −30 a 29).
-Lo generaba el menú **Avelora › Generar mapa «Valle»** (`Editor/ValleyMapGenerator.cs`, semilla fija:
+El mapa histórico `maps/avelora-valle.avmap` medía 80×60 (x de −40 a 39 e y de −30 a 29).
+Lo generaba el menú Avelora › Generar mapa «Valle» (`Editor/ValleyMapGenerator.cs`, semilla fija:
 volver a generarlo da la misma huella) con el arte de Tiny Swords recortado a 64 px en `Art/Map`:
 - **isla** con costa irregular, playa y espuma; el mar rodea todo el borde;
 - **río** de norte a sur con **dos puentes** (y = 0 e y = 16) que lleva a las tierras altas del este;
@@ -2340,7 +2341,8 @@ río y orcos guerreros (2002) en las tierras altas.
 
 ### Mapa de prueba de 80×60 (J-01)
 
-Sustituido por el «Valle»; `maps/avelora-prueba.avmap` se conserva. Era un mapa de 80×60 casillas
+Sustituido por el «Valle»; `maps/avelora-prueba.avmap` se borró en la auditoría de 2026-11-11 (queda en
+el historial de git). Era un mapa de 80×60 casillas
 (x de −40 a 39, y de −30 a 29) generado por código en el Tilemap de `AveloraEtapaA.unity`:
 - **12 salas** de unas 19×19, separadas por muros en x = −20, 0 y 20 y en y = −10 y 10;
 - una puerta de 3 casillas entre cada par de salas vecinas;
