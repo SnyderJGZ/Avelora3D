@@ -2043,17 +2043,19 @@ namespace Avelora.Client
             }
         }
 
-        private NpcLook FindNpcLook(ushort typeId)
+        private NpcLook FindNpcLook(ushort typeId, out bool usesFallback)
         {
             for (int i = 0; i < npcLooks.Length; i++)
             {
                 if (npcLooks[i] != null && npcLooks[i].typeId == typeId)
                 {
+                    usesFallback = false;
                     return npcLooks[i];
                 }
             }
 
-            return npcLooks.Length > 0 ? npcLooks[0] : null;
+            usesFallback = npcLooks.Length > 0 && npcLooks[0] != null;
+            return usesFallback ? npcLooks[0] : null;
         }
 
         private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId)
@@ -2096,9 +2098,16 @@ namespace Avelora.Client
                     : new Color(0.95f, 0.9f, 0.75f, 1f));
             }
 
-            NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId) : null;
+            bool usesFallback = false;
+            NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId, out usesFallback) : null;
             if (look != null)
             {
+                if (usesFallback)
+                {
+                    float hue = Mathf.Repeat(typeId * 0.618034f, 1f);
+                    view.SetNpcTint(Color.HSVToRGB(hue, 0.45f, 1f));
+                }
+
                 view.SetNpcSheets(look.idle, look.walk, look.hurt, look.death, look.attack);
             }
 

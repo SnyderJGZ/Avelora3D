@@ -17,6 +17,7 @@ namespace Avelora.Client
         private SpriteRenderer _renderer;
         private Color _playerColor;
         private Color _npcColor;
+        private Color _npcTint = Color.white;
 
         /// <summary>Identificador de la entidad que representa.</summary>
         public int EntityId { get; private set; }
@@ -68,6 +69,12 @@ namespace Avelora.Client
                 _death = IsSheet(death) ? death : null;
                 _attack = IsSheet(attack) ? attack : null;
             }
+        }
+
+        /// <summary>Aplica un tinte adicional a PNJ que usan el aspecto de reserva.</summary>
+        public void SetNpcTint(Color tint)
+        {
+            _npcTint = tint;
         }
 
         /// <summary>Un objeto del suelo (I-04b): cuadrado pequeño teñido con el color del tipo.</summary>
@@ -175,7 +182,7 @@ namespace Avelora.Client
             {
                 _renderer.color = sample.Kind == EntityKind.Player ? _playerColor
                     : sample.Kind == EntityKind.Item ? _itemColor
-                    : _npcColor * _rankColor;
+                    : _npcColor * _rankColor * _npcTint;
 
                 if (sample.DirectionX != 0)
                 {
@@ -201,7 +208,7 @@ namespace Avelora.Client
                     : FacingDown;
             }
 
-            _renderer.color = _rankColor;
+            _renderer.color = _rankColor * _npcTint;
             _renderer.flipX = false;
 
             // Una sola pasada: la muerte se queda en su último cuadro hasta que el servidor retira
