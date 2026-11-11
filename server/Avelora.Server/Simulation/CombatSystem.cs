@@ -703,6 +703,7 @@ namespace Avelora.Server.Simulation
             _areaIds[0] = caster.Id;
             _areaDistSq[0] = 0;
             bool capped = false;
+            ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
             for (int i = 0; i < entities.Count; i++)
             {
                 Entity entity = entities[i];
@@ -711,7 +712,6 @@ namespace Avelora.Server.Simulation
                 float dy = player.Position.Y - caster.Position.Y;
                 float distanceSquared = dx * dx + dy * dy;
                 if (distanceSquared > radiusSquared) continue;
-                ZoneKind casterZone = _zones.KindAt(caster.Position.X, caster.Position.Y);
                 ZoneKind playerZone = _zones.KindAt(player.Position.X, player.Position.Y);
                 if (player.IsPvpEffective(playerZone) && !caster.IsPvpEffective(casterZone)) continue;
                 if (_map != null && !_map.HasLineOfSight(caster.Position, player.Position)) continue;
