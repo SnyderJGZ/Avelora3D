@@ -425,10 +425,11 @@ namespace Avelora.Tests
             var chunks = harness.Transport.Sent.Where(sent => sent.ConnectionId == 1 &&
                 MessageCodec.TryReadItemCatalog(sent.Data, 0, sent.Data.Length, out _)).ToArray();
 
-            Assert.Equal(23, items.Items.Count);
-            SentMessage chunk = Assert.Single(chunks);
-            Assert.Equal(1253, chunk.Data.Length);
-            Assert.Equal(147, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
+            Assert.Equal(53, items.Items.Count);
+            Assert.Equal(3, chunks.Length);
+            SentMessage chunk = chunks[0];
+            Assert.Equal(1370, chunk.Data.Length);
+            Assert.Equal(30, ProtocolConstants.MaxMessageSize - chunk.Data.Length);
         }
 
 

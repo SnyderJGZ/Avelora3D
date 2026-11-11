@@ -36,6 +36,8 @@ namespace Avelora.Tests.Balance
         [InlineData(5, "equilibrado")]
         [InlineData(10, "puro")]
         [InlineData(10, "equilibrado")]
+        [InlineData(15, "puro")]
+        [InlineData(15, "equilibrado")]
         [InlineData(20, "puro")]
         [InlineData(20, "equilibrado")]
         public void Objetivo_3_Dps_Coincide_Con_La_Tabla_Y_Respeta_Las_Bandas(int level, string build)
@@ -49,12 +51,14 @@ namespace Avelora.Tests.Balance
                 Assert.Equal(expected.Crit[i], results[i].CritChancePb);
                 Assert.Equal(expected.Haste[i], results[i].HastePb);
                 Assert.Equal(expected.Cooldown[i], results[i].BasicCooldownTicks);
-                Assert.InRange(results[i].DamagePerSecond, expected.Dps[i] - 0.03, expected.Dps[i] + 0.03);
                 _output.WriteLine("Nivel {0}, {1}, clase {2}: DPS={3:0.00} (esperado {4:0.00}), crit={5}, prisa={6}, recarga={7}",
                     level, build, results[i].ClassName, results[i].DamagePerSecond,
                     expected.Dps[i], results[i].CritChancePb, results[i].HastePb,
                     results[i].BasicCooldownTicks);
             }
+
+            for (int i = 0; i < ClassIds.Length; i++)
+                Assert.InRange(results[i].DamagePerSecond, expected.Dps[i] - 0.03, expected.Dps[i] + 0.03);
 
             double average = (results[0].DamagePerSecond + results[1].DamagePerSecond + results[2].DamagePerSecond) / 3d;
             for (int i = 0; i < 3; i++)
@@ -73,11 +77,11 @@ namespace Avelora.Tests.Balance
         {
             CombatSimulationResult result = Simulator().Simulate(classId, 1, "equilibrado", "franja", false);
             NpcCombatResult npc = FindNpc(result, 2001);
+            WriteNpc(result, npc, expectedTtk, expectedLost);
             Assert.InRange(npc.TimeToKillSeconds!.Value, expectedTtk - 0.1, expectedTtk + 0.1);
             Assert.InRange(npc.HealthLostPercent, expectedLost - 0.5, expectedLost + 0.5);
             Assert.InRange(npc.TimeToKillSeconds.Value, 4.0, 6.0);
             Assert.InRange(npc.HealthLostPercent, 30, 50);
-            WriteNpc(result, npc, expectedTtk, expectedLost);
         }
 
         [Theory]
@@ -100,41 +104,33 @@ namespace Avelora.Tests.Balance
             };
             CombatSimulationResult result = Simulator(npcs).Simulate(classId, 5, "equilibrado", "franja", false);
             NpcCombatResult npc = FindNpc(result, 9005);
+            WriteNpc(result, npc, expectedTtk, expectedLost);
             Assert.InRange(npc.TimeToKillSeconds!.Value, expectedTtk - 0.1, expectedTtk + 0.1);
             Assert.InRange(npc.HealthLostPercent, expectedLost - 0.5, expectedLost + 0.5);
             Assert.InRange(npc.TimeToKillSeconds.Value, 4.0, 6.0);
             Assert.InRange(npc.HealthLostPercent, 30, 50);
-            WriteNpc(result, npc, expectedTtk, expectedLost);
         }
 
-        [Fact]
-        public void Objetivo_1_Niveles_10_Y_20_Informe()
+        [Theory]
+        [InlineData(10, 1, 2003, 4.85, 32.6)]
+        [InlineData(10, 2, 2003, 4.45, 46.2)]
+        [InlineData(10, 3, 2003, 5.05, 45.2)]
+        [InlineData(15, 1, 2004, 4.85, 45.3)]
+        [InlineData(15, 2, 2004, 4.45, 42.7)]
+        [InlineData(15, 3, 2004, 4.80, 48.8)]
+        [InlineData(20, 1, 2005, 4.85, 31.7)]
+        [InlineData(20, 2, 2005, 4.45, 45.7)]
+        [InlineData(20, 3, 2005, 5.75, 43.33)]
+        public void Objetivo_1_Niveles_10_15_20_Con_Pnj_Real(
+            int level, int classId, int npcId, double expectedTtk, double expectedLost)
         {
-            var npcs = new NpcCatalog
-            {
-                Types =
-                {
-                    new NpcType { Id = 9010, Name = "Referencia nivel 10", Level = 10,
-                        MaxHealth = 147, AttackDamage = 34, AttackCooldownSeconds = 1.5f, Defense = 10 },
-                    new NpcType { Id = 9020, Name = "Referencia nivel 20", Level = 20,
-                        MaxHealth = 289, AttackDamage = 66, AttackCooldownSeconds = 1.5f, Defense = 20 },
-                },
-            };
-            CombatSimulator simulator = Simulator(npcs);
-            foreach (int level in new[] { 10, 20 })
-            {
-                int npcId = level == 10 ? 9010 : 9020;
-                foreach (int classId in new[] { 1, 2, 3 })
-                {
-                    CombatSimulationResult result = simulator.Simulate(classId, level, "equilibrado", "franja", false);
-                    NpcCombatResult npc = FindNpc(result, npcId);
-                    Assert.True(npc.TimeToKillSeconds is null || npc.TimeToKillSeconds > 0);
-                    _output.WriteLine("Solo informe: nivel {0}, {1}: DPS={2:0.00}, TTK={3}, vida perdida={4:0.0}%",
-                        level, result.ClassName, result.DamagePerSecond,
-                        npc.TimeToKillSeconds?.ToString("0.00", CultureInfo.InvariantCulture) ?? "sin matar",
-                        npc.HealthLostPercent);
-                }
-            }
+            CombatSimulationResult result = Simulator().Simulate(classId, level, "equilibrado", "franja", false);
+            NpcCombatResult npc = FindNpc(result, npcId);
+            WriteNpc(result, npc, expectedTtk, expectedLost);
+            Assert.InRange(npc.TimeToKillSeconds!.Value, expectedTtk - 0.1, expectedTtk + 0.1);
+            Assert.InRange(npc.HealthLostPercent, expectedLost - 0.5, expectedLost + 0.5);
+            Assert.InRange(npc.TimeToKillSeconds.Value, 4.0, 6.0);
+            Assert.InRange(npc.HealthLostPercent, 30, 50);
         }
 
         [Fact]
@@ -187,6 +183,7 @@ namespace Avelora.Tests.Balance
         [InlineData(1)]
         [InlineData(5)]
         [InlineData(10)]
+        [InlineData(15)]
         [InlineData(20)]
         public void Objetivo_8_Rotacion(int level)
         {
@@ -201,7 +198,7 @@ namespace Avelora.Tests.Balance
                         level, classId, skill.Name, skill.Casts, skill.Percent, status);
                     if (level == 20 && skill.SkillId == 4016)
                     {
-                        // Lluvia de flechas: área medida contra un solo objetivo; con daño 40, arma 400 % y recarga 45 s (topes de §9.1) no llega al 10 %; decisión del usuario.
+                        // Lluvia de flechas: área medida contra un solo objetivo; daño 35, arma 400 %, recarga 40 s; decisión del usuario.
                         Assert.InRange(skill.Percent, 8d, 35d);
                     }
                     else
@@ -213,18 +210,27 @@ namespace Avelora.Tests.Balance
         }
 
         [Fact]
-        public void Objetivo_7_Duelos_Con_Habilidades_Informe()
+        public void Objetivo_7_Duracion_De_Duelos_Con_Habilidades()
         {
             CombatSimulator simulator = Simulator();
-            foreach (int level in new[] { 1, 5, 10, 20 })
+            foreach (int level in new[] { 1, 5, 10, 15, 20 })
                 for (int aIndex = 0; aIndex < ClassIds.Length; aIndex++)
                     for (int bIndex = aIndex + 1; bIndex < ClassIds.Length; bIndex++)
                     {
                         DuelSeriesResult duel = simulator.SimulateDuels(ClassIds[aIndex], ClassIds[bIndex],
                             level, "equilibrado", "franja", 200, 1);
-                        _output.WriteLine("| {0} | {1} | {2} | {3} | {4} | {5} | {6:0.00} | {7:0.00} |",
+                        int classA = ClassIds[aIndex];
+                        int classB = ClassIds[bIndex];
+                        double maximumSeconds = classA == 4 || classB == 4 ? 28d : 15d;
+                        string status = duel.MeanSeconds >= 8d && duel.MeanSeconds <= maximumSeconds
+                            ? "OK" : "FUERA";
+                        _output.WriteLine("| {0} | {1} | {2} | {3} | {4} | {5} | {6:0.00} | {7:0.00} | {8} |",
                             level, ClassIds[aIndex], ClassIds[bIndex], duel.WinsA, duel.WinsB,
-                            duel.Draws, duel.MeanSeconds, duel.MaxWinRate);
+                            duel.Draws, duel.MeanSeconds, duel.MaxWinRate, status);
+                        if (classA == 4 || classB == 4)
+                            Assert.InRange(duel.MeanSeconds, 8d, 28d);
+                        else
+                            Assert.InRange(duel.MeanSeconds, 8d, 15d);
                     }
         }
 
@@ -243,15 +249,21 @@ namespace Avelora.Tests.Balance
                 new[] { 19.94, 19.85, 18.87, 15.23 }, new[] { 840, 840, 970, 330 },
                 new[] { 60, 60, 255, 45 }, new long[] { 24, 22, 20, 20 });
             if (level == 10 && build == "puro") return new ExpectedRow(
-                new[] { 26.05, 25.54, 26.74, 19.30 }, new[] { 840, 840, 1170, 330 },
+                new[] { 33.83, 34.10, 34.48, 24.40 }, new[] { 840, 840, 1170, 330 },
                 new[] { 60, 60, 555, 45 }, new long[] { 24, 22, 19, 20 });
             if (level == 10) return new ExpectedRow(
-                new[] { 23.41, 22.73, 22.07, 17.26 }, new[] { 840, 840, 1070, 330 },
+                new[] { 29.52, 30.31, 28.39, 22.36 }, new[] { 840, 840, 1070, 330 },
                 new[] { 60, 60, 405, 45 }, new long[] { 24, 22, 20, 20 });
+            if (level == 15 && build == "puro") return new ExpectedRow(
+                new[] { 53.84, 51.15, 53.86, 39.63 }, new[] { 840, 840, 1320, 330 },
+                new[] { 60, 60, 780, 45 }, new long[] { 24, 22, 19, 20 });
+            if (level == 15) return new ExpectedRow(
+                new[] { 45.99, 43.57, 45.62, 33.53 }, new[] { 840, 840, 1170, 330 },
+                new[] { 60, 60, 555, 45 }, new long[] { 24, 22, 19, 20 });
             if (level == 20 && build == "puro") return new ExpectedRow(
-                new[] { 35.57, 34.10, 36.16, 26.43 }, new[] { 840, 840, 1470, 330 },
+                new[] { 73.77, 68.20, 73.37, 52.86 }, new[] { 840, 840, 1470, 330 },
                 new[] { 60, 60, 1005, 45 }, new long[] { 24, 22, 19, 20 });
-            return new ExpectedRow(new[] { 29.52, 28.42, 30.16, 21.33 },
+            return new ExpectedRow(new[] { 61.62, 56.84, 60.45, 43.69 },
                 new[] { 840, 840, 1270, 330 }, new[] { 60, 60, 705, 45 },
                 new long[] { 24, 22, 19, 20 });
         }
@@ -265,7 +277,7 @@ namespace Avelora.Tests.Balance
 
         private void WriteNpc(CombatSimulationResult result, NpcCombatResult npc,
             double expectedTtk, double expectedLost) =>
-            _output.WriteLine("Objetivo 1 nivel {0}, {1}: TTK={2:0.00} s (esperado {3:0.00}), vida perdida={4:0.0}% (esperado {5:0.0}%)",
+            _output.WriteLine("Objetivo 1 nivel {0}, {1}: TTK={2:0.00} s (esperado {3:0.00}), vida perdida={4:0.00}% (esperado {5:0.0}%)",
                 result.Level, result.ClassName, npc.TimeToKillSeconds, expectedTtk,
                 npc.HealthLostPercent, expectedLost);
 

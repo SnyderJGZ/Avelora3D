@@ -431,7 +431,7 @@ namespace Avelora.Tests
             Use(zone, warrior, npc.Id, WarriorSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, warrior, 10 + 6 * 180 / 100, 50);
+            int expected = ExpectedDamage(zone.Classes, warrior, 5 + 6 * 130 / 100, 50);
             Assert.Equal(1000 - expected, npc.Health);
             Assert.Equal(manaBefore - 25, warrior.Mana);
             Assert.Equal(new[] { WarriorSkill }, used);
@@ -453,7 +453,7 @@ namespace Avelora.Tests
             Use(zone, mage, npc.Id, MageSkill);
             zone.Tick();
 
-            int expected = ExpectedDamage(zone.Classes, mage, 6 + 8 * 150 / 100, 100);
+            int expected = ExpectedDamage(zone.Classes, mage, 9 + 8 * 160 / 100, 100);
             Assert.Equal(1000 - expected, npc.Health);
             Assert.Equal(CombatEventFlags.Ranged | CombatEventFlags.Magical, zone.CombatEvents[0].Flags);
         }

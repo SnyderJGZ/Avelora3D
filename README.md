@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-29 de servidor implementadas (I-19 añade habilidades y protocolo v25; cliente I-19b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-30 de servidor implementadas (I-19 añade habilidades y protocolo v25; cliente I-30b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -1140,6 +1140,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-28** | Crítico, velocidad de ataque, PvP y recarga global (§2.4–§2.5, §2.8 del plan); protocolo v24 | ✅ servidor, datos y pruebas; cliente I-28b pendiente |
 | **I-29** | Velocidad de movimiento (§2.6 del plan): moveSpeed de botas, moveCap 115, PNJ a 3,0-3,4; protocolo v24 sin cambios | ✅ servidor, datos y pruebas; cliente sin cambios |
 | **I-19** | Cuatro habilidades por clase (A-4 del plan): hits, critBonus, área propia, cura en área, rotación de bots; protocolo v25 | ✅ servidor, datos y pruebas; cliente I-19b pendiente |
+| **I-30** | Armas y armaduras de las franjas 10, 15 y 20, tres PNJ nuevos y objetivos 1 y 3 afirmados | ✅ datos, servidor y pruebas; cliente I-30b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -2112,70 +2113,156 @@ El ataque básico esperado suma el crítico (`critBase + DES × critPerDex`, lim
 | 1 | equilibrado | 14,28 | 15,16 | 14,62 | 10,16 | 69,2 % |
 | 5 | puro | 21,67 | 20,84 | 21,02 | 16,26 | 76,8 % |
 | 5 | equilibrado | 19,94 | 19,85 | 18,87 | 15,23 | 77,9 % |
-| 10 | puro | 26,05 | 25,54 | 26,74 | 19,30 | 73,9 % |
-| 10 | equilibrado | 23,41 | 22,73 | 22,07 | 17,26 | 75,9 % |
-| 20 | puro | 35,57 | 34,10 | 36,16 | 26,43 | 74,9 % |
-| 20 | equilibrado | 29,52 | 28,42 | 30,16 | 21,33 | 72,6 % |
+| 10 | puro | 33,83 | 34,10 | 34,48 | 24,40 | 71,5 % |
+| 10 | equilibrado | 29,52 | 30,31 | 28,39 | 22,36 | 76,0 % |
+| 15 | puro | 53,84 | 51,15 | 53,86 | 39,63 | 74,8 % |
+| 15 | equilibrado | 45,99 | 43,57 | 45,62 | 33,53 | 74,4 % |
+| 20 | puro | 73,77 | 68,20 | 73,37 | 52,86 | 73,6 % |
+| 20 | equilibrado | 61,62 | 56,84 | 60,45 | 43,69 | 73,3 % |
 
-Objetivo 7 (paridad de duelos) y objetivo 1 en niveles 10 y 20 quedan en modo informe hasta I-30; el duelo actual usa solo ataques básicos y todavía no incluye las habilidades ni la cura del sanador. La suite contiene **1.024** pruebas.
+I-30 afirma los objetivos 1, 3, 7 y 8 con equipo de franja. Todas las parejas cumplen 8–15 s sin sanador y 8–28 s con sanador. Rotación incluye nivel 20 y mantiene la excepción 8–35 % de Lluvia de flechas. D1–D4 aprobadas por el usuario.
 
 #### Habilidades por clase (I-19, protocolo v25)
 
 `skills.json` define cuatro habilidades por clase (cinco para el sanador), desbloqueadas en niveles 1, 5, 10 y 20; se retira el id 4002. `hits` aplica 1..5 golpes con un crítico independiente por golpe, `critBonus` suma al multiplicador crítico, `areaCenter: self` centra el área en el lanzador y las curas en área siguen las reglas PvP y de línea de vista de la curación individual. El bot selecciona por catálogo, nivel, recurso, alcances y recargas. `SkillCatalog` v25 incluye recarga global en la cabecera y `hits`, `areaCenter` y `critBonus` por entrada.
 
-| Clase | Id | Habilidad | Nivel | Coste | Recarga (s) |
-| --- | ---: | --- | ---: | ---: | ---: |
-| Guerrero | 4001 | Golpe poderoso | 1 | 25 | 6 |
-| Guerrero | 4007 | Provocar | 5 | 20 | 10 |
-| Guerrero | 4011 | Torbellino | 10 | 15 | 10 |
-| Guerrero | 4012 | Furia imparable | 20 | 40 | 60 |
-| Mago | 4008 | Rayo helado | 1 | 25 | 6 |
-| Mago | 4009 | Escudo arcano | 5 | 30 | 15 |
-| Mago | 4005 | Bola de fuego | 10 | 20 | 8 |
-| Mago | 4013 | Lluvia de meteoros | 20 | 10 | 45 |
-| Ranger | 4003 | Disparo certero | 1 | 20 | 6 |
-| Ranger | 4014 | Tiro a las piernas | 5 | 15 | 8 |
-| Ranger | 4015 | Ráfaga | 10 | 25 | 10 |
-| Ranger | 4016 | Lluvia de flechas | 20 | 10 | 45 |
-| Sanador | 4006 | Curación | 1 | 25 | 3 |
-| Sanador | 4004 | Castigo | 1 | 20 | 5 |
-| Sanador | 4010 | Bendición | 5 | 30 | 20 |
-| Sanador | 4017 | Curación en área | 10 | 45 | 12 |
-| Sanador | 4018 | Renovación divina | 20 | 70 | 60 |
+| Clase | Id | Habilidad | Nivel | Coste | Recarga (s) | Da?o | Arma (%) |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| Guerrero | 4001 | Golpe poderoso | 1 | 25 | 6 | 5 | 130 |
+| Guerrero | 4007 | Provocar | 5 | 20 | 10 | 0 | 0 |
+| Guerrero | 4011 | Torbellino | 10 | 15 | 10 | 12 | 150 |
+| Guerrero | 4012 | Furia imparable | 20 | 40 | 60 | 0 | 0 |
+| Mago | 4008 | Rayo helado | 1 | 25 | 6 | 9 | 160 |
+| Mago | 4009 | Escudo arcano | 5 | 30 | 15 | 0 | 0 |
+| Mago | 4005 | Bola de fuego | 10 | 20 | 8 | 9 | 120 |
+| Mago | 4013 | Lluvia de meteoros | 20 | 10 | 40 | 30 | 400 |
+| Ranger | 4003 | Disparo certero | 1 | 20 | 6 | 6 | 120 |
+| Ranger | 4014 | Tiro a las piernas | 5 | 10 | 8 | 12 | 100 |
+| Ranger | 4015 | Ráfaga | 10 | 20 | 10 | 4 | 50 |
+| Ranger | 4016 | Lluvia de flechas | 20 | 10 | 40 | 35 | 400 |
+| Sanador | 4006 | Curación | 1 | 25 | 3 | 20 | 0 |
+| Sanador | 4004 | Castigo | 1 | 20 | 5 | 6 | 100 |
+| Sanador | 4010 | Bendición | 5 | 30 | 20 | 0 | 0 |
+| Sanador | 4017 | Curación en área | 10 | 45 | 12 | 16 | 0 |
+| Sanador | 4018 | Renovación divina | 20 | 70 | 60 | 30 | 0 |
 
 Objetivo 8, rotación equilibrada con equipo de franja (porcentaje del daño total):
 
 | Nivel | Clase | Habilidad | Lanzamientos | Daño (%) |
 | ---: | --- | --- | ---: | ---: |
-| 1 | Guerrero | Golpe poderoso | 30 | 28,0 |
-| 1 | Mago | Rayo helado | 25 | 22,8 |
-| 1 | Ranger | Disparo certero | 30 | 22,2 |
-| 1 | Sanador | Castigo | 32 | 24,2 |
-| 5 | Guerrero | Golpe poderoso | 30 | 32,4 |
-| 5 | Mago | Rayo helado | 27 | 23,4 |
-| 5 | Ranger | Disparo certero | 30 | 18,6 |
-| 5 | Ranger | Tiro a las piernas | 23 | 15,1 |
-| 5 | Sanador | Castigo | 33 | 21,9 |
-| 10 | Guerrero | Golpe poderoso | 21 | 20,6 |
-| 10 | Guerrero | Torbellino | 18 | 16,5 |
-| 10 | Mago | Rayo helado | 14 | 11,6 |
-| 10 | Mago | Bola de fuego | 18 | 13,9 |
-| 10 | Ranger | Disparo certero | 20 | 11,5 |
-| 10 | Ranger | Tiro a las piernas | 21 | 12,5 |
-| 10 | Ranger | Ráfaga | 18 | 13,4 |
-| 10 | Sanador | Castigo | 35 | 22,9 |
-| 20 | Guerrero | Golpe poderoso | 21 | 20,7 |
-| 20 | Guerrero | Torbellino | 18 | 16,4 |
-| 20 | Mago | Rayo helado | 15 | 11,2 |
-| 20 | Mago | Bola de fuego | 19 | 13,2 |
-| 20 | Mago | Lluvia de meteoros | 4 | 10,1 |
-| 20 | Ranger | Disparo certero | 20 | 10,3 |
-| 20 | Ranger | Tiro a las piernas | 21 | 11,2 |
-| 20 | Ranger | Ráfaga | 16 | 10,5 |
-| 20 | Ranger | Lluvia de flechas | 4 | 8,6 |
-| 20 | Sanador | Castigo | 36 | 23,9 |
+| 1 | Guerrero | Golpe poderoso | 30 | 19,57 |
+| 1 | Mago | Rayo helado | 25 | 24,99 |
+| 1 | Ranger | Disparo certero | 30 | 22,21 |
+| 1 | Sanador | Castigo | 32 | 24,24 |
+| 5 | Guerrero | Golpe poderoso | 30 | 23,87 |
+| 5 | Mago | Rayo helado | 27 | 26,54 |
+| 5 | Ranger | Disparo certero | 30 | 18,45 |
+| 5 | Ranger | Tiro a las piernas | 23 | 15,85 |
+| 5 | Sanador | Castigo | 33 | 21,95 |
+| 10 | Guerrero | Golpe poderoso | 21 | 14,44 |
+| 10 | Guerrero | Torbellino | 18 | 16,75 |
+| 10 | Mago | Bola de fuego | 15 | 11,04 |
+| 10 | Mago | Rayo helado | 16 | 14,71 |
+| 10 | Ranger | Disparo certero | 27 | 14,27 |
+| 10 | Ranger | Ráfaga | 18 | 13,25 |
+| 10 | Ranger | Tiro a las piernas | 23 | 12,98 |
+| 10 | Sanador | Castigo | 35 | 21,50 |
+| 15 | Guerrero | Golpe poderoso | 21 | 14,25 |
+| 15 | Guerrero | Torbellino | 18 | 15,71 |
+| 15 | Mago | Bola de fuego | 15 | 10,54 |
+| 15 | Mago | Rayo helado | 18 | 15,81 |
+| 15 | Ranger | Disparo certero | 27 | 13,67 |
+| 15 | Ranger | Ráfaga | 18 | 11,83 |
+| 15 | Ranger | Tiro a las piernas | 23 | 11,59 |
+| 15 | Sanador | Castigo | 36 | 21,06 |
+| 20 | Guerrero | Golpe poderoso | 21 | 14,07 |
+| 20 | Guerrero | Torbellino | 18 | 15,29 |
+| 20 | Mago | Bola de fuego | 17 | 10,41 |
+| 20 | Mago | Lluvia de meteoros | 5 | 10,21 |
+| 20 | Mago | Rayo helado | 16 | 12,41 |
+| 20 | Ranger | Disparo certero | 26 | 11,94 |
+| 20 | Ranger | Ráfaga | 18 | 10,61 |
+| 20 | Ranger | Lluvia de flechas | 5 | 8,23 |
+| 20 | Ranger | Tiro a las piernas | 23 | 10,23 |
+| 20 | Sanador | Castigo | 36 | 20,37 |
 
-La supervisión sube Disparo certero (4003) a `weaponPercent` 120. `Objetivo_8_Rotacion` afirma 10–35 % en todos los niveles probados, salvo Lluvia de flechas (4016) en nivel 20: 8–35 % por decisión del usuario (variante A). Su 8,6 % se mide contra un solo objetivo, con daño 40, arma 400 % y recarga 45 s, topes de §9.1. El objetivo 7 queda en modo informe en niveles 1 y 5: no se cumplen los topes de victorias/duración para las seis parejas; los desequilibrios y cifras están en [informe I-19](docs/agentes/informes/I-19.md). Niveles 10 y 20 también son informativos hasta I-30. La versión del cliente anterior a I-19b (v24) es incompatible con el servidor v25.
+La supervisión aplica D1–D4: rotación en banda en niveles 1/5/10/15/20, con Lluvia de flechas en 8–35 %. Todas las duraciones de duelos con habilidades quedan afirmadas; victorias informativas en el [informe I-30](docs/agentes/informes/I-30.md). Cliente I-30b pendiente.
+
+#### Contenido de referencia (I-30)
+
+Armas añadidas (nivel 20 ajustado por supervisión; recarga, alcance, manos y tipo de daño se heredan de la franja 5):
+
+| Id | Nombre | Nivel | Tipo | Daño |
+| ---: | --- | ---: | --- | ---: |
+| 3109 | Hacha de acero | 10 | Hacha | 23 |
+| 3110 | Bastón de ébano | 10 | Bastón | 20 |
+| 3111 | Arco de tejo | 10 | Arco | 18 |
+| 3112 | Maza de bronce | 10 | Maza | 14 |
+| 3113 | Hacha de batalla | 15 | Hacha | 31 |
+| 3114 | Bastón de cristal | 15 | Bastón | 26 |
+| 3115 | Arco compuesto | 15 | Arco | 24 |
+| 3116 | Maza de acero | 15 | Maza | 19 |
+| 3117 | Hacha de runas | 20 | Hacha | 37 |
+| 3118 | Bastón de runas | 20 | Bastón | 30 |
+| 3119 | Arco de runas | 20 | Arco | 28 |
+| 3120 | Maza de runas | 20 | Maza | 22 |
+
+Armaduras añadidas (orden: cabeza, cuerpo, piernas, manos, pies, mano secundaria; resistencia mágica 0 si no se indica):
+
+| Id | Nombre | Nivel | Hueco | Defensa | Res. mágica | Bonus |
+| ---: | --- | ---: | --- | ---: | ---: | --- |
+| 3313 | Casco de acero | 10 | head | 3 | 1 | — |
+| 3314 | Cota de placas | 10 | body | 7 | 2 | — |
+| 3315 | Grebas de acero | 10 | legs | 4 | 1 | — |
+| 3316 | Guantes de acero | 10 | hands | 2 | 0 | DES +1 |
+| 3317 | Botas de acero | 10 | feet | 2 | 0 | moveSpeed +5 |
+| 3318 | Escudo de acero | 10 | offhand | 4 | 1 | — |
+| 3319 | Yelmo de placas | 15 | head | 9 | 5 | — |
+| 3320 | Coraza de placas | 15 | body | 17 | 5 | — |
+| 3321 | Grebas de placas | 15 | legs | 9 | 5 | — |
+| 3322 | Guanteletes | 15 | hands | 3 | 0 | DES +1 |
+| 3323 | Botas de placas | 15 | feet | 3 | 0 | moveSpeed +5 |
+| 3324 | Escudo de torre | 15 | offhand | 3 | 1 | — |
+| 3325 | Yelmo de runas | 20 | head | 22 | 25 | — |
+| 3326 | Coraza de runas | 20 | body | 35 | 25 | — |
+| 3327 | Grebas de runas | 20 | legs | 21 | 25 | — |
+| 3328 | Guanteletes de runas | 20 | hands | 8 | 0 | DES +1 |
+| 3329 | Botas de runas | 20 | feet | 8 | 0 | moveSpeed +5 |
+| 3330 | Escudo de runas | 20 | offhand | 0 | 25 | — |
+
+PNJ nuevos (todos: caja 0,35; alcance 1,0; recarga 1,5 s; reaparición 20 s; aggro 5, correa 8):
+
+| Id | Nombre | Nivel | PV | Daño | Defensa | Res. mágica | Tipo | Vel. | XP | Oro |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| 2003 | Orco veterano | 10 | 147 | 34 | 10 | 0 | physical | 3,2 | 350 | 20–40 |
+| 2004 | Chamán orco | 15 | 206 | 49 | 15 | 15 | magical | 3,0 | 1250 | 40–80 |
+| 2005 | Orco acorazado | 20 | 289 | 84 | 20 | 0 | physical | 3,0 | 3250 | 80–150 |
+
+Spawners (`npcs.json`: count 3/3/3/3/2/2; carga: 4/4/4/4/2/2; radio 3,0):
+
+| Tipo | X | Y |
+| ---: | ---: | ---: |
+| 2003 | -61,5 | -15,5 |
+| 2003 | -34,5 | 52,5 |
+| 2004 | 60,5 | -28,5 |
+| 2004 | 48,5 | -52,5 |
+| 2005 | 72,5 | -40,5 |
+| 2005 | 72,5 | 40,5 |
+
+DPS esperado con ataque básico (tabla recalculada de §2.8):
+
+| Nivel | Build | Guerrero | Mago | Ranger | Sanador | Sanador / media |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | puro | 14,28 | 15,16 | 14,63 | 11,16 | 76,0 % |
+| 1 | equilibrado | 14,28 | 15,16 | 14,62 | 10,16 | 69,2 % |
+| 5 | puro | 21,67 | 20,84 | 21,02 | 16,26 | 76,8 % |
+| 5 | equilibrado | 19,94 | 19,85 | 18,87 | 15,23 | 77,9 % |
+| 10 | puro | 33,83 | 34,10 | 34,48 | 24,40 | 71,5 % |
+| 10 | equilibrado | 29,52 | 30,31 | 28,39 | 22,36 | 76,0 % |
+| 15 | puro | 53,84 | 51,15 | 53,86 | 39,63 | 74,8 % |
+| 15 | equilibrado | 45,99 | 43,57 | 45,62 | 33,53 | 74,4 % |
+| 20 | puro | 73,77 | 68,20 | 73,37 | 52,86 | 73,6 % |
+| 20 | equilibrado | 61,62 | 56,84 | 60,45 | 43,69 | 73,3 % |
 
 
 ### Chat (I-07, protocolo v10)
@@ -2275,7 +2362,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-29**, con persistencia SQLite en esquema v8 y protocolo v25, incluidos I-15p/I-15q, I-16, I-17, I-18 e I-19.
+El servidor ya implementa **I-04 a I-30**, con persistencia SQLite en esquema v8 y protocolo v25, incluidos I-15p/I-15q, I-16, I-17, I-18, I-19 e I-30.
 El cliente usa v21 (I-19b pendiente; incompatible con el servidor v25) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

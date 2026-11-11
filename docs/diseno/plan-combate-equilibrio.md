@@ -164,8 +164,9 @@ se recolocan en esta tabla (orco nivel 1: 80 PV, 13 de daño; orco guerrero nive
 
 Valores fijados en I-28 (se calcularon con el script de la tarea y se afirman en `BalanceObjectivesTests`):
 `critPerDex` 10, `critCap` 4000, `critMultiplier` 150, `hastePerDex` 15, `hasteCap` 3000, `minAttackTicks` 8,
-`critBase` 800 (guerrero, mago, ranger) y 300 (sanador), `pvpDamagePercent` 60. El equipo **no** aporta crítico ni
-prisa hasta I-30. Arcos de franja 1 y 5: `damage` 12 y 14 (los absorbe la ventaja que el ranger saca de su DES).
+`critBase` 800 (guerrero, mago, ranger) y 300 (sanador), `pvpDamagePercent` 60. Los guantes de las franjas 10, 15 y
+20 aportan `DES +1` a todas las clases; este punto ya está incluido en crítico y prisa. Arcos de franja 1 y 5: `damage`
+12 y 14 (los absorbe la ventaja que el ranger saca de su DES).
 
 ```
 golpe     = ⌊arma × (100 + primario × 2) / 100⌋                  golpeCrít = ⌊golpe × 150 / 100⌋
@@ -180,7 +181,7 @@ DPS_esp   = E[golpe] × 20 / recarga                              ≈ golpe × (
 - `DES` es el efectivo (base + puntos + equipo). Solo el ranger reparte puntos en DES: su crítico y su prisa crecen
   con el nivel y los de las demás clases quedan casi planos (DES 4). Eso es lo que compensan los arcos y los valores
   por punto: **no se suben `critPerDex` ni `hastePerDex` sin volver a calcular la tabla**.
-- **Invariante** (niveles 1, 5, 10 y 20; builds `puro` y `equilibrado`; equipo de la franja; solo ataque básico):
+- **Invariante** (niveles 1, 5, 10, 15 y 20; builds `puro` y `equilibrado`; equipo de la franja; solo ataque básico):
   DPS_esp de guerrero, mago y ranger dentro de **±10 %** de su media (hoy ±3,5 %) y sanador entre el **65 %** y el
   **80 %** (hoy 69-78 %).
 
@@ -190,19 +191,20 @@ DPS_esp   = E[golpe] × 20 / recarga                              ≈ golpe × (
 | 1 | equilibrado | 14,28 | 15,16 | 14,62 | 10,16 | 69,2 % |
 | 5 | puro | 21,67 | 20,84 | 21,02 | 16,26 | 76,8 % |
 | 5 | equilibrado | 19,94 | 19,85 | 18,87 | 15,23 | 77,9 % |
-| 10 | puro | 26,05 | 25,54 | 26,74 | 19,30 | 73,9 % |
-| 10 | equilibrado | 23,41 | 22,73 | 22,07 | 17,26 | 75,9 % |
-| 20 | puro | 35,57 | 34,10 | 36,16 | 26,43 | 74,9 % |
-| 20 | equilibrado | 29,52 | 28,42 | 30,16 | 21,33 | 72,6 % |
+| 10 | puro | 33,83 | 34,10 | 34,48 | 24,40 | 71,5 % |
+| 10 | equilibrado | 29,52 | 30,31 | 28,39 | 22,36 | 76,0 % |
+| 15 | puro | 53,84 | 51,15 | 53,86 | 39,63 | 74,8 % |
+| 15 | equilibrado | 45,99 | 43,57 | 45,62 | 33,53 | 74,4 % |
+| 20 | puro | 73,77 | 68,20 | 73,37 | 52,86 | 73,6 % |
+| 20 | equilibrado | 61,62 | 56,84 | 60,45 | 43,69 | 73,3 % |
 
 - **Reglas para las tareas siguientes.** I-29 no toca DPS. I-19: cada golpe de habilidad tira su crítico con la misma
   `probCrit` y `critBonus` solo suma al multiplicador; su daño esperado usa `CombatMath.ExpectedDamage`. I-30: el
   equipo de una franja debe dar el **mismo** crítico y prisa a todas las clases (si no, la tabla se rompe) y, al
   añadir armas de las franjas 10, 15 y 20, hay que recalcular esta tabla y mantener la invariante.
-- **Qué NO cubre todavía** (informe hasta I-30): objetivo 1 en los niveles 10 y 20 (faltan armas y armaduras de esas
-  franjas: con el equipo de la franja 5 el guerrero tarda 6,05 s y 10,85 s) y objetivo 7 (con solo ataque básico el
-  guerrero gana a todos; el primer muerto cae a los 11-17 s en los niveles 1-5 y a los 14-28 s en los niveles 10-20;
-  hacen falta habilidades y la cura del sanador).
+- **Verificación I-30:** los objetivos 1 (niveles 10, 15 y 20), 3, 7 y 8 se afirman con equipo de franja y PNJ reales.
+  Todas las parejas sin sanador duran 8-15 s y las que incluyen al sanador 8-28 s; victorias informativas.
+  Lluvia de flechas conserva la excepción de contribución 8-35 % aprobada por el usuario.
 
 ### 2.9 Estados de I-18 dentro del modelo
 
@@ -227,8 +229,8 @@ DPS_esp   = E[golpe] × 20 / recarga                              ≈ golpe × (
 4. **Área:** Bola de fuego y Lluvia de flechas con 3 objetivos ≥ **1,8×** su DPS de objetivo único.
 5. **Aguante:** vida efectiva (PV × (100+def)/100) del guerrero 1,3-1,6× la media; mago 0,7-0,85×.
 6. **Cura:** el sanador mantiene a un guerrero contra un élite de su nivel durante 30 s sin quedarse sin maná.
-7. **PvP, duelo 1 contra 1 del mismo nivel y equipo, 200 semillas:** ninguna pareja de clases gana más del **65 %**
-   de los duelos; duración media **8-15 s**.
+7. **PvP, duelo 1 contra 1 del mismo nivel y equipo, 200 semillas:** parejas sin sanador con duración media de **8-15 s**;
+   parejas con sanador, **8-28 s**. Las proporciones de victorias se informan, pero no determinan el objetivo.
 8. **Habilidades:** cada habilidad de daño aporta entre el 10 % y el 35 % del daño de la rotación; ninguna con
    menos del 5 % (inútil) ni más del 50 % (obligatoria).
 
@@ -264,7 +266,7 @@ el mismo tick, cada uno con su crítico), `areaCenter: "self"` (área alrededor 
 | Clase | Nv 1 | Nv 5 | Nv 10 | Nv 20 (final) |
 | --- | --- | --- | --- | --- |
 | Guerrero | Golpe poderoso (4001): daño 150 % arma | Provocar (4007): taunt 4 s | Torbellino (4011): área `self` r 2, 100 % arma, 6 obj. | Furia imparable (4012): bonus propio 12 s, +daño +def |
-| Mago | Rayo helado (4008): daño + slow 40 % 3 s | Escudo arcano (4009) | Bola de fuego (4005): área r 2,5 | Lluvia de meteoros (4013): área r 4, 10 obj., recarga 45 s |
+| Mago | Rayo helado (4008): daño + slow 40 % 3 s | Escudo arcano (4009) | Bola de fuego (4005): área r 2,5 | Lluvia de meteoros (4013): área r 4, 10 obj., recarga 40 s (I-30) |
 | Ranger | Disparo certero (4003): daño, `critBonus` 50 | Tiro a las piernas (4014): daño + slow 50 % 3 s | Ráfaga (4015): `hits` 3 | Lluvia de flechas (4016): área r 3,5, 8 obj. |
 | Sanador | Curación (4006) **y** Castigo (4004) | Bendición (4010): bonus | Curación en área (4017): r 4 | Renovación divina (4018): cura en área r 6 + escudo pequeño a cada uno |
 
@@ -274,7 +276,7 @@ el mismo tick, cada uno con su crítico), `areaCenter: "self"` (área alrededor 
 - «Tiro debilitante» (reducir defensa) necesitaría un quinto tipo de estado (`MaxStatusEffects` = 4, protocolo):
   se sustituye por ralentización. Un estado «debilitar» queda para después del MVP.
 - Valores iniciales (coste, recarga, `damage`, `weaponPercent`) los fija I-19 con el simulador hasta cumplir el
-  objetivo 8 de §3.1; las recargas de las finales, 45-90 s.
+  objetivo 8 de §3.1; las recargas de las finales, 40-90 s (4013 y 4016: 40 s, I-30).
 
 ---
 

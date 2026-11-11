@@ -230,16 +230,16 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void Items_I27_Declara_Las_Doce_Armaduras_Y_Los_Objetos_Nuevos_No_Entran_En_El_Botin()
+        public void Items_I27_Declara_Las_Doce_Armaduras_Y_Conserva_El_Botin_Anterior()
         {
             ItemCatalog items = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
             items.Validate();
             (int Id, string Slot, int Defense, int Resist, int Str, int Dex, int Int, int Vit)[] expected =
             {
-                (3301, "head", 1, 0, 0, 0, 0, 0),
+                (3301, "head", 1, 1, 0, 0, 0, 0),
                 (3302, "head", 2, 1, 0, 0, 0, 0),
                 (3303, "body", 2, 1, 0, 0, 0, 0),
-                (3304, "legs", 1, 0, 0, 0, 0, 0),
+                (3304, "legs", 1, 1, 0, 0, 0, 0),
                 (3305, "hands", 1, 0, 0, 1, 0, 0),
                 (3306, "feet", 1, 0, 0, 0, 0, 0),
                 (3307, "offhand", 2, 0, 0, 0, 0, 0),
@@ -278,7 +278,7 @@ namespace Avelora.Tests
                 .ToArray();
             Assert.Equal(new[] { 3301, 3302, 3303, 3304, 3305 }, orcDrops);
             Assert.Equal(new[] { 3306, 3307, 3308, 3309, 3310 }, warriorDrops);
-            Assert.All(npcs.Types.SelectMany(type => type.Loot!).Where(drop => drop.ItemId >= 3301),
+            Assert.All(npcs.Types.SelectMany(type => type.Loot!).Where(drop => drop.ItemId >= 3301 && drop.ItemId <= 3312),
                 drop => Assert.Equal(0.06, drop.Chance));
         }
 
@@ -475,7 +475,7 @@ namespace Avelora.Tests
             ItemCatalog catalog = ItemCatalog.Load(Path.Combine(AppContext.BaseDirectory, "items.json"));
             ClassCatalog classes = ClassCatalog.Load(Path.Combine(AppContext.BaseDirectory, "classes.json"));
             classes.ValidateWeaponTypes(catalog);
-            Assert.Equal(23, catalog.Items.Count);
+            Assert.Equal(53, catalog.Items.Count);
             var entries = new ItemCatalogEntry[catalog.Items.Count];
             for (int i = 0; i < entries.Length; i++)
             {
@@ -528,8 +528,8 @@ namespace Avelora.Tests
                 1.5f, (uint)fistDamage, unarmed.Range, (float)unarmed.CooldownSeconds, entries));
 
             Assert.NotEmpty(chunks);
-            Assert.Single(chunks);
-            Assert.Equal(1253, chunks[0].Length);
+            Assert.Equal(3, chunks.Length);
+            Assert.Equal(1370, chunks[0].Length);
             Assert.All(chunks, chunk => Assert.True(chunk.Length <= ProtocolConstants.MaxMessageSize));
             int decodedCount = 0;
             for (int i = 0; i < chunks.Length; i++)

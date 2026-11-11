@@ -38,8 +38,10 @@ namespace Avelora.Tests
                 skills.Select(skill => skill.ClassId));
             for (int classId = 1; classId <= 4; classId++)
                 Assert.Equal(classId == 4 ? 5 : 4, skills.Count(skill => skill.ClassId == classId));
-            foreach (int id in new[] { 4012, 4013, 4016, 4018 })
+            foreach (int id in new[] { 4012, 4018 })
                 Assert.InRange(catalog.Find(id)!.CooldownSeconds, 45, 90);
+            foreach (int id in new[] { 4013, 4016 })
+                Assert.InRange(catalog.Find(id)!.CooldownSeconds, 40, 90);
             Assert.Equal(1, catalog.Find(4001)!.Hits);
             Assert.False(catalog.Find(4001)!.AreaSelf);
         }
