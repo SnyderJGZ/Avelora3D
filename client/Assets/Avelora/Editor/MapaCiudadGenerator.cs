@@ -64,6 +64,15 @@ namespace Avelora.EditorTools
             Transform props = new GameObject("Props").transform;
             props.SetParent(grid.transform, false);
             TileBase block = BlockTile();
+            // Con el tileset nativo el suelo lo pinta MapaTerreno; aquí solo quedan los acentos de la plaza.
+            bool nativo = MapaTerreno.Disponible();
+            if (nativo)
+            {
+                water.ClearAllTiles();
+                floor.ClearAllTiles();
+                deco.ClearAllTiles();
+            }
+
             for (int y = layout.OrigenY; y < layout.OrigenY + layout.Alto; y++)
             {
                 for (int x = layout.OrigenX; x < layout.OrigenX + layout.Ancho; x++)
@@ -71,11 +80,11 @@ namespace Avelora.EditorTools
                     int i = layout.Indice(x, y);
                     var cell = new Vector3Int(x, y, 0);
                     string nombreSuelo = layout.Suelo[i];
-                    if (nombreSuelo == MapaCiudadLayout.Piezas.Agua.Archivo ||
-                        nombreSuelo == MapaCiudadLayout.Piezas.AguaMar.Archivo ||
-                        nombreSuelo == MapaCiudadLayout.Piezas.AguaMar2.Archivo ||
-                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAgua.Archivo ||
-                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAguaAbajo.Archivo)
+                    if (nativo)
+                    {
+                        if (EnGrupo(MapaCiudadLayout.Piezas.Acento, nombreSuelo)) floor.SetTile(cell, TileFor(nombreSuelo));
+                    }
+                    else if (EsAgua(nombreSuelo))
                     {
                         water.SetTile(cell, TileFor(nombreSuelo));
                     }
@@ -85,7 +94,7 @@ namespace Avelora.EditorTools
                     }
 
                     string nombreCamino = layout.Camino[i];
-                    if (nombreCamino != null)
+                    if (nombreCamino != null && !nativo)
                     {
                         deco.SetTile(cell, TileFor(nombreCamino));
                     }
@@ -104,9 +113,44 @@ namespace Avelora.EditorTools
                 Prop(props, objeto.Archivo, posicion, orden, objeto.AnchoSprite, objeto.AltoSprite, objeto.Rotada);
             }
 
+            if (nativo)
+            {
+                MapaTerreno.Pintar(grid, layout.OrigenX, layout.OrigenY, layout.Ancho, layout.Alto,
+                    (x, y) => TerrenoDe(layout, layout.Indice(x, y)));
+            }
+
             EditorSceneManager.MarkSceneDirty(grid.gameObject.scene);
             Debug.Log("[Avelora] Mapa «Ciudad» pintado: " + layout.Objetos.Count +
                 " objetos; la escena queda marcada como modificada para guardarla desde Unity.");
+        }
+
+        /// <summary>Terreno de una celda para el tileset nativo: el camino manda sobre el suelo.</summary>
+        private static int TerrenoDe(MapaCiudadLayout.Resultado layout, int i)
+        {
+            string nombre = layout.Camino[i] ?? layout.Suelo[i];
+            if (EsAgua(nombre)) return MapaTerreno.Agua;
+            if (EnGrupo(MapaCiudadLayout.Piezas.Tierra, nombre)) return MapaTerreno.Tierra;
+            if (EnGrupo(MapaCiudadLayout.Piezas.Empedrado, nombre) || EnGrupo(MapaCiudadLayout.Piezas.PlazaBase, nombre) ||
+                EnGrupo(MapaCiudadLayout.Piezas.Acento, nombre))
+                return MapaTerreno.Empedrado;
+            return MapaTerreno.Hierba;
+        }
+
+        private static bool EsAgua(string nombre) =>
+            nombre == MapaCiudadLayout.Piezas.Agua.Archivo ||
+            nombre == MapaCiudadLayout.Piezas.AguaMar.Archivo ||
+            nombre == MapaCiudadLayout.Piezas.AguaMar2.Archivo ||
+            nombre == MapaCiudadLayout.Piezas.OrillaAgua.Archivo ||
+            nombre == MapaCiudadLayout.Piezas.OrillaAguaAbajo.Archivo;
+
+        private static bool EnGrupo(MapaCiudadLayout.Pieza[] grupo, string nombre)
+        {
+            foreach (MapaCiudadLayout.Pieza pieza in grupo)
+            {
+                if (pieza.Archivo == nombre) return true;
+            }
+
+            return false;
         }
 
         private static void SetupImporters()

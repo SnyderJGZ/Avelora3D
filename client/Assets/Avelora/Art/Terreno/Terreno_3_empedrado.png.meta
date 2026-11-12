@@ -1,0 +1,1081 @@
+fileFormatVersion: 2
+guid: b67b73b9d2688ad45a1d60bf4b0c6c07
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -8135264193516193731
+    second: Terreno_3_empedrado_0
+  - first:
+      213: -3083116639133329690
+    second: Terreno_3_empedrado_1
+  - first:
+      213: -1031729975147629731
+    second: Terreno_3_empedrado_2
+  - first:
+      213: 5754791548485546570
+    second: Terreno_3_empedrado_3
+  - first:
+      213: -7081040918528630381
+    second: Terreno_3_empedrado_4
+  - first:
+      213: 346816635488365641
+    second: Terreno_3_empedrado_5
+  - first:
+      213: 6016093630807724558
+    second: Terreno_3_empedrado_6
+  - first:
+      213: -4351622791640384167
+    second: Terreno_3_empedrado_7
+  - first:
+      213: -4670997721178535368
+    second: Terreno_3_empedrado_8
+  - first:
+      213: -3434298608589802107
+    second: Terreno_3_empedrado_9
+  - first:
+      213: 1118285603983886250
+    second: Terreno_3_empedrado_10
+  - first:
+      213: 7776808181909672855
+    second: Terreno_3_empedrado_11
+  - first:
+      213: 772114230564295752
+    second: Terreno_3_empedrado_12
+  - first:
+      213: -7954381079276783131
+    second: Terreno_3_empedrado_13
+  - first:
+      213: -3922688537415854004
+    second: Terreno_3_empedrado_14
+  - first:
+      213: 1277323181641730452
+    second: Terreno_3_empedrado_15
+  - first:
+      213: 524657736965233062
+    second: Terreno_3_empedrado_16
+  - first:
+      213: -8851897410421019860
+    second: Terreno_3_empedrado_17
+  - first:
+      213: 7652492132104378594
+    second: Terreno_3_empedrado_18
+  - first:
+      213: 5898855048237337644
+    second: Terreno_3_empedrado_19
+  - first:
+      213: -6773270877688782519
+    second: Terreno_3_empedrado_20
+  - first:
+      213: -4328669985887929410
+    second: Terreno_3_empedrado_21
+  - first:
+      213: -3460735327196036743
+    second: Terreno_3_empedrado_22
+  - first:
+      213: -1318122666755407488
+    second: Terreno_3_empedrado_23
+  - first:
+      213: 3898422931754589742
+    second: Terreno_3_empedrado_24
+  - first:
+      213: -404400617014867243
+    second: Terreno_3_empedrado_25
+  - first:
+      213: -6563539106658233792
+    second: Terreno_3_empedrado_26
+  - first:
+      213: 6383518489179200946
+    second: Terreno_3_empedrado_27
+  - first:
+      213: -6298144270705927177
+    second: Terreno_3_empedrado_28
+  - first:
+      213: -8690231621181176688
+    second: Terreno_3_empedrado_29
+  - first:
+      213: -7093908533777804293
+    second: Terreno_3_empedrado_30
+  - first:
+      213: 3077131805318782205
+    second: Terreno_3_empedrado_31
+  - first:
+      213: -832868345986723593
+    second: Terreno_3_empedrado_32
+  - first:
+      213: -1150786278737389325
+    second: Terreno_3_empedrado_33
+  - first:
+      213: 1975878238175916182
+    second: Terreno_3_empedrado_34
+  - first:
+      213: 896824567712359827
+    second: Terreno_3_empedrado_35
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 0
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WindowsStoreApps
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_0
+      rect:
+        serializedVersion: 2
+        x: 34
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d383387815cb91f80800000000000000
+      internalID: -8135264193516193731
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_1
+      rect:
+        serializedVersion: 2
+        x: 98
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6e69c5370c19635d0800000000000000
+      internalID: -3083116639133329690
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_2
+      rect:
+        serializedVersion: 2
+        x: 162
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d53f33fcd0f8ea1f0800000000000000
+      internalID: -1031729975147629731
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_3
+      rect:
+        serializedVersion: 2
+        x: 226
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a42b6e35c602ddf40800000000000000
+      internalID: 5754791548485546570
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_4
+      rect:
+        serializedVersion: 2
+        x: 290
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 39168133dc61bbd90800000000000000
+      internalID: -7081040918528630381
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_5
+      rect:
+        serializedVersion: 2
+        x: 354
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 94cea7874e320d400800000000000000
+      internalID: 346816635488365641
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_6
+      rect:
+        serializedVersion: 2
+        x: 418
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e02d8c758457d7350800000000000000
+      internalID: 6016093630807724558
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_7
+      rect:
+        serializedVersion: 2
+        x: 482
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 95df7cb702eeb93c0800000000000000
+      internalID: -4351622791640384167
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_8
+      rect:
+        serializedVersion: 2
+        x: 546
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 83a8e7212584d2fb0800000000000000
+      internalID: -4670997721178535368
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_9
+      rect:
+        serializedVersion: 2
+        x: 610
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 585f2667c9be650d0800000000000000
+      internalID: -3434298608589802107
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_10
+      rect:
+        serializedVersion: 2
+        x: 674
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: aa784e6f4d2f48f00800000000000000
+      internalID: 1118285603983886250
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_11
+      rect:
+        serializedVersion: 2
+        x: 738
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 793d31196d5cceb60800000000000000
+      internalID: 7776808181909672855
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_12
+      rect:
+        serializedVersion: 2
+        x: 802
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8441fc64dc917ba00800000000000000
+      internalID: 772114230564295752
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_13
+      rect:
+        serializedVersion: 2
+        x: 866
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5e97e917d8c5c9190800000000000000
+      internalID: -7954381079276783131
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_14
+      rect:
+        serializedVersion: 2
+        x: 930
+        y: 895
+        width: 31
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c48d4dafe8fcf89c0800000000000000
+      internalID: -3922688537415854004
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_15
+      rect:
+        serializedVersion: 2
+        x: 994
+        y: 895
+        width: 30
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 49980298aa6f9b110800000000000000
+      internalID: 1277323181641730452
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_16
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 831
+        width: 30
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6a919789e65f74700800000000000000
+      internalID: 524657736965233062
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_17
+      rect:
+        serializedVersion: 2
+        x: 63
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c2ba7af543eb72580800000000000000
+      internalID: -8851897410421019860
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_18
+      rect:
+        serializedVersion: 2
+        x: 127
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2e89d8cac0d133a60800000000000000
+      internalID: 7652492132104378594
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_19
+      rect:
+        serializedVersion: 2
+        x: 191
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c2cc4b3b961fcd150800000000000000
+      internalID: 5898855048237337644
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_20
+      rect:
+        serializedVersion: 2
+        x: 255
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 941acd7e5028002a0800000000000000
+      internalID: -6773270877688782519
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_21
+      rect:
+        serializedVersion: 2
+        x: 319
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ebb314505997de3c0800000000000000
+      internalID: -4328669985887929410
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_22
+      rect:
+        serializedVersion: 2
+        x: 383
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 971c5d04e8ff8ffc0800000000000000
+      internalID: -3460735327196036743
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_23
+      rect:
+        serializedVersion: 2
+        x: 447
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 08147a51b6615bde0800000000000000
+      internalID: -1318122666755407488
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_24
+      rect:
+        serializedVersion: 2
+        x: 511
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e2e187f600bf91630800000000000000
+      internalID: 3898422931754589742
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_25
+      rect:
+        serializedVersion: 2
+        x: 575
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5da41eb08c7436af0800000000000000
+      internalID: -404400617014867243
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_26
+      rect:
+        serializedVersion: 2
+        x: 639
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 042504625ff99e4a0800000000000000
+      internalID: -6563539106658233792
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_27
+      rect:
+        serializedVersion: 2
+        x: 703
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2bd1aac9e30d69850800000000000000
+      internalID: 6383518489179200946
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_28
+      rect:
+        serializedVersion: 2
+        x: 767
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7fb5960a72f7898a0800000000000000
+      internalID: -6298144270705927177
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_29
+      rect:
+        serializedVersion: 2
+        x: 831
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 09401a32268166780800000000000000
+      internalID: -8690231621181176688
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_30
+      rect:
+        serializedVersion: 2
+        x: 895
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bf3df0f06cf5d8d90800000000000000
+      internalID: -7093908533777804293
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_31
+      rect:
+        serializedVersion: 2
+        x: 959
+        y: 831
+        width: 31
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dfc1517d21b24ba20800000000000000
+      internalID: 3077131805318782205
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_32
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 735
+        width: 1024
+        height: 71
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7f05bcce6ae0174f0800000000000000
+      internalID: -832868345986723593
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_33
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 479
+        width: 1024
+        height: 226
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3f8d6730af59700f0800000000000000
+      internalID: -1150786278737389325
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_34
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 216
+        width: 1024
+        height: 233
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 69076e9f9cabb6b10800000000000000
+      internalID: 1975878238175916182
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Terreno_3_empedrado_35
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1024
+        height: 193
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 395a6585139227c00800000000000000
+      internalID: 896824567712359827
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Terreno_3_empedrado_0: -8135264193516193731
+      Terreno_3_empedrado_1: -3083116639133329690
+      Terreno_3_empedrado_10: 1118285603983886250
+      Terreno_3_empedrado_11: 7776808181909672855
+      Terreno_3_empedrado_12: 772114230564295752
+      Terreno_3_empedrado_13: -7954381079276783131
+      Terreno_3_empedrado_14: -3922688537415854004
+      Terreno_3_empedrado_15: 1277323181641730452
+      Terreno_3_empedrado_16: 524657736965233062
+      Terreno_3_empedrado_17: -8851897410421019860
+      Terreno_3_empedrado_18: 7652492132104378594
+      Terreno_3_empedrado_19: 5898855048237337644
+      Terreno_3_empedrado_2: -1031729975147629731
+      Terreno_3_empedrado_20: -6773270877688782519
+      Terreno_3_empedrado_21: -4328669985887929410
+      Terreno_3_empedrado_22: -3460735327196036743
+      Terreno_3_empedrado_23: -1318122666755407488
+      Terreno_3_empedrado_24: 3898422931754589742
+      Terreno_3_empedrado_25: -404400617014867243
+      Terreno_3_empedrado_26: -6563539106658233792
+      Terreno_3_empedrado_27: 6383518489179200946
+      Terreno_3_empedrado_28: -6298144270705927177
+      Terreno_3_empedrado_29: -8690231621181176688
+      Terreno_3_empedrado_3: 5754791548485546570
+      Terreno_3_empedrado_30: -7093908533777804293
+      Terreno_3_empedrado_31: 3077131805318782205
+      Terreno_3_empedrado_32: -832868345986723593
+      Terreno_3_empedrado_33: -1150786278737389325
+      Terreno_3_empedrado_34: 1975878238175916182
+      Terreno_3_empedrado_35: 896824567712359827
+      Terreno_3_empedrado_4: -7081040918528630381
+      Terreno_3_empedrado_5: 346816635488365641
+      Terreno_3_empedrado_6: 6016093630807724558
+      Terreno_3_empedrado_7: -4351622791640384167
+      Terreno_3_empedrado_8: -4670997721178535368
+      Terreno_3_empedrado_9: -3434298608589802107
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
