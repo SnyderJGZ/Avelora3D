@@ -328,6 +328,8 @@ namespace Avelora.Client
         {
             _map = GetComponent<AveloraMap>();
             _localRenderer = GetComponent<SpriteRenderer>();
+            // Sprite base de la escena: lo copian PNJ y objetos sin arte propio aunque el jugador cambie al de su clase.
+            _baseSprite = _localRenderer != null ? _localRenderer.sprite : null;
             _offlineController = GetComponent<LocalPlayerController>();
             _classLook = ClassLook.Load();
         }
@@ -1881,7 +1883,9 @@ namespace Avelora.Client
 
             if (_localRenderer != null)
             {
-                _localRenderer.color = ClassColor(_selectedClassId);
+                Sprite classSprite = ClassSprite(_selectedClassId);
+                _localRenderer.sprite = classSprite != null ? classSprite : _baseSprite;
+                _localRenderer.color = classSprite != null ? Color.white : ClassColor(_selectedClassId);
             }
 
             transform.position = new Vector3(welcome.SpawnX, welcome.SpawnY, transform.position.z);
@@ -2012,7 +2016,7 @@ namespace Avelora.Client
                 view.Pvp = state.Pvp;
                 if (sample.Kind == EntityKind.Player)
                 {
-                    view.SetPlayerClassColor(ClassColor((byte)sample.TypeId));
+                    view.SetPlayerLook(ClassSprite((byte)sample.TypeId), ClassColor((byte)sample.TypeId));
                 }
 
                 view.Apply(sample);
@@ -2058,6 +2062,34 @@ namespace Avelora.Client
             return usesFallback ? npcLooks[0] : null;
         }
 
+        private Sprite _baseSprite;
+
+        // Sprites de personaje por clase (Resources/Characters/<classId>), 1,2 casillas de alto; null = sin arte.
+        private readonly Dictionary<byte, Sprite> _classSprites = new Dictionary<byte, Sprite>();
+
+        private Sprite ClassSprite(byte classId)
+        {
+            if (_classSprites.TryGetValue(classId, out Sprite sprite)) return sprite;
+            Texture2D texture = Resources.Load<Texture2D>("Characters/" + classId);
+            sprite = texture == null ? null : Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f), texture.height / 1.2f);
+            _classSprites[classId] = sprite;
+            return sprite;
+        }
+
+        // Sprites de objetos en el suelo, uno por id, hechos del icono del inventario (60 % de una casilla).
+        private readonly Dictionary<ushort, Sprite> _groundItemSprites = new Dictionary<ushort, Sprite>();
+
+        private Sprite GroundItemSprite(ushort itemId)
+        {
+            if (_groundItemSprites.TryGetValue(itemId, out Sprite sprite)) return sprite;
+            Texture2D icon = ItemIcon(itemId);
+            sprite = icon == null ? null : Sprite.Create(icon, new Rect(0f, 0f, icon.width, icon.height),
+                new Vector2(0.5f, 0.5f), icon.width / 0.6f);
+            _groundItemSprites[itemId] = sprite;
+            return sprite;
+        }
+
         private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId)
         {
             if (_remoteRoot == null)
@@ -2070,7 +2102,7 @@ namespace Avelora.Client
 
             var view = go.AddComponent<RemotePlayerView>();
 
-            Sprite sprite = _localRenderer != null ? _localRenderer.sprite : null;
+            Sprite sprite = _baseSprite;
             Material material = _localRenderer != null ? _localRenderer.sharedMaterial : null;
             int sortingLayer = _localRenderer != null ? _localRenderer.sortingLayerID : 0;
             int sortingOrder = _localRenderer != null ? _localRenderer.sortingOrder : 0;
@@ -2086,16 +2118,24 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Player)
             {
-                view.SetPlayerClassColor(ClassColor((byte)typeId));
+                view.SetPlayerLook(ClassSprite((byte)typeId), ClassColor((byte)typeId));
             }
 
             if (kind == EntityKind.Item)
             {
-                // shortcut: sin arte de objetos todavía; un cuadrado pequeño con el color de su clase.
-                _catalog.TryGetValue(typeId, out ItemCatalogEntry item);
-                view.SetItemLook(item.Kind == ItemKind.Potion ? new Color(0.9f, 0.2f, 0.3f, 1f)
-                    : item.Kind == ItemKind.Weapon ? new Color(0.55f, 0.7f, 0.95f, 1f)
-                    : new Color(0.95f, 0.9f, 0.75f, 1f));
+                Sprite icon = GroundItemSprite(typeId);
+                if (icon != null)
+                {
+                    view.SetItemSprite(icon);
+                }
+                else
+                {
+                    // Sin icono para ese id: cuadrado pequeño con el color de su clase.
+                    _catalog.TryGetValue(typeId, out ItemCatalogEntry item);
+                    view.SetItemLook(item.Kind == ItemKind.Potion ? new Color(0.9f, 0.2f, 0.3f, 1f)
+                        : item.Kind == ItemKind.Weapon ? new Color(0.55f, 0.7f, 0.95f, 1f)
+                        : new Color(0.95f, 0.9f, 0.75f, 1f));
+                }
             }
 
             bool usesFallback = false;

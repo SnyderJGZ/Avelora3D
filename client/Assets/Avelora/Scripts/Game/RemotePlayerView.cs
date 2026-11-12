@@ -84,13 +84,25 @@ namespace Avelora.Client
             transform.localScale = new Vector3(ItemScale, ItemScale, 1f);
         }
 
-        /// <summary>Actualiza el tinte del jugador remoto según el classId del snapshot.</summary>
-        public void SetPlayerClassColor(Color color)
+        /// <summary>Un objeto del suelo con su icono: se dibuja tal cual, sin tinte ni escala.</summary>
+        public void SetItemSprite(Sprite sprite)
         {
-            _playerColor = color;
+            _renderer.sprite = sprite;
+            _itemColor = Color.white;
+            transform.localScale = Vector3.one;
+        }
+
+        /// <summary>
+        /// Aspecto del jugador remoto según su clase: el sprite de la clase sin tinte o, si no hay arte,
+        /// el sprite base teñido con el color de la clase.
+        /// </summary>
+        public void SetPlayerLook(Sprite classSprite, Color classColor)
+        {
+            if (classSprite != null && _renderer != null) _renderer.sprite = classSprite;
+            _playerColor = classSprite != null ? Color.white : classColor;
             if (_renderer != null && Kind == EntityKind.Player)
             {
-                _renderer.color = color;
+                _renderer.color = _playerColor;
             }
         }
 

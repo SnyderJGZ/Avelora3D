@@ -33,9 +33,18 @@ ESTILO_HABILIDAD = (
     "pixel art square spell icon of {desc}, 16-bit fantasy RPG skill button icon, fills the whole square, "
     "dramatic lighting, dark vignette at the edges, no text, no letters, no frame"
 )
+# Personajes: cuerpo entero visto de frente y algo desde arriba, como los PNJ del mapa.
+ESTILO_PERSONAJE = (
+    "pixel art RPG character sprite of {desc}, full body standing, facing the viewer, top-down three-quarter view, "
+    "chibi proportions, 16-bit style, crisp dark outline, centered, "
+    "isolated on a flat solid pure magenta background (#FF00FF), no text, no shadow on the background"
+)
+RECURSOS = os.path.join(RAIZ, "client", "Assets", "Avelora", "Resources")
+# tipo -> (prompts, carpeta de salida, estilo, se quita el fondo magenta)
 TIPOS = {
-    "objetos": ("iconos.json", os.path.join(RAIZ, "client", "Assets", "Avelora", "Resources", "GUI", "Items")),
-    "habilidades": ("habilidades.json", os.path.join(RAIZ, "client", "Assets", "Avelora", "Resources", "GUI", "Skills")),
+    "objetos": ("iconos.json", os.path.join(RECURSOS, "GUI", "Items"), ESTILO, True),
+    "habilidades": ("habilidades.json", os.path.join(RECURSOS, "GUI", "Skills"), ESTILO_HABILIDAD, False),
+    "personajes": ("personajes.json", os.path.join(RECURSOS, "Characters"), ESTILO_PERSONAJE, True),
 }
 
 
@@ -136,8 +145,7 @@ def main():
     parser.add_argument("--hoja", default=os.path.join(os.path.dirname(__file__), "_hoja_iconos.png"))
     args = parser.parse_args()
 
-    archivo_prompts, salida = TIPOS[args.tipo]
-    habilidad = args.tipo == "habilidades"
+    archivo_prompts, salida, estilo, quitar_fondo = TIPOS[args.tipo]
     with open(os.path.join(os.path.dirname(__file__), archivo_prompts), encoding="utf-8") as f:
         prompts = {int(k): v for k, v in json.load(f).items()}
     ids = args.ids or sorted(prompts)
@@ -145,7 +153,7 @@ def main():
     hechos = []
     for item_id in ids:
         if item_id not in prompts:
-            print(f"{item_id}: sin descripción en iconos.json; se salta")
+            print(f"{item_id}: sin descripción en {archivo_prompts}; se salta")
             continue
         ruta = os.path.join(salida, f"{item_id}.png")
         if os.path.exists(ruta) and not args.forzar:
@@ -154,11 +162,11 @@ def main():
         # Semilla fija por objeto: repetir el comando da el mismo icono.
         semilla = random.Random(args.semilla * 100003 + item_id).randrange(2 ** 32)
         inicio = time.time()
-        if habilidad:
-            imagen = pedir(ESTILO_HABILIDAD.format(desc=prompts[item_id]), semilla)
-            icono = imagen.resize((LADO_ICONO, LADO_ICONO), Image.LANCZOS).convert("RGBA")
+        imagen = pedir(estilo.format(desc=prompts[item_id]), semilla)
+        if quitar_fondo:
+            icono = a_icono(quitar_magenta(imagen))
         else:
-            icono = a_icono(quitar_magenta(pedir(ESTILO.format(desc=prompts[item_id]), semilla)))
+            icono = imagen.resize((LADO_ICONO, LADO_ICONO), Image.LANCZOS).convert("RGBA")
         icono.save(ruta)
         hechos.append(ruta)
         print(f"{item_id}: listo en {time.time() - inicio:.1f} s")
