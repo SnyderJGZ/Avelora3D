@@ -18,7 +18,7 @@ namespace Avelora.Tests
 {
     public sealed class MapaCiudadTests
     {
-        private const string HuellaEsperada = "8bd5c8c768ad7abb41f62ac65a458af8a14cb422ac428c15140caa68b4529bc2";
+        private const string HuellaEsperada = "a602b466370e3c5e8d165596dc8aebb74b2eaf63028f925fcbba1c35481e95dd";
 
         [Fact]
         public void Mapa_Mide_160x120_Con_Origen_Y_Anillo_Bloqueado()

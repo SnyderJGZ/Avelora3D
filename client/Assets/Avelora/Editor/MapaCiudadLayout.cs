@@ -70,10 +70,11 @@ namespace Avelora.EditorTools
                 new Pieza("Ciudad_suelo_013.png", 1, 1, 13)
             };
 
-            // Las hojas no traen agua lisa de 1x1 (la 84 es un estandarte): se usa el agua vieja.
-            public static readonly Pieza AguaMar = new Pieza("Water", 1, 1, 0);
-            // Las piezas de orilla disponibles son de 2x2 o 1x2; se mantiene el tile 1x1 antiguo.
-            public static readonly Pieza OrillaAgua = new Pieza("Water", 1, 1, 0);
+            public static readonly Pieza AguaMar = new Pieza("Afueras_agua_001.png", 1, 1, 123);
+            public static readonly Pieza AguaMar2 = new Pieza("Afueras_agua_002.png", 1, 1, 124);
+            public static readonly Pieza OrillaAgua = new Pieza("Afueras_orilla_001.png", 1, 1, 125);
+            public static readonly Pieza OrillaAguaAbajo = new Pieza("Afueras_orilla_002.png", 1, 1, 126);
+            // «Water» solo marca internamente las casillas antes de pintar las orillas.
             public static readonly Pieza Agua = new Pieza("Water", 1, 1, 0);
 
             public static readonly Pieza[] Muro =
@@ -476,23 +477,23 @@ namespace Avelora.EditorTools
         {
             Añadir(r, reservado, Piezas.Fuente, -1, -1, false, false);
 
-            // Casas compuestas: fachada 4x2 y tejado encima de 4x1, cuatro por cuadrante.
+            // Cuatro manzanas contiguas, una por cuadrante; cada fila comparte fachada y tejado.
             ColocarCasa(r, reservado, -27, 5, 1, 0);
-            ColocarCasa(r, reservado, -21, 5, 1, 1);
-            ColocarCasa(r, reservado, -18, 12, 1, 2);
-            ColocarCasa(r, reservado, -12, 12, 1, 3);
-            ColocarCasa(r, reservado, -27, -15, -2, 0);
-            ColocarCasa(r, reservado, -21, -15, -2, 1);
-            ColocarCasa(r, reservado, -18, -8, -2, 2);
-            ColocarCasa(r, reservado, -12, -8, -2, 3);
-            ColocarCasa(r, reservado, 3, 8, 1, 0);
-            ColocarCasa(r, reservado, 20, 8, 1, 1);
-            ColocarCasa(r, reservado, 3, 15, 1, 2);
-            ColocarCasa(r, reservado, 20, 15, 1, 3);
-            ColocarCasa(r, reservado, 3, -15, -2, 0);
-            ColocarCasa(r, reservado, 20, -15, -2, 1);
-            ColocarCasa(r, reservado, 3, -8, -2, 2);
-            ColocarCasa(r, reservado, 20, -8, -2, 3);
+            ColocarCasa(r, reservado, -23, 5, 1, 0);
+            ColocarCasa(r, reservado, -19, 5, 1, 0);
+            ColocarCasa(r, reservado, -15, 5, 1, 0);
+            ColocarCasa(r, reservado, 9, 3, 1, 1);
+            ColocarCasa(r, reservado, 13, 3, 1, 1);
+            ColocarCasa(r, reservado, 17, 3, 1, 1);
+            ColocarCasa(r, reservado, 21, 3, 1, 1);
+            ColocarCasa(r, reservado, -27, -15, -2, 2);
+            ColocarCasa(r, reservado, -23, -15, -2, 2);
+            ColocarCasa(r, reservado, -19, -15, -2, 2);
+            ColocarCasa(r, reservado, -15, -15, -2, 2);
+            ColocarCasa(r, reservado, 9, -15, -2, 3);
+            ColocarCasa(r, reservado, 13, -15, -2, 3);
+            ColocarCasa(r, reservado, 17, -15, -2, 3);
+            ColocarCasa(r, reservado, 21, -15, -2, 3);
 
             // Mercado al este de la plaza, en dos filas con un pasillo de tres casillas.
             for (int fila = 0; fila < 2; fila++)
@@ -543,11 +544,6 @@ namespace Avelora.EditorTools
             const int altoFachada = 2;
             int centroX = x + (anchoFachada / 2);
             bool calleAlSur = calleY < y;
-            int accesoY = calleAlSur ? y - 1 : y + altoFachada + 1;
-            int pasilloX = calleAlSur ? x + anchoFachada : x - 1;
-            PintarLinea(r, centroX, accesoY, pasilloX, accesoY, 1);
-            PintarLinea(r, pasilloX, accesoY, pasilloX, calleY, 1);
-            PintarLinea(r, pasilloX, calleY, centroX, calleY, 1);
 
             Pieza fachada = Piezas.CasaFachada[variante % Piezas.CasaFachada.Length];
             for (int fila = 0; fila < altoFachada; fila++)
@@ -565,6 +561,17 @@ namespace Avelora.EditorTools
             for (int columna = 0; columna < anchoFachada; columna += tejado.Ancho)
             {
                 AñadirTejado(r, reservado, tejado, x + columna, y + altoFachada);
+            }
+
+            if (calleAlSur)
+            {
+                for (int aceraY = y - 1; aceraY >= calleY; aceraY--)
+                    PonerAcera(r, centroX, aceraY);
+            }
+            else
+            {
+                for (int aceraY = y + altoFachada; aceraY <= calleY; aceraY++)
+                    PonerAcera(r, centroX, aceraY);
             }
         }
 
@@ -965,8 +972,20 @@ namespace Avelora.EditorTools
         {
             int i = r.Indice(x, y);
             if (i < 0) return;
-            r.Camino[i] = Seleccionar(Piezas.Tierra, Hash(x, y, 6));
+            r.Camino[i] = DentroCiudad(x, y)
+                ? ElegirBase(Piezas.Empedrado, Hash(x, y, 4))
+                : Seleccionar(Piezas.Tierra, Hash(x, y, 6));
             r.Suelo[i] = r.Camino[i];
+            r.Bloqueado[i] = false;
+        }
+
+        private static void PonerAcera(Resultado r, int x, int y)
+        {
+            int i = r.Indice(x, y);
+            if (i < 0) return;
+            string empedrado = ElegirBase(Piezas.Empedrado, Hash(x, y, 4));
+            r.Camino[i] = empedrado;
+            r.Suelo[i] = empedrado;
             r.Bloqueado[i] = false;
         }
 
@@ -1008,9 +1027,11 @@ namespace Avelora.EditorTools
                 {
                     int i = r.Indice(x, y);
                     if (!EsAgua(r.Suelo[i])) continue;
-                    bool orilla = EsTierraAdyacente(r, x + 1, y) || EsTierraAdyacente(r, x - 1, y) ||
-                        EsTierraAdyacente(r, x, y + 1) || EsTierraAdyacente(r, x, y - 1);
-                    r.Suelo[i] = orilla ? Piezas.OrillaAgua.Archivo : Piezas.AguaMar.Archivo;
+                    // La orilla lleva la hierba en un lado: arriba si la tierra está encima, abajo si está debajo.
+                    // Con tierra solo a los lados se deja agua para no pintar hierba dentro del cauce.
+                    if (EsTierraAdyacente(r, x, y + 1)) r.Suelo[i] = Piezas.OrillaAgua.Archivo;
+                    else if (EsTierraAdyacente(r, x, y - 1)) r.Suelo[i] = Piezas.OrillaAguaAbajo.Archivo;
+                    else r.Suelo[i] = Hash(x, y, 53) < 0.15f ? Piezas.AguaMar2.Archivo : Piezas.AguaMar.Archivo;
                 }
             }
         }
@@ -1024,7 +1045,8 @@ namespace Avelora.EditorTools
         private static bool EsAgua(string suelo)
         {
             return suelo == Piezas.Agua.Archivo || suelo == Piezas.AguaMar.Archivo ||
-                suelo == Piezas.OrillaAgua.Archivo;
+                suelo == Piezas.AguaMar2.Archivo ||
+                suelo == Piezas.OrillaAgua.Archivo || suelo == Piezas.OrillaAguaAbajo.Archivo;
         }
 
         private static void Bloquear(Resultado r, int x, int y)

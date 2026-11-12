@@ -1588,6 +1588,58 @@
                 "ancho": 157,
                 "alto": 69
             }
+        },
+        {
+            "numero": 123,
+            "archivo": "Afueras_agua_001.png",
+            "categoria": "agua",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1037,
+                "y": 30,
+                "ancho": 64,
+                "alto": 64
+            }
+        },
+        {
+            "numero": 124,
+            "archivo": "Afueras_agua_002.png",
+            "categoria": "agua",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1063,
+                "y": 30,
+                "ancho": 64,
+                "alto": 64
+            }
+        },
+        {
+            "numero": 125,
+            "archivo": "Afueras_orilla_001.png",
+            "categoria": "agua",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1048,
+                "y": 5,
+                "ancho": 64,
+                "alto": 64
+            }
+        },
+        {
+            "numero": 126,
+            "archivo": "Afueras_orilla_002.png",
+            "categoria": "agua",
+            "casillasAncho": 1,
+            "casillasAlto": 1,
+            "origen": {
+                "x": 1048,
+                "y": 5,
+                "ancho": 64,
+                "alto": 64
+            }
         }
     ]
 }

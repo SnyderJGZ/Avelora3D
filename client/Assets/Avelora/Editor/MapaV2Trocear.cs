@@ -14,6 +14,7 @@ namespace Avelora.EditorTools
         private const string CarpetaSalida = "Assets/Avelora/Art/Mapa v2/Generado";
         private const int Casilla = 64;
         private const int MargenSuelo = 4;
+        private const int MargenAgua = 8;
         private const int UmbralNegroBajo = 16;
         private const int UmbralNegroAlto = 48;
         private const int DilatacionPx = 0;
@@ -23,6 +24,18 @@ namespace Avelora.EditorTools
         private const int MinCandidatosCelda = 5;
         private const int ColumnasHoja = 12;
         private const int TamanoCeldaHoja = 144;
+        // Origen y caja de Afueras_objeto_005 (catálogo: 1021,5; 118×97). La parte baja es agua.
+        private const int AguaPiezaX = 1021;
+        private const int AguaPiezaY = 5;
+        private const int AguaPiezaAncho = 118;
+        private const int AguaPiezaAlto = 97;
+        // Dos ventanas de agua interiores separadas para variar el patrón, respetando 8 px de margen.
+        private const int AguaInteriorX1 = 1037;
+        private const int AguaInteriorX2 = 1063;
+        private const int AguaInteriorY = 30;
+        // Recorte del borde superior hierba/agua de la misma pieza para una transición suave.
+        private const int AguaOrillaX = 1048;
+        private const int AguaOrillaY = 5;
 
         [Serializable]
         private sealed class Catalogo
@@ -70,10 +83,13 @@ namespace Avelora.EditorTools
         {
             public Componente componente;
             public bool suelo;
+            public bool recorteAgua;
+            public bool voltear;
             public int casillasAncho;
             public int casillasAlto;
             public int numero;
             public string archivo;
+            public string categoria;
         }
 
         [MenuItem("Avelora/Trocear arte «Mapa v2»")]
@@ -246,6 +262,15 @@ namespace Avelora.EditorTools
             int numeroGlobal = 0;
             AsignarNombres(suelos, prefijo, "suelo", piezas, ref numeroGlobal);
             AsignarNombres(objetos, prefijo, "objeto", piezas, ref numeroGlobal);
+            if (prefijo == "Afueras")
+            {
+                AgregarRecorteAgua(piezas, ref numeroGlobal, "Afueras_agua_001.png", AguaInteriorX1, AguaInteriorY, true);
+                AgregarRecorteAgua(piezas, ref numeroGlobal, "Afueras_agua_002.png", AguaInteriorX2, AguaInteriorY, true);
+                AgregarRecorteAgua(piezas, ref numeroGlobal, "Afueras_orilla_001.png", AguaOrillaX, AguaOrillaY, false);
+                // La misma orilla volteada: hierba abajo, para el borde inferior de ríos y lagos.
+                AgregarRecorteAgua(piezas, ref numeroGlobal, "Afueras_orilla_002.png", AguaOrillaX, AguaOrillaY, false);
+                piezas[piezas.Count - 1].voltear = true;
+            }
             string archivoHoja = "_hoja_" + prefijo + ".png";
             BorrarPngObsoletos(carpetaSalidaFisica, prefijo, piezas, archivoHoja);
 
@@ -272,7 +297,8 @@ namespace Avelora.EditorTools
                 {
                     numero = pieza.numero,
                     archivo = pieza.archivo,
-                    categoria = pieza.suelo ? "suelo" : "objeto",
+                    categoria = string.IsNullOrEmpty(pieza.categoria)
+                        ? (pieza.suelo ? "suelo" : "objeto") : pieza.categoria,
                     casillasAncho = pieza.casillasAncho,
                     casillasAlto = pieza.casillasAlto,
                     origen = new OrigenCaja
@@ -460,9 +486,47 @@ namespace Avelora.EditorTools
             }
         }
 
+        private static void AgregarRecorteAgua(List<Candidato> piezas, ref int numeroGlobal,
+            string archivo, int x, int y, bool requiereMargen)
+        {
+            if (requiereMargen && (x < AguaPiezaX + MargenAgua || y < AguaPiezaY + MargenAgua ||
+                x + Casilla > AguaPiezaX + AguaPiezaAncho - MargenAgua ||
+                y + Casilla > AguaPiezaY + AguaPiezaAlto - MargenAgua))
+            {
+                throw new InvalidOperationException("El recorte de agua no conserva el margen mínimo.");
+            }
+
+            piezas.Add(new Candidato
+            {
+                componente = new Componente
+                {
+                    x0 = x,
+                    y0 = y,
+                    x1 = x + Casilla - 1,
+                    y1 = y + Casilla - 1
+                },
+                recorteAgua = true,
+                casillasAncho = 1,
+                casillasAlto = 1,
+                numero = ++numeroGlobal,
+                archivo = archivo,
+                categoria = "agua"
+            });
+        }
+
         private static Color32[] Renderizar(Candidato candidato, Color32[] fuente, byte[] alfa, int[] etiquetas,
             int anchoFuente, int altoFuente, int anchoSalida, int altoSalida)
         {
+            if (candidato.recorteAgua)
+            {
+                Color32[] agua = RecortarAgua(candidato.componente, fuente, alfa, anchoFuente, altoFuente);
+                if (candidato.voltear) Array.Reverse(agua);
+                // Reverse gira 180°; se deshace el espejo horizontal fila a fila para quedarse solo con el volteo vertical.
+                if (candidato.voltear)
+                    for (int fila = 0; fila < Casilla; fila++) Array.Reverse(agua, fila * Casilla, Casilla);
+                return agua;
+            }
+
             var salida = new Color32[anchoSalida * altoSalida];
             Componente componente = candidato.componente;
             bool recortarSuelo = candidato.suelo && componente.Ancho >= 40 && componente.Alto >= 40;
@@ -545,6 +609,26 @@ namespace Avelora.EditorTools
                             (byte)((sumaB + sumaAlfa / 2) / sumaAlfa),
                             (byte)Math.Min(255, (sumaAlfa + cuenta / 2) / cuenta));
                     salida[(altoSalida - 1 - y) * anchoSalida + x] = resultado;
+                }
+            }
+
+            return salida;
+        }
+
+        private static Color32[] RecortarAgua(Componente recorte, Color32[] fuente, byte[] alfa,
+            int anchoFuente, int altoFuente)
+        {
+            var salida = new Color32[Casilla * Casilla];
+            for (int y = 0; y < Casilla; y++)
+            {
+                int filaFuente = (altoFuente - 1 - (recorte.y0 + y)) * anchoFuente;
+                int filaSalida = (Casilla - 1 - y) * Casilla;
+                for (int x = 0; x < Casilla; x++)
+                {
+                    int indiceFuente = filaFuente + recorte.x0 + x;
+                    Color32 color = fuente[indiceFuente];
+                    color.a = alfa[indiceFuente];
+                    salida[filaSalida + x] = color;
                 }
             }
 

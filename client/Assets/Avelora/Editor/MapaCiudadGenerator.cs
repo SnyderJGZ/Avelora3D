@@ -23,6 +23,11 @@ namespace Avelora.EditorTools
         public static void Generate()
         {
             MapaCiudadLayout.Resultado layout = MapaCiudadLayout.Generar();
+            for (int i = 0; i < layout.Suelo.Length; i++)
+            {
+                if (layout.Suelo[i] == MapaCiudadLayout.Piezas.Agua.Archivo)
+                    layout.Suelo[i] = MapaCiudadLayout.Piezas.AguaMar.Archivo;
+            }
             SetupImporters();
             Paint(layout);
             ExportAndReport(layout);
@@ -68,7 +73,9 @@ namespace Avelora.EditorTools
                     string nombreSuelo = layout.Suelo[i];
                     if (nombreSuelo == MapaCiudadLayout.Piezas.Agua.Archivo ||
                         nombreSuelo == MapaCiudadLayout.Piezas.AguaMar.Archivo ||
-                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAgua.Archivo)
+                        nombreSuelo == MapaCiudadLayout.Piezas.AguaMar2.Archivo ||
+                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAgua.Archivo ||
+                        nombreSuelo == MapaCiudadLayout.Piezas.OrillaAguaAbajo.Archivo)
                     {
                         water.SetTile(cell, TileFor(nombreSuelo));
                     }
@@ -173,7 +180,7 @@ namespace Avelora.EditorTools
         private static Sprite SpriteFor(string name)
         {
             string carpeta = name == MapaCiudadLayout.Piezas.Agua.Archivo ? LegacyArtFolder : ArtFolder;
-            // Las piezas de J-03 ya traen «.png»; el agua vieja («Water») no.
+            // «Water» es solo una marca interna; las piezas de catálogo ya incluyen «.png».
             string path = carpeta + "/" + Path.GetFileNameWithoutExtension(name) + ".png";
             Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
             if (sprite == null)

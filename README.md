@@ -2316,7 +2316,7 @@ parejas consecutivas, sin saltos. No se modificó predicción, fuera del alcance
 
 Pasada visual J-04b: se actualizó el layout determinista; huella 8bd5c8c768ad7abb41f62ac65a458af8a14cb422ac428c15140caa68b4529bc2; 15.301 casillas libres y alcanzables.
 
-El servidor y los bots cargan **`maps/avelora-ciudad.avmap`**, mapa de 160×120 (x −80..79, y −60..59), con huella `8bd5c8c768ad7abb41f62ac65a458af8a14cb422ac428c15140caa68b4529bc2`. La aparición está en (0,5; −4,5); la zona segura «Ciudad» ocupa −30,−22,60×44 y «Arena del Este» es PvP en 44,28,14×10. Hay 10 spawners (6 orcos 2001 y 4 orcos guerreros 2002) fuera de la ciudad. El layout determinista es `Editor/MapaCiudadLayout.cs`, pintado/exportado por `Editor/MapaCiudadGenerator.cs` desde «Avelora › Generar mapa «Ciudad»». El layout comprueba mediante BFS que puertas, claros y arena sean alcanzables desde la aparición; en la generación comprobada hubo 15.301 casillas libres, todas alcanzables.
+El servidor y los bots cargan **`maps/avelora-ciudad.avmap`**, mapa de 160×120 (x −80..79, y −60..59), con huella `a602b466370e3c5e8d165596dc8aebb74b2eaf63028f925fcbba1c35481e95dd`. La aparición está en (0,5; −4,5); la zona segura «Ciudad» ocupa −30,−22,60×44 y «Arena del Este» es PvP en 44,28,14×10. Hay 10 spawners (6 orcos 2001 y 4 orcos guerreros 2002) fuera de la ciudad. El layout determinista es `Editor/MapaCiudadLayout.cs`, pintado/exportado por `Editor/MapaCiudadGenerator.cs` desde «Avelora › Generar mapa «Ciudad»». El layout comprueba mediante BFS que puertas, claros y arena sean alcanzables desde la aparición; en la generación comprobada hubo 15.301 casillas libres, todas alcanzables.
 
 ### Mapa «Valle» (J-02)
 
