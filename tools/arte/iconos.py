@@ -45,6 +45,7 @@ TIPOS = {
     "objetos": ("iconos.json", os.path.join(RECURSOS, "GUI", "Items"), ESTILO, True),
     "habilidades": ("habilidades.json", os.path.join(RECURSOS, "GUI", "Skills"), ESTILO_HABILIDAD, False),
     "personajes": ("personajes.json", os.path.join(RECURSOS, "Characters"), ESTILO_PERSONAJE, True),
+    "pnj": ("pnj.json", os.path.join(RECURSOS, "Npcs"), ESTILO_PERSONAJE, True),
 }
 
 

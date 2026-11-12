@@ -2064,16 +2064,19 @@ namespace Avelora.Client
 
         private Sprite _baseSprite;
 
-        // Sprites de personaje por clase (Resources/Characters/<classId>), 1,2 casillas de alto; null = sin arte.
-        private readonly Dictionary<byte, Sprite> _classSprites = new Dictionary<byte, Sprite>();
+        // Sprites fijos de personaje (Resources/Characters/<clase>, Resources/Npcs/<tipo>), 1,2 casillas de alto;
+        // null = sin arte.
+        private readonly Dictionary<string, Sprite> _figureSprites = new Dictionary<string, Sprite>();
 
-        private Sprite ClassSprite(byte classId)
+        private Sprite ClassSprite(byte classId) => FigureSprite("Characters/" + classId);
+
+        private Sprite FigureSprite(string path)
         {
-            if (_classSprites.TryGetValue(classId, out Sprite sprite)) return sprite;
-            Texture2D texture = Resources.Load<Texture2D>("Characters/" + classId);
+            if (_figureSprites.TryGetValue(path, out Sprite sprite)) return sprite;
+            Texture2D texture = Resources.Load<Texture2D>(path);
             sprite = texture == null ? null : Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
                 new Vector2(0.5f, 0.5f), texture.height / 1.2f);
-            _classSprites[classId] = sprite;
+            _figureSprites[path] = sprite;
             return sprite;
         }
 
@@ -2140,7 +2143,13 @@ namespace Avelora.Client
 
             bool usesFallback = false;
             NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId, out usesFallback) : null;
-            if (look != null)
+            // Sin hojas propias pero con sprite fijo en Resources/Npcs: mejor eso que el orco base teñido.
+            Sprite npcSprite = kind == EntityKind.Npc && (look == null || usesFallback) ? FigureSprite("Npcs/" + typeId) : null;
+            if (npcSprite != null)
+            {
+                view.SetNpcStaticSprite(npcSprite);
+            }
+            else if (look != null)
             {
                 if (usesFallback)
                 {

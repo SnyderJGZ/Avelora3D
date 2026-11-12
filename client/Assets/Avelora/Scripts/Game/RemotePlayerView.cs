@@ -71,6 +71,13 @@ namespace Avelora.Client
             }
         }
 
+        /// <summary>PNJ sin hojas de animación pero con sprite fijo: se dibuja sin el color de PNJ por defecto.</summary>
+        public void SetNpcStaticSprite(Sprite sprite)
+        {
+            _renderer.sprite = sprite;
+            _npcColor = Color.white;
+        }
+
         /// <summary>Aplica un tinte adicional a PNJ que usan el aspecto de reserva.</summary>
         public void SetNpcTint(Color tint)
         {
