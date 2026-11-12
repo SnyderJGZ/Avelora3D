@@ -50,6 +50,7 @@ namespace Avelora.Client
         // Arte de la interfaz (Resources/GUI). Los iconos van por id de objeto (GUI/Items/<id>):
         // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
         private readonly Dictionary<ushort, Texture2D> _itemIcons = new Dictionary<ushort, Texture2D>();
+        private readonly Dictionary<ushort, Texture2D> _skillIcons = new Dictionary<ushort, Texture2D>();
         private GUIStyle _barStyle;
         private static readonly string[] StatusMaskTexts =
         {
@@ -1061,7 +1062,10 @@ namespace Avelora.Client
                 Color previous = GUI.color;
                 bool locked = skill.RequiredLevel > _level;
                 if (locked) GUI.color = new Color(0.5f, 0.5f, 0.5f, 1f);
-                GUI.Label(new Rect(row.x, row.y, row.width * 0.34f, row.height),
+                Texture2D icon = SkillIcon(skill.Id);
+                float iconSize = icon != null ? row.height - 4f : 0f;
+                if (icon != null) GUI.DrawTexture(new Rect(row.x, row.y + 2f, iconSize, iconSize), icon, ScaleMode.ScaleToFit);
+                GUI.Label(new Rect(row.x + iconSize + 4f, row.y, row.width * 0.34f - iconSize - 4f, row.height),
                     skill.Name + " · " + SkillKindText(skill), _darkSmallStyle);
                 GUI.Label(new Rect(row.x + row.width * 0.34f, row.y, row.width * 0.3f, row.height),
                     locked ? "Se desbloquea a nivel " + skill.RequiredLevel
@@ -1124,8 +1128,16 @@ namespace Avelora.Client
             GUI.DrawTexture(slot, Texture2D.whiteTexture);
             GUI.color = ResourceCurrent < skill.ResourceCost || _level < skill.RequiredLevel
                 ? new Color(0.6f, 0.6f, 0.6f, 1f) : previous;
-            string name = skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name;
-            GUI.Label(new Rect(slot.x, slot.y + slot.height * 0.35f, slot.width, slot.height * 0.65f), name, _overlayStyle);
+            Texture2D icon = SkillIcon(skill.Id);
+            if (icon != null)
+            {
+                GUI.DrawTexture(slot, icon, ScaleMode.ScaleToFit);
+            }
+            else
+            {
+                string name = skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name;
+                GUI.Label(new Rect(slot.x, slot.y + slot.height * 0.35f, slot.width, slot.height * 0.65f), name, _overlayStyle);
+            }
             GUI.Label(new Rect(slot.x + 2f, slot.y, slot.width, 18f), ((index + 1) % 10).ToString(), _overlayStyle);
             float seconds = SkillSecondsLeft(skill.Id);
             if (seconds > 0f)
@@ -1180,7 +1192,9 @@ namespace Avelora.Client
                     GUI.color = new Color(0f, 0f, 0f, 0.55f);
                     GUI.DrawTexture(rect, Texture2D.whiteTexture);
                     GUI.color = previous;
-                    GUI.Label(rect, skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name, _overlayStyle);
+                    Texture2D icon = SkillIcon(skill.Id);
+                    if (icon != null) GUI.DrawTexture(rect, icon, ScaleMode.ScaleToFit);
+                    else GUI.Label(rect, skill.Name.Length > 6 ? skill.Name.Substring(0, 6) : skill.Name, _overlayStyle);
                 }
             }
             if (e.rawType != EventType.MouseUp || e.button != 0) return;
@@ -1855,6 +1869,18 @@ namespace Avelora.Client
             {
                 icon = Resources.Load<Texture2D>("GUI/Items/" + itemId);
                 _itemIcons[itemId] = icon;
+            }
+
+            return icon;
+        }
+
+        /// <summary>Icono de habilidad (Resources/GUI/Skills/&lt;id&gt;); null si aún no hay arte.</summary>
+        private Texture2D SkillIcon(ushort skillId)
+        {
+            if (!_skillIcons.TryGetValue(skillId, out Texture2D icon))
+            {
+                icon = Resources.Load<Texture2D>("GUI/Skills/" + skillId);
+                _skillIcons[skillId] = icon;
             }
 
             return icon;
