@@ -49,9 +49,14 @@ TIPOS = {
 }
 
 
-def flujo(prompt, semilla):
-    """Grafo mínimo de FLUX.2 Klein: texto -> latente -> imagen."""
-    return {
+def flujo(prompt, semilla, repetible=False):
+    """Grafo mínimo de FLUX.2 Klein: texto -> latente -> imagen.
+
+    Con repetible=True usa los nodos de ComfyUI-Universal-Seamless-Tiles (latente rodado y VAE circular):
+    la imagen sale repetible de origen. Klein es de pocos pasos, así que se sube a 16 para cerrar la junta.
+    """
+    pasos = 16 if repetible else 4
+    grafo = {
         "1": {"class_type": "UNETLoader",
               "inputs": {"unet_name": "flux-2-klein-4b-fp8.safetensors", "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader",
@@ -61,7 +66,7 @@ def flujo(prompt, semilla):
         "5": {"class_type": "EmptyFlux2LatentImage",
               "inputs": {"width": LADO_GENERADO, "height": LADO_GENERADO, "batch_size": 1}},
         "6": {"class_type": "Flux2Scheduler",
-              "inputs": {"steps": 4, "width": LADO_GENERADO, "height": LADO_GENERADO}},
+              "inputs": {"steps": pasos, "width": LADO_GENERADO, "height": LADO_GENERADO}},
         "7": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
         "8": {"class_type": "RandomNoise", "inputs": {"noise_seed": semilla}},
         "9": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["4", 0]}},
@@ -71,10 +76,17 @@ def flujo(prompt, semilla):
         "11": {"class_type": "VAEDecode", "inputs": {"samples": ["10", 0], "vae": ["3", 0]}},
         "12": {"class_type": "SaveImage", "inputs": {"images": ["11", 0], "filename_prefix": "avelora_icono"}},
     }
+    if repetible:
+        grafo["13"] = {"class_type": "SeamlessTileModelDiT", "inputs": {"model": ["1", 0], "tiling": "enable", "seed": semilla}}
+        grafo["14"] = {"class_type": "MakeCircularVAEDiT",
+                       "inputs": {"vae": ["3", 0], "tiling": "enable", "copy_vae": "Make a copy"}}
+        grafo["9"]["inputs"]["model"] = ["13", 0]
+        grafo["11"]["inputs"]["vae"] = ["14", 0]
+    return grafo
 
 
-def pedir(prompt, semilla):
-    datos = json.dumps({"prompt": flujo(prompt, semilla)}).encode("utf-8")
+def pedir(prompt, semilla, repetible=False):
+    datos = json.dumps({"prompt": flujo(prompt, semilla, repetible)}).encode("utf-8")
     req = urllib.request.Request(API + "/prompt", data=datos, headers={"Content-Type": "application/json"})
     id_trabajo = json.load(urllib.request.urlopen(req))["prompt_id"]
     limite = time.time() + 300

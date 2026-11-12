@@ -5,8 +5,8 @@ Uso (con el Python de ComfyUI y ComfyUI escuchando en 127.0.0.1:8188):
   python tileset.py --regenerar agua # vuelve a pedir esa textura a ComfyUI
 
 Para cada terreno:
-1. ComfyUI genera una textura de 512 px; aquí se hace repetible (mezcla con su copia desplazada media
-   imagen) y se reduce a 256 px, que cubren 4×4 casillas de 64 px.
+1. ComfyUI genera una textura de 512 px ya repetible (nodos de ComfyUI-Universal-Seamless-Tiles) y se reduce
+   a 256 px, que cubren 4×4 casillas de 64 px. El empedrado, patrón regular, se genera por código.
 2. Se componen las 16 combinaciones de esquinas (bit 8 = arriba izq., 4 = arriba dcha., 2 = abajo izq.,
    1 = abajo dcha.). El borde es una curva con ruido periódico de periodo 64 px: dos casillas vecinas
    comparten exactamente el mismo borde, así que el terreno empalma siempre.
@@ -29,37 +29,18 @@ CARPETA = os.path.join(iconos.RAIZ, "client", "Assets", "Avelora", "Art", "Terre
 FUENTES = os.path.join(os.path.dirname(__file__), "texturas")
 CASILLA = 64
 # Orden de abajo arriba: cada terreno se pinta encima de los anteriores.
-# (nombre, descripción, franja de mezcla del borde repetible, brillo). Los patrones regulares (empedrado)
-# quieren una franja estrecha: en una ancha se ven las piedras dobles de la mezcla.
+# (nombre, descripción o None si se genera por código, brillo)
 TERRENOS = [
-    ("agua", "stylized bright blue water with big white wave highlights and ripples, cartoon pixel art", 2.2, 1.0),
-    ("tierra", "packed brown dirt ground with small pebbles and cracks", 2.2, 1.0),
-    ("hierba", "lush green grass lawn with small tufts and a few tiny flowers", 2.2, 1.0),
+    ("agua", "stylized bright blue water with big white wave highlights and ripples, cartoon pixel art", 1.0),
+    ("tierra", "packed brown dirt ground with small pebbles and cracks", 1.0),
+    ("hierba", "lush green grass lawn with small tufts and a few tiny flowers", 1.0),
     # El empedrado es un patrón regular: la IA no lo da repetible, así que se genera por código.
-    ("empedrado", None, 0, 1.0),
+    ("empedrado", None, 1.0),
 ]
 ESTILO = (
     "seamless tileable top-down pixel art ground texture of {desc}, 16-bit RPG tileset, "
     "uniform even pattern across the whole image, flat lighting, no objects, no shadows, no border, no text"
 )
-
-
-def repetible(imagen, franja):
-    """Hace la textura repetible: en los bordes manda la copia desplazada, que allí es continua."""
-    ancho, alto = imagen.size
-    desplazada = Image.new("RGB", imagen.size)
-    desplazada.paste(imagen.crop((ancho // 2, alto // 2, ancho, alto)), (0, 0))
-    desplazada.paste(imagen.crop((0, alto // 2, ancho // 2, alto)), (ancho // 2, 0))
-    desplazada.paste(imagen.crop((ancho // 2, 0, ancho, alto // 2)), (0, alto // 2))
-    desplazada.paste(imagen.crop((0, 0, ancho // 2, alto // 2)), (ancho // 2, alto // 2))
-    mascara = Image.new("L", imagen.size)
-    px = mascara.load()
-    for y in range(alto):
-        for x in range(ancho):
-            # 255 en el centro (original), 0 en el borde (desplazada).
-            d = min(x, ancho - 1 - x, y, alto - 1 - y) / (ancho / 2)
-            px[x, y] = int(255 * min(1.0, d * franja))
-    return Image.composite(imagen, desplazada, mascara)
 
 
 def empedrado_procedural(semilla, lado=128):
@@ -143,16 +124,17 @@ def main():
     args = parser.parse_args()
     os.makedirs(CARPETA, exist_ok=True)
     os.makedirs(FUENTES, exist_ok=True)
-    for indice, (nombre, desc, franja, brillo) in enumerate(TERRENOS):
+    for indice, (nombre, desc, brillo) in enumerate(TERRENOS):
         fuente = os.path.join(FUENTES, nombre + ".png")
         if desc is None:
             textura = empedrado_procedural(31 + indice)
         elif nombre in args.regenerar or not os.path.exists(fuente):
             semilla = random.Random(9000 + indice).randrange(2 ** 32)
-            iconos.pedir(ESTILO.format(desc=desc), semilla).save(fuente)
+            iconos.pedir(ESTILO.format(desc=desc), semilla, repetible=True).save(fuente)
             print(f"{nombre}: textura generada")
         if desc is not None:
-            textura = repetible(Image.open(fuente).convert("RGB"), franja).point(lambda c: min(255, int(c * brillo))).resize((4 * CASILLA, 4 * CASILLA), Image.LANCZOS)
+            # La textura ya sale repetible de ComfyUI (nodos Seamless): no hace falta mezclar bordes.
+            textura = Image.open(fuente).convert("RGB").point(lambda c: min(255, int(c * brillo))).resize((4 * CASILLA, 4 * CASILLA), Image.LANCZOS)
         ruido = ruido_periodico(77 + indice)
         atlas = Image.new("RGBA", (16 * CASILLA, 16 * CASILLA), (0, 0, 0, 0))
         for mascara in range(1, 16):
