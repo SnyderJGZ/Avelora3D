@@ -1,0 +1,977 @@
+fileFormatVersion: 2
+guid: 2baced5eebd389f4381a42e5ee5f8347
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 4318742489736645394
+    second: 2_andar_0
+  - first:
+      213: -1677466407519943055
+    second: 2_andar_1
+  - first:
+      213: 3757020907788036356
+    second: 2_andar_2
+  - first:
+      213: -8605181704969683590
+    second: 2_andar_3
+  - first:
+      213: -5199966531354369527
+    second: 2_andar_4
+  - first:
+      213: 3396009712148557682
+    second: 2_andar_5
+  - first:
+      213: -7036806744473521486
+    second: 2_andar_6
+  - first:
+      213: 7379646013961911285
+    second: 2_andar_7
+  - first:
+      213: -3173718018442455230
+    second: 2_andar_8
+  - first:
+      213: 7722142483777527339
+    second: 2_andar_9
+  - first:
+      213: -5675407029626063062
+    second: 2_andar_10
+  - first:
+      213: -798500228166764978
+    second: 2_andar_11
+  - first:
+      213: -8383872079999812487
+    second: 2_andar_12
+  - first:
+      213: -5997314070371525085
+    second: 2_andar_13
+  - first:
+      213: 972785685806862616
+    second: 2_andar_14
+  - first:
+      213: -1476911347350438752
+    second: 2_andar_15
+  - first:
+      213: -5468637528908785190
+    second: 2_andar_16
+  - first:
+      213: 2849496586870450361
+    second: 2_andar_17
+  - first:
+      213: 3802757110882011553
+    second: 2_andar_18
+  - first:
+      213: -5749765463707981472
+    second: 2_andar_19
+  - first:
+      213: -4908860594783911499
+    second: 2_andar_20
+  - first:
+      213: -8192756374641875431
+    second: 2_andar_21
+  - first:
+      213: 8426087133053971427
+    second: 2_andar_22
+  - first:
+      213: 2744288190122986442
+    second: 2_andar_23
+  - first:
+      213: 5243335371053108544
+    second: 2_andar_24
+  - first:
+      213: 3320919612541592613
+    second: 2_andar_25
+  - first:
+      213: 3504046997511882531
+    second: 2_andar_26
+  - first:
+      213: 8408607242966029082
+    second: 2_andar_27
+  - first:
+      213: 1135150268776598967
+    second: 2_andar_28
+  - first:
+      213: 1635389802550950035
+    second: 2_andar_29
+  - first:
+      213: 8017181559540737379
+    second: 2_andar_30
+  - first:
+      213: 1067784644255683255
+    second: 2_andar_31
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WindowsStoreApps
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: 2_andar_0
+      rect:
+        serializedVersion: 2
+        x: 9
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 21b8329a9614feb30800000000000000
+      internalID: 4318742489736645394
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_1
+      rect:
+        serializedVersion: 2
+        x: 72
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1768f11a03178b8e0800000000000000
+      internalID: -1677466407519943055
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_2
+      rect:
+        serializedVersion: 2
+        x: 137
+        y: 199
+        width: 43
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 409eb6e2c9e932430800000000000000
+      internalID: 3757020907788036356
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_3
+      rect:
+        serializedVersion: 2
+        x: 201
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a7d779fd4d0449880800000000000000
+      internalID: -8605181704969683590
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_4
+      rect:
+        serializedVersion: 2
+        x: 264
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 902e3b68df106d7b0800000000000000
+      internalID: -5199966531354369527
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_5
+      rect:
+        serializedVersion: 2
+        x: 329
+        y: 200
+        width: 44
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 27f246227dc012f20800000000000000
+      internalID: 3396009712148557682
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_6
+      rect:
+        serializedVersion: 2
+        x: 393
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2b2359a6c8d385e90800000000000000
+      internalID: -7036806744473521486
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_7
+      rect:
+        serializedVersion: 2
+        x: 456
+        y: 200
+        width: 43
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5fbb35e53f4c96660800000000000000
+      internalID: 7379646013961911285
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_8
+      rect:
+        serializedVersion: 2
+        x: 13
+        y: 135
+        width: 42
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2471b7df640b4f3d0800000000000000
+      internalID: -3173718018442455230
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_9
+      rect:
+        serializedVersion: 2
+        x: 77
+        y: 134
+        width: 41
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b2e1382ecaf8a2b60800000000000000
+      internalID: 7722142483777527339
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_10
+      rect:
+        serializedVersion: 2
+        x: 141
+        y: 134
+        width: 42
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a27326b4067ec31b0800000000000000
+      internalID: -5675407029626063062
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_11
+      rect:
+        serializedVersion: 2
+        x: 205
+        y: 134
+        width: 42
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e463d0be5482be4f0800000000000000
+      internalID: -798500228166764978
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_12
+      rect:
+        serializedVersion: 2
+        x: 269
+        y: 135
+        width: 41
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 97cbb4d43c086ab80800000000000000
+      internalID: -8383872079999812487
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_13
+      rect:
+        serializedVersion: 2
+        x: 333
+        y: 135
+        width: 42
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 32e9d0dc0a245cca0800000000000000
+      internalID: -5997314070371525085
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_14
+      rect:
+        serializedVersion: 2
+        x: 397
+        y: 135
+        width: 42
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8115a1d5d67008d00800000000000000
+      internalID: 972785685806862616
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_15
+      rect:
+        serializedVersion: 2
+        x: 461
+        y: 136
+        width: 41
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0acfe6064f4f08be0800000000000000
+      internalID: -1476911347350438752
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_16
+      rect:
+        serializedVersion: 2
+        x: 18
+        y: 70
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ad9950c342f7b14b0800000000000000
+      internalID: -5468637528908785190
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_17
+      rect:
+        serializedVersion: 2
+        x: 81
+        y: 70
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9b8e9196c027b8720800000000000000
+      internalID: 2849496586870450361
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_18
+      rect:
+        serializedVersion: 2
+        x: 146
+        y: 71
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1a98639c17b16c430800000000000000
+      internalID: 3802757110882011553
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_19
+      rect:
+        serializedVersion: 2
+        x: 210
+        y: 70
+        width: 34
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 06960e936cab430b0800000000000000
+      internalID: -5749765463707981472
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_20
+      rect:
+        serializedVersion: 2
+        x: 273
+        y: 69
+        width: 34
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5b10efb1c4930ebb0800000000000000
+      internalID: -4908860594783911499
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_21
+      rect:
+        serializedVersion: 2
+        x: 337
+        y: 69
+        width: 35
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 916672efb7b7d4e80800000000000000
+      internalID: -8192756374641875431
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_22
+      rect:
+        serializedVersion: 2
+        x: 402
+        y: 70
+        width: 34
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3ebeb2caa997fe470800000000000000
+      internalID: 8426087133053971427
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_23
+      rect:
+        serializedVersion: 2
+        x: 465
+        y: 70
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: acb849da19ba51620800000000000000
+      internalID: 2744288190122986442
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_24
+      rect:
+        serializedVersion: 2
+        x: 13
+        y: 6
+        width: 33
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 04d8cd55db114c840800000000000000
+      internalID: 5243335371053108544
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_25
+      rect:
+        serializedVersion: 2
+        x: 75
+        y: 6
+        width: 35
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5246b29eac6461e20800000000000000
+      internalID: 3320919612541592613
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_26
+      rect:
+        serializedVersion: 2
+        x: 140
+        y: 7
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 32748f2dd20e0a030800000000000000
+      internalID: 3504046997511882531
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_27
+      rect:
+        serializedVersion: 2
+        x: 205
+        y: 6
+        width: 33
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a1354cc9cbf51b470800000000000000
+      internalID: 8408607242966029082
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_28
+      rect:
+        serializedVersion: 2
+        x: 269
+        y: 6
+        width: 33
+        height: 56
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7bd4e19b72dd0cf00800000000000000
+      internalID: 1135150268776598967
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_29
+      rect:
+        serializedVersion: 2
+        x: 333
+        y: 7
+        width: 34
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 398785a5c5212b610800000000000000
+      internalID: 1635389802550950035
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_30
+      rect:
+        serializedVersion: 2
+        x: 398
+        y: 7
+        width: 32
+        height: 55
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 365ec3cc620c24f60800000000000000
+      internalID: 8017181559540737379
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: 2_andar_31
+      rect:
+        serializedVersion: 2
+        x: 460
+        y: 8
+        width: 34
+        height: 54
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7b21a710a7881de00800000000000000
+      internalID: 1067784644255683255
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      2_andar_0: 4318742489736645394
+      2_andar_1: -1677466407519943055
+      2_andar_10: -5675407029626063062
+      2_andar_11: -798500228166764978
+      2_andar_12: -8383872079999812487
+      2_andar_13: -5997314070371525085
+      2_andar_14: 972785685806862616
+      2_andar_15: -1476911347350438752
+      2_andar_16: -5468637528908785190
+      2_andar_17: 2849496586870450361
+      2_andar_18: 3802757110882011553
+      2_andar_19: -5749765463707981472
+      2_andar_2: 3757020907788036356
+      2_andar_20: -4908860594783911499
+      2_andar_21: -8192756374641875431
+      2_andar_22: 8426087133053971427
+      2_andar_23: 2744288190122986442
+      2_andar_24: 5243335371053108544
+      2_andar_25: 3320919612541592613
+      2_andar_26: 3504046997511882531
+      2_andar_27: 8408607242966029082
+      2_andar_28: 1135150268776598967
+      2_andar_29: 1635389802550950035
+      2_andar_3: -8605181704969683590
+      2_andar_30: 8017181559540737379
+      2_andar_31: 1067784644255683255
+      2_andar_4: -5199966531354369527
+      2_andar_5: 3396009712148557682
+      2_andar_6: -7036806744473521486
+      2_andar_7: 7379646013961911285
+      2_andar_8: -3173718018442455230
+      2_andar_9: 7722142483777527339
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
