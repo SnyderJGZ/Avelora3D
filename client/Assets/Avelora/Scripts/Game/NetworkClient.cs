@@ -346,6 +346,8 @@ namespace Avelora.Client
 
         private void Awake()
         {
+            // Un cliente en red debe seguir leyendo snapshots sin foco: si no, la ventana de atrás se congela.
+            Application.runInBackground = true;
             _map = GetComponent<AveloraMap>();
             _localRenderer = GetComponent<SpriteRenderer>();
             // Sprite base de la escena: lo copian PNJ y objetos sin arte propio aunque el jugador cambie al de su clase.
