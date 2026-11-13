@@ -273,6 +273,7 @@ namespace Avelora.Client
         private string _connAccount;
         private string _connPassword;
         private string _connInvitation;
+        private bool _connRegister;
         private bool _disconnectRequested;
         private bool _challengeReceived;
         private bool _fingerprintWarned;
@@ -1346,7 +1347,8 @@ namespace Avelora.Client
                 _map.ContentHashBytes,
                 _clientToken,
                 _connAccount,
-                encrypted);
+                encrypted,
+                _connRegister ? HelloIntent.Register : HelloIntent.Login);
 
             byte[] bytes = MessageCodec.EncodeHello(hello);
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
@@ -2371,6 +2373,7 @@ namespace Avelora.Client
             _connPassword = _loginPassword;
             // Solo «Crear cuenta» manda la invitación: así «Entrar» con un nombre mal escrito no crea otra cuenta.
             _connInvitation = create ? _loginInvitation ?? string.Empty : string.Empty;
+            _connRegister = create;
             PlayerPrefs.SetString("avelora.server", (_loginServer ?? string.Empty).Trim());
             PlayerPrefs.SetString("avelora.account", account);
             PlayerPrefs.Save();
@@ -2443,7 +2446,7 @@ namespace Avelora.Client
             _lootTexts.Clear();
         }
 
-        private static string DescribeReject(RejectReason reason)
+        private string DescribeReject(RejectReason reason)
         {
             switch (reason)
             {
@@ -2462,7 +2465,9 @@ namespace Avelora.Client
                 case RejectReason.RateLimited:
                     return "Demasiados intentos: espera un momento";
                 case RejectReason.InvalidCredentials:
-                    return "Cuenta o contraseña incorrectas";
+                    return _connRegister ? "Código de invitación incorrecto" : "Cuenta o contraseña incorrectas";
+                case RejectReason.AccountTaken:
+                    return "Ese nombre ya existe: elige otro o pulsa «Ya tengo cuenta»";
                 case RejectReason.RegistrationClosed:
                     return "La cuenta no existe: usa «Crear cuenta» con un código de invitación válido";
                 case RejectReason.CharacterInUse:
