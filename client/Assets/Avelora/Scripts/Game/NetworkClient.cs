@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using Avelora.Net;
 using Avelora.Shared;
 using Avelora.Shared.Prediction;
@@ -37,6 +38,12 @@ namespace Avelora.Client
     {
         /// <summary>Si un frame dura más, se descarta el exceso: evita una avalancha de inputs tras un parón.</summary>
         private const double MaxFrameSeconds = 0.25;
+
+        // Deben coincidir con los límites de server/.../Persistence/LoginValidation.cs.
+        private const int MinAccountLength = 3;
+        private const int MaxAccountLength = 32;
+        private const int MinPasswordLength = 6;
+        private const int MaxPasswordLength = 128;
 
         [Header("Servidor")]
         [SerializeField] private string host = "127.0.0.1";
@@ -253,6 +260,19 @@ namespace Avelora.Client
         private long _snapshotsReceived;
         private bool _connecting;
         private bool _welcomeReceived;
+        private bool _loginActive;
+        private string _loginServer = string.Empty;
+        private string _loginAccount = string.Empty;
+        private string _loginPassword = string.Empty;
+        private string _loginPassword2 = string.Empty;
+        private string _loginInvitation = string.Empty;
+        private bool _loginCreating;
+        private string _loginError = string.Empty;
+        private string _connHost;
+        private int _connPort;
+        private string _connAccount;
+        private string _connPassword;
+        private string _connInvitation;
         private bool _disconnectRequested;
         private bool _challengeReceived;
         private bool _fingerprintWarned;
@@ -349,7 +369,7 @@ namespace Avelora.Client
                 _offlineController.enabled = false;
             }
 
-            Connect();
+            OpenLogin();
         }
 
         private void OnDestroy()
@@ -370,9 +390,15 @@ namespace Avelora.Client
             }
         }
 
-        /// <summary>Abre una conexión nueva. Se puede llamar con R tras un rechazo o un timeout.</summary>
+        /// <summary>Abre una conexión nueva con los valores validados por la pantalla de acceso.</summary>
         public void Connect()
         {
+            if (string.IsNullOrEmpty(_connHost) || _connPort < 1 || _connPort > 65535 ||
+                _connAccount == null || _connPassword == null || _connInvitation == null)
+            {
+                return;
+            }
+
             if (_transport != null || _welcomeReceived)
             {
                 return;
@@ -381,12 +407,13 @@ namespace Avelora.Client
             if (_map == null || _map.Grid == null || _map.ContentHashBytes == null)
             {
                 _status = "mapa sin construir: no se puede conectar";
+                BackToLogin();
                 return;
             }
 
             if (_offlineController != null)
             {
-                // También al reconectar con R: nunca debe haber dos cosas moviendo el Transform.
+                // También al reconectar desde la pantalla de acceso: nunca hay dos cosas moviendo el Transform.
                 _offlineController.enabled = false;
             }
 
@@ -443,7 +470,7 @@ namespace Avelora.Client
             _clientToken = (uint)UnityEngine.Random.Range(1, int.MaxValue);
             _connectStartedAt = Time.unscaledTimeAsDouble;
             _connecting = true;
-            _status = "conectando a " + host + ":" + port;
+            _status = "conectando a " + _connHost + ":" + _connPort;
 
             var transport = new LiteNetLibClientTransport();
             transport.Connected += OnTransportConnected;
@@ -453,7 +480,7 @@ namespace Avelora.Client
 
             try
             {
-                transport.Connect(host, port);
+                transport.Connect(_connHost, _connPort);
             }
             catch (Exception exception)
             {
@@ -482,13 +509,6 @@ namespace Avelora.Client
 
             if (!_welcomeReceived)
             {
-                if (_transport == null &&
-                    Keyboard.current != null &&
-                    Keyboard.current.rKey.wasPressedThisFrame)
-                {
-                    Connect();
-                }
-
                 if (_connecting &&
                     Time.unscaledTimeAsDouble - _connectStartedAt > welcomeTimeoutSeconds)
                 {
@@ -1312,20 +1332,18 @@ namespace Avelora.Client
                 return;
             }
 
-            string account = accountName == null ? string.Empty : accountName.Trim();
-
             byte[] encrypted = HelloSecrets.Encrypt(
                 _serverPublicKey,
                 _challengeNonce,
-                password,
-                invitationCode);
+                _connPassword,
+                _connInvitation);
 
             var hello = new HelloMessage(
                 ProtocolConstants.Version,
                 (ushort)SimulationConstants.TickRate,
                 _map.ContentHashBytes,
                 _clientToken,
-                account,
+                _connAccount,
                 encrypted);
 
             byte[] bytes = MessageCodec.EncodeHello(hello);
@@ -2280,6 +2298,131 @@ namespace Avelora.Client
 
             // No se borra _prediction: tras desconectar interesa seguir viendo la última posición
             // y las estadísticas. Connect() lo reemplaza al recibir el próximo Welcome.
+            BackToLogin();
+        }
+
+        private void OpenLogin()
+        {
+            _loginServer = PlayerPrefs.GetString("avelora.server", host + ":" + port);
+            _loginAccount = PlayerPrefs.GetString("avelora.account", string.Empty);
+#if UNITY_EDITOR
+            if (string.IsNullOrEmpty(_loginAccount))
+            {
+                _loginAccount = accountName ?? string.Empty;
+                _loginPassword = password ?? string.Empty;
+                _loginInvitation = invitationCode ?? string.Empty;
+            }
+#endif
+            _loginActive = true;
+            _loginError = string.Empty;
+            _loginFocusPending = true;
+            _status = "Introduce tus datos para entrar";
+        }
+
+        private void SubmitLogin(bool create)
+        {
+            _loginError = string.Empty;
+            string account = (_loginAccount ?? string.Empty).Trim();
+            if (!TryParseLoginServer(_loginServer, out string parsedHost, out int parsedPort))
+            {
+                _loginError = "Servidor no válido (host:puerto)";
+                return;
+            }
+
+            // El protocolo limita bytes UTF-8, no caracteres: una «ñ» ocupa dos y el saludo fallaría al cifrar.
+            if (account.Length < MinAccountLength || account.Length > MaxAccountLength ||
+                Encoding.UTF8.GetByteCount(account) > ProtocolConstants.MaxAccountNameBytes)
+            {
+                _loginError = "La cuenta debe tener entre 3 y 32 caracteres (sin demasiadas tildes o eñes)";
+                return;
+            }
+
+            int passwordLength = (_loginPassword ?? string.Empty).Length;
+            if (passwordLength < MinPasswordLength || passwordLength > MaxPasswordLength ||
+                Encoding.UTF8.GetByteCount(_loginPassword ?? string.Empty) > ProtocolConstants.MaxPasswordBytes)
+            {
+                _loginError = "La contraseña debe tener entre 6 y 128 caracteres (sin demasiadas tildes o eñes)";
+                return;
+            }
+
+            if (create && _loginPassword2 != _loginPassword)
+            {
+                _loginError = "Las contraseñas no coinciden";
+                return;
+            }
+
+            if (create && string.IsNullOrEmpty(_loginInvitation))
+            {
+                _loginError = "Hace falta un código de invitación";
+                return;
+            }
+
+            if (create && Encoding.UTF8.GetByteCount(_loginInvitation) > ProtocolConstants.MaxInvitationCodeBytes)
+            {
+                _loginError = "El código de invitación es demasiado largo";
+                return;
+            }
+
+            _connHost = parsedHost;
+            _connPort = parsedPort;
+            _connAccount = account;
+            _connPassword = _loginPassword;
+            // Solo «Crear cuenta» manda la invitación: así «Entrar» con un nombre mal escrito no crea otra cuenta.
+            _connInvitation = create ? _loginInvitation ?? string.Empty : string.Empty;
+            PlayerPrefs.SetString("avelora.server", (_loginServer ?? string.Empty).Trim());
+            PlayerPrefs.SetString("avelora.account", account);
+            PlayerPrefs.Save();
+
+            _loginActive = false;
+            Connect();
+        }
+
+        private static bool TryParseLoginServer(string value, out string parsedHost, out int parsedPort)
+        {
+            parsedHost = string.Empty;
+            parsedPort = ProtocolConstants.DefaultPort;
+            string server = (value ?? string.Empty).Trim();
+            if (server.Length == 0)
+            {
+                return false;
+            }
+
+            int colon = server.IndexOf(':');
+            if (colon >= 0)
+            {
+                // Solo IPv4/nombres de host: el formato con un único ':' no admite direcciones IPv6.
+                if (colon == 0 || colon != server.LastIndexOf(':'))
+                {
+                    return false;
+                }
+
+                string portText = server.Substring(colon + 1);
+                if (!int.TryParse(portText, out parsedPort) || parsedPort < 1 || parsedPort > 65535)
+                {
+                    return false;
+                }
+
+                parsedHost = server.Substring(0, colon);
+            }
+            else
+            {
+                parsedHost = server;
+            }
+
+            return !string.IsNullOrWhiteSpace(parsedHost) &&
+                Uri.CheckHostName(parsedHost) != UriHostNameType.Unknown;
+        }
+
+        private void BackToLogin()
+        {
+            if (!connectOnStart)
+            {
+                return;
+            }
+
+            _loginError = _status;
+            _loginActive = true;
+            _loginFocusPending = true;
         }
 
         private void ClearRemoteViews()
@@ -2315,11 +2458,11 @@ namespace Avelora.Client
                 case RejectReason.Timeout:
                     return "tiempo de saludo agotado";
                 case RejectReason.RateLimited:
-                    return "demasiados mensajes";
+                    return "Demasiados intentos: espera un momento";
                 case RejectReason.InvalidCredentials:
-                    return "cuenta, contraseña o invitación incorrectas";
+                    return "Cuenta o contraseña incorrectas";
                 case RejectReason.RegistrationClosed:
-                    return "cuenta inexistente o invitación no válida";
+                    return "La cuenta no existe: usa «Crear cuenta» con un código de invitación válido";
                 case RejectReason.CharacterInUse:
                     return "ese personaje ya está conectado";
                 case RejectReason.LoggedInElsewhere:

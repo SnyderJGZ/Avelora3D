@@ -46,6 +46,12 @@ namespace Avelora.Client
         private Rect _characterPanel;
         private string _deleteControlName = "avelora-character-delete";
         private string _createControlName = "avelora-character-create";
+        private bool _loginFocusPending;
+        private const string LoginServerControl = "avelora-login-server";
+        private const string LoginAccountControl = "avelora-login-account";
+        private const string LoginPasswordControl = "avelora-login-password";
+        private const string LoginPassword2Control = "avelora-login-password2";
+        private const string LoginInvitationControl = "avelora-login-invitation";
 
         // Arte de la interfaz (Resources/GUI). Los iconos van por id de objeto (GUI/Items/<id>):
         // el servidor manda los datos y el cliente solo pone la imagen; null = sin icono todavía.
@@ -60,6 +66,14 @@ namespace Avelora.Client
 
         private void OnGUI()
         {
+            if (connectOnStart && _loginActive)
+            {
+                EnsureOverlayStyles();
+                EnsureGuiArt();
+                DrawLogin();
+                return;
+            }
+
             if (connectOnStart && !_welcomeReceived && (_connecting || _selectionActive))
             {
                 EnsureOverlayStyles();
@@ -99,8 +113,7 @@ namespace Avelora.Client
                 "Input " + LastInputSequence +
                 " · Confirmado " + LastProcessedInputSequence +
                 " · Tick " + _lastServerTick +
-                " · Remotos " + RemoteViewCount +
-                (_transport == null ? " · Pulsa R para reconectar" : string.Empty),
+                " · Remotos " + RemoteViewCount,
                 _overlayStyle);
 
             if (_welcomeReceived)
@@ -549,6 +562,76 @@ namespace Avelora.Client
             }
 
             GUI.color = previousColor;
+        }
+
+        private void DrawLogin()
+        {
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                SubmitLogin(_loginCreating);
+                e.Use();
+            }
+
+            float width = Mathf.Min(460f, Screen.width - 24f);
+            float height = _loginCreating ? 388f : 292f;
+            Rect panel = new Rect((Screen.width - width) / 2f, (Screen.height - height) / 2f, width, height);
+            GUI.DrawTexture(panel, _darkSlotFill);
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 10f, width - 32f, 28f), "Acceso", _darkTitleStyle);
+
+            float fieldX = panel.x + 16f;
+            float fieldWidth = width - 32f;
+            float y = panel.y + 46f;
+            GUI.Label(new Rect(fieldX, y, fieldWidth, 18f), "Servidor", _darkTextStyle);
+            GUI.SetNextControlName(LoginServerControl);
+            _loginServer = GUI.TextField(new Rect(fieldX, y + 19f, fieldWidth, 26f), _loginServer, 64);
+            y += 48f;
+
+            GUI.Label(new Rect(fieldX, y, fieldWidth, 18f), "Cuenta", _darkTextStyle);
+            GUI.SetNextControlName(LoginAccountControl);
+            _loginAccount = GUI.TextField(new Rect(fieldX, y + 19f, fieldWidth, 26f), _loginAccount, 32);
+            y += 48f;
+
+            GUI.Label(new Rect(fieldX, y, fieldWidth, 18f), "Contraseña", _darkTextStyle);
+            GUI.SetNextControlName(LoginPasswordControl);
+            _loginPassword = GUI.PasswordField(new Rect(fieldX, y + 19f, fieldWidth, 26f), _loginPassword, '*', 128);
+            y += 48f;
+
+            if (_loginCreating)
+            {
+                GUI.Label(new Rect(fieldX, y, fieldWidth, 18f), "Repetir contraseña", _darkTextStyle);
+                GUI.SetNextControlName(LoginPassword2Control);
+                _loginPassword2 = GUI.PasswordField(new Rect(fieldX, y + 19f, fieldWidth, 26f), _loginPassword2, '*', 128);
+                y += 48f;
+
+                GUI.Label(new Rect(fieldX, y, fieldWidth, 18f), "Código de invitación", _darkTextStyle);
+                GUI.SetNextControlName(LoginInvitationControl);
+                _loginInvitation = GUI.TextField(new Rect(fieldX, y + 19f, fieldWidth, 26f), _loginInvitation, 64);
+                y += 48f;
+            }
+
+            if (_loginFocusPending)
+            {
+                GUI.FocusControl(string.IsNullOrEmpty(_loginAccount) ? LoginAccountControl : LoginPasswordControl);
+                _loginFocusPending = false;
+            }
+
+            string message = string.IsNullOrEmpty(_loginError) ? _status : _loginError;
+            GUI.Label(new Rect(fieldX, y + 2f, fieldWidth, 38f), message,
+                string.IsNullOrEmpty(_loginError) ? _darkSmallStyle : _darkRedStyle);
+            y += 48f;
+
+            if (GUI.Button(new Rect(fieldX, y, 190f, 32f), _loginCreating ? "Crear cuenta" : "Entrar", _darkButtonStyle))
+            {
+                SubmitLogin(_loginCreating);
+            }
+
+            if (GUI.Button(new Rect(fieldX + 198f, y + 2f, Mathf.Min(150f, Mathf.Max(0f, fieldWidth - 198f)), 28f),
+                _loginCreating ? "Ya tengo cuenta" : "Crear cuenta", _darkButtonStyle))
+            {
+                _loginCreating = !_loginCreating;
+                _loginError = string.Empty;
+            }
         }
 
         private void DrawCharacterSelection()
