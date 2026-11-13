@@ -60,7 +60,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
 
-                Assert.True(repository.Login("cuenta", "secreto1", "avelora-dev", "avelora-dev").Success);
+                Assert.True(repository.Register("cuenta", "secreto1", "avelora-dev", "avelora-dev").Success);
             }
 
             Assert.Equal(600_000, ReadIterations(DatabasePath, "cuenta"));
@@ -69,8 +69,8 @@ namespace Avelora.Tests
             using (var reopened = new SqlitePlayerRepository(DatabasePath))
             {
                 reopened.Initialize();
-                Assert.True(reopened.Login("cuenta", "secreto1", string.Empty, string.Empty).Success);
-                Assert.False(reopened.Login("cuenta", "otra-clave", string.Empty, string.Empty).Success);
+                Assert.True(reopened.Login("cuenta", "secreto1").Success);
+                Assert.False(reopened.Login("cuenta", "otra-clave").Success);
             }
         }
 
@@ -80,7 +80,7 @@ namespace Avelora.Tests
             using (var old = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
             {
                 old.Initialize();
-                Assert.True(old.Login("cuenta", "secreto1", "avelora-dev", "avelora-dev").Success);
+                Assert.True(old.Register("cuenta", "secreto1", "avelora-dev", "avelora-dev").Success);
             }
 
             Assert.Equal(1_000, ReadIterations(DatabasePath, "cuenta"));
@@ -88,7 +88,7 @@ namespace Avelora.Tests
             using (var upgraded = new SqlitePlayerRepository(DatabasePath, passwordIterations: 2_000))
             {
                 upgraded.Initialize();
-                Assert.True(upgraded.Login("cuenta", "secreto1", string.Empty, string.Empty).Success);
+                Assert.True(upgraded.Login("cuenta", "secreto1").Success);
             }
 
             Assert.Equal(2_000, ReadIterations(DatabasePath, "cuenta"));
@@ -96,8 +96,8 @@ namespace Avelora.Tests
             using (var check = new SqlitePlayerRepository(DatabasePath, passwordIterations: 2_000))
             {
                 check.Initialize();
-                Assert.True(check.Login("cuenta", "secreto1", string.Empty, string.Empty).Success);
-                Assert.False(check.Login("cuenta", "otra-clave", string.Empty, string.Empty).Success);
+                Assert.True(check.Login("cuenta", "secreto1").Success);
+                Assert.False(check.Login("cuenta", "otra-clave").Success);
             }
         }
 
@@ -313,6 +313,39 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Un_Registro_Cuenta_En_El_Tope_Por_IP()
+        {
+            var repository = new BlockingRepository();
+
+            try
+            {
+                using var harness = new Harness(repository, config => config.MaxPendingLoginsPerIp = 2);
+
+                for (int id = 1; id <= 3; id++)
+                {
+                    harness.Transport.Addresses[id] = "10.1.1.1";
+                    harness.Connect(id);
+                    harness.Handshake(id, "alta" + id, intent: HelloIntent.Register);
+                }
+
+                harness.Server.PollOnce();
+
+                Assert.True(repository.Started.Wait(5_000), "El registro de la primera conexión no arrancó.");
+                Assert.True(harness.HasReject(3, out RejectMessage reject));
+                Assert.Equal(RejectReason.RateLimited, reject.Reason);
+                Assert.DoesNotContain("alta3", repository.Accounts);
+
+                repository.Gate.Set();
+                harness.Pump(1);
+            }
+            finally
+            {
+                repository.Gate.Set();
+                repository.Dispose();
+            }
+        }
+
+        [Fact]
         public void Otra_IP_Entra_Con_La_Primera_En_El_Tope()
         {
             var repository = new BlockingRepository();
@@ -491,6 +524,31 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void Los_Registros_En_Vuelo_Cuentan_Para_El_Limite_Por_Cuenta()
+        {
+            WaitForStableMinute();
+
+            var repository = new CountingRepository();
+            using var harness = new Harness(repository, config => config.MaxFailedLoginsPerAccountPerMinute = 5);
+
+            for (int i = 1; i <= 5; i++)
+            {
+                harness.Connect(i);
+                harness.Handshake(i, "dev", "mala-clave", HelloIntent.Register);
+                Assert.False(harness.HasReject(i));
+            }
+
+            harness.Connect(6);
+            harness.Handshake(6, "dev", "mala-clave", HelloIntent.Register);
+            Assert.True(harness.HasReject(6, out RejectMessage reject));
+            Assert.Equal(RejectReason.RateLimited, reject.Reason);
+
+            harness.Pump(6);
+            harness.PumpUntil(() => repository.Calls >= 5);
+            Assert.Equal(5, repository.Calls);
+        }
+
+        [Fact]
         public void Un_Saludo_Reenviado_En_Otra_Conexion_Se_Rechaza_Sin_Llegar_Al_Repositorio()
         {
             var repository = new CountingRepository();
@@ -554,6 +612,32 @@ namespace Avelora.Tests
             }
 
             Assert.Equal(3, repository.Calls);
+        }
+
+        [Fact]
+        public void Register_Por_La_Red_Con_Cuenta_Existente_Recibe_AccountTaken()
+        {
+            using var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000);
+            repository.Initialize();
+            using var harness = new Harness(repository, config => config.RegistrationInvitationCode = "inv");
+
+            harness.Connect(1);
+            harness.Handshake(1, "dev", intent: HelloIntent.Register);
+            harness.Pump(1);
+            Assert.True(harness.HasWelcome(1));
+            Assert.False(harness.HasReject(1));
+
+            harness.Connect(2);
+            harness.Handshake(2, "DEV", intent: HelloIntent.Register);
+            harness.Pump(2);
+            Assert.True(harness.HasReject(2, out RejectMessage duplicate));
+            Assert.Equal(RejectReason.AccountTaken, duplicate.Reason);
+
+            harness.Connect(3);
+            harness.Handshake(3, "nadie", intent: HelloIntent.Login);
+            harness.Pump(3);
+            Assert.True(harness.HasReject(3, out RejectMessage missing));
+            Assert.Equal(RejectReason.InvalidCredentials, missing.Reason);
         }
 
         // ---------------------------------------------------------------- 7: errores de guardado
@@ -704,11 +788,7 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode)
+            public AccountLoginResult Login(string accountName, string password)
             {
                 int accountId;
                 lock (_gate)
@@ -728,6 +808,9 @@ namespace Avelora.Tests
 
                 return AccountLoginResult.Ok(accountId);
             }
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public CharacterRecord[] ListCharacters(int accountId)
             {
@@ -805,17 +888,16 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode)
+            public AccountLoginResult Login(string accountName, string password)
             {
                 Interlocked.Increment(ref _calls);
                 return AccountLoginResult.Failed(
                     RejectReason.InvalidCredentials,
                     countsAsFailedAttempt: true);
             }
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
 
@@ -838,15 +920,14 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode)
+            public AccountLoginResult Login(string accountName, string password)
             {
                 Interlocked.Increment(ref _calls);
                 return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
             }
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public void SaveCharacter(CharacterRecord character) => throw new NotSupportedException();
 
@@ -885,12 +966,11 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode) =>
+            public AccountLoginResult Login(string accountName, string password) =>
                 throw new NotSupportedException();
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public void SaveCharacter(CharacterRecord character)
             {
@@ -919,12 +999,11 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode) =>
+            public AccountLoginResult Login(string accountName, string password) =>
                 throw new NotSupportedException();
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public void SaveCharacter(CharacterRecord character) =>
                 throw new IOException("disco lleno");
@@ -1003,19 +1082,29 @@ namespace Avelora.Tests
                     "La conexión " + connectionId + " no recibió el desafío del servidor.");
             }
 
-            public void Handshake(int connectionId, string account, string password = "secreto1")
+            public void Handshake(
+                int connectionId,
+                string account,
+                string password = "secreto1",
+                HelloIntent intent = HelloIntent.Login,
+                string? invitation = null)
             {
-                Transport.RaiseReceived(connectionId, HandshakeBytes(connectionId, account, password));
+                Transport.RaiseReceived(connectionId, HandshakeBytes(connectionId, account, password, intent, invitation));
             }
 
             /// <summary>Codifica un saludo cifrado con el nonce del desafío de esa conexión.</summary>
-            public byte[] HandshakeBytes(int connectionId, string account, string password = "secreto1")
+            public byte[] HandshakeBytes(
+                int connectionId,
+                string account,
+                string password = "secreto1",
+                HelloIntent intent = HelloIntent.Login,
+                string? invitation = null)
             {
                 byte[] encrypted = HelloSecrets.Encrypt(
                     Server.PublicKey,
                     _challengeNonces[connectionId],
                     password,
-                    Config.RegistrationInvitationCode);
+                    invitation ?? Config.RegistrationInvitationCode);
 
                 var hello = new HelloMessage(
                     ProtocolConstants.Version,
@@ -1023,7 +1112,8 @@ namespace Avelora.Tests
                     MapHash,
                     1000u + (uint)connectionId,
                     account,
-                    encrypted);
+                    encrypted,
+                    intent);
 
                 return MessageCodec.EncodeHello(hello);
             }

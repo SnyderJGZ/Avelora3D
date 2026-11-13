@@ -285,7 +285,7 @@ namespace Avelora.Tests
         [Fact]
         public void Stats_V24_Contiene_Critico_Y_Prisa_Y_Flags_Criticos()
         {
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
             var stats = new StatsMessage(1, 1, 4, 3, 1, 10, 0, 0, 0, 0, 3, 100,
                 6, 0, 2, 0, 840, 60, 100, 100, 1);
             byte[] bytes = MessageCodec.EncodeStats(stats);

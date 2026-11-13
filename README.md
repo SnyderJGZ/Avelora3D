@@ -4,7 +4,7 @@ Implementación por etapas del *plan del servidor* de Avelora: un MMORPG 2D con 
 autoritativo en C# (.NET)** que comparte con el cliente de Unity el código que ambos deben
 calcular igual (movimiento y colisión).
 
-> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-30 de servidor implementadas (I-19 añade habilidades y protocolo v25; cliente I-30b pendiente).** El servidor guarda **cuentas y personajes en
+> **Estado: Etapas F, G e I-03c cerradas, Etapa H en curso; I-04 a I-32 de servidor implementadas (I-32 añade el protocolo v26; cliente I-32b pendiente).** El servidor guarda **cuentas y personajes en
 > SQLite** detrás de `IPlayerRepository`, y el login ya es real: **PBKDF2-HMAC-SHA256 con 600 000
 > iteraciones**, registro con **código de invitación** y límites de intentos por cuenta. Desde H-02
 > (**protocolo v4**) la contraseña y la invitación viajan **cifradas con RSA** contra un reto de un
@@ -31,7 +31,7 @@ calcular igual (movimiento y colisión).
 > I-15 sube a **v19** con zonas normales, seguras y PvP anunciadas por mensajes propios.
 > I-17 añade áreas y curación: **protocolo v22, esquema v8**. I-18 añade estados temporales:
 > **protocolo v23**, sin cambiar el esquema.
-> I-28 añade crítico, prisa, daño PvP y recarga global (protocolo v24); I-19 amplía `SkillCatalog` y sube a **v25**, sin cambiar el esquema.
+> I-28 añade crítico, prisa, daño PvP y recarga global (protocolo v24); I-19 amplía `SkillCatalog` y sube a **v25**, sin cambiar el esquema. I-32 separa login y registro (`HelloIntent`, `AccountTaken`) y sube a **v26**, sin cambiar el esquema.
 > I-15p añade combate entre jugadores y modo PvE/PvP: **protocolo v20, esquema v8**.
 > Ver [Etapa H](#qué-hace-la-etapa-h), [Etapa I](#qué-hace-la-etapa-i),
 > [I-03c](#tipo-de-entidad-en-el-snapshot-i-03c-protocolo-v6), [I-04](#botín-e-inventario-i-04),
@@ -166,7 +166,8 @@ dotnet run --project tools/Avelora.Bots -- --bots 3 --seconds 15
 dotnet run --project tools/Avelora.Bots -- --host 127.0.0.1 --port 7777 --bots 10
 ```
 
-Cada bot hace el handshake real, manda una intención cada 50 ms y lee snapshots. Al final imprime su
+Cada bot hace el handshake real, manda una intención cada 50 ms y lee snapshots. Los bots se registran
+la primera vez y, si la cuenta ya existe (`AccountTaken`), entran con `Login`. Al final imprime su
 entidad, los snapshots recibidos y dónde acabó.
 
 ### Cliente Unity
@@ -352,7 +353,7 @@ pueden discrepar** del formato.
 
 | Tipo | Byte | Dirección | Tamaño | Contenido |
 | --- | --- | --- | --- | --- |
-| `Hello` | 1 | C → S | 299 B + cuenta | versión (u16), tick (u16), token (u32), huella del mapa (32 B), credenciales cifradas (256 B) y cuenta (longitud u16 + UTF-8); no incluye personaje |
+| `Hello` | 1 | C → S | 300 B + cuenta | versión (u16), tick (u16), token (u32), huella del mapa (32 B), credenciales cifradas (256 B), cuenta (longitud u16 + UTF-8) e intención (u8: 0 `Login`, 1 `Register`; I-32); no incluye personaje |
 | `MoveInput` | 2 | C → S | 7 B | secuencia (u32), dirX (i8), dirY (i8) |
 | `Attack` | 3 | C → S | 5 B | objetivo (i32) |
 | `Welcome` | 10 | S → C | 69 B | versión, tick, entidad (i32), tick servidor (u32), token, aparición (f32×2), velocidad (f32), medio (f32×2), huella (32 B) |
@@ -414,7 +415,7 @@ Canales:
 > **v15** al quitar el personaje del `Hello` e incorporar el flujo de selección y sus cinco mensajes; I-12 sube a **v16** al añadir manos, nivel, permiso por clase y `weaponType` a cada objeto de `ItemCatalog`; I-13 a **v17** por `CombatEvent`; I-25 a **v18** al añadir oro al inventario y `LootGained`; I-15 sube a **v19** por `ZoneList` y `ZoneChanged`.
 > I-17 sube a **v22** por los campos de área, curación y objetivo; I-18 sube a **v23** por estados temporales y sus mensajes. El esquema sigue en v8.
 > I-28 sube a **v24** por `Stats` (crítico y prisa) y `CombatEventFlags.Critical`; I-19 sube a **v25** por la recarga global y los campos `hits`, `areaCenter` y `critBonus` de `SkillCatalog`.
-> I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado.
+> I-15p sube a **v20** por los tres mensajes PvP y el bit 6 del snapshot (PvP efectivo, solo jugadores); el bit 7 sigue reservado. I-32 sube a **v26** por `HelloIntent` y `AccountTaken`; esquema sin cambios.
 > El tamaño de `EntityState` se mantiene en 15 B.
 
 ### Handshake
@@ -780,11 +781,24 @@ que conoce la base de datos: `Initialize`, `Login`, `GetOrCreateCharacter` y `Sa
 
 ### Registro con código de invitación
 
-- Si la cuenta no existe, se crea solo cuando el `invitationCode` del saludo coincide **exacto** con
-  `registrationInvitationCode`. Si ese ajuste está **vacío, el registro está cerrado**.
-- En cualquier otro caso se responde `Reject(InvalidCredentials)`, lo mismo que una contraseña
-  incorrecta: así no se puede averiguar qué cuentas existen (H-01). `RegistrationClosed` sigue en
-  el enum, pero el servidor ya no lo envía, y este fallo no gasta el cupo de intentos de ese nombre.
+El `Hello` declara `Login` o `Register`. `Login` nunca crea cuentas; `Register` exige una invitación
+válida y que el registro esté abierto (`registrationInvitationCode` no vacío). Los casos sin invitación
+válida siempre devuelven el mismo rechazo y coste PBKDF2, exista o no la cuenta.
+
+| Intención | Situación | Respuesta | ¿Gasta cupo del nombre? |
+| --- | --- | --- | --- |
+| `Login` | cuenta y contraseña correctas | `Welcome`/`CharacterList` | no |
+| `Login` | contraseña incorrecta | `Reject(InvalidCredentials)` | sí |
+| `Login` | cuenta inexistente | `Reject(InvalidCredentials)` (PBKDF2 ficticio) | no |
+| `Register` | registro cerrado o invitación incorrecta (exista o no la cuenta) | `Reject(InvalidCredentials)` (PBKDF2 ficticio) | no |
+| `Register` | invitación válida, nombre ya usado | `Reject(AccountTaken)` | no |
+| `Register` | invitación válida, nombre libre | cuenta creada y `Welcome`/`CharacterList` | no |
+| cualquiera | por encima de los límites de H-03 | `Reject(RateLimited)` | — |
+
+`AccountTaken` revela que el nombre existe solo a quien ya posee la invitación válida: es un secreto
+compartido con jugadores invitados, que además pueden ver los nombres de otros jugadores en el juego.
+`Register` y `Login` atraviesan los mismos topes de H-03: por cuenta, por IP y de peticiones en vuelo.
+
 - Cada cuenta tiene como máximo **`maxCharactersPerAccount`** personajes (defecto 3, rango 1–10); los
   borrados no cuentan. Los límites de cuenta/contraseña siguen siendo 3–32 y 6–128 caracteres.
 - La cuenta se autentica primero; el flujo posterior de lista, creación, borrado lógico y selección
@@ -879,7 +893,7 @@ dotnet test  Avelora.slnx
 | --- | --- |
 | `dotnet build` | **0 errores, 0 advertencias** |
 | `dotnet test` | **216/216 en verde** (22 nuevas desde la E) |
-| Protocolo | **v2** al cerrar F; la versión actual es **v25** y el saludo solo autentica la cuenta |
+| Protocolo | **v2** al cerrar F; la versión actual es **v26** y el saludo declara login o registro |
 | Prueba real con Unity + un bot | login con `dev`, posición guardada entre sesiones y expulsión `LoggedInElsewhere` visible en el cliente |
 
 Las pruebas cubren, además de lo anterior, la ida y vuelta del repositorio SQLite, el rehash al
@@ -1145,6 +1159,7 @@ Las cuatro esquinas se comprobaron con el invariante `IsBoxWalkable(posición) =
 | **I-29** | Velocidad de movimiento (§2.6 del plan): moveSpeed de botas, moveCap 115, PNJ a 3,0-3,4; protocolo v24 sin cambios | ✅ servidor, datos y pruebas; cliente sin cambios |
 | **I-19** | Cuatro habilidades por clase (A-4 del plan): hits, critBonus, área propia, cura en área, rotación de bots; protocolo v25 | ✅ servidor, datos y pruebas; cliente I-19b pendiente |
 | **I-30** | Armas y armaduras de las franjas 10, 15 y 20, tres PNJ nuevos y objetivos 1 y 3 afirmados | ✅ datos, servidor y pruebas; cliente I-30b pendiente |
+| **I-32** | Login y registro separados (`HelloIntent`, `AccountTaken`); protocolo v26 | ✅ servidor, bots y pruebas; cliente I-32b pendiente |
 
 ### Enemigos y vida del jugador (I-03)
 
@@ -2368,7 +2383,7 @@ Se envía la mitad que en el mapa pequeño: los bots se reparten y cada uno ve m
 
 ## Próximo paso
 
-El servidor ya implementa **I-04 a I-30**, con persistencia SQLite en esquema v8 y protocolo v25, incluidos I-15p/I-15q, I-16, I-17, I-18, I-19 e I-30.
-El cliente usa v21 (I-19b pendiente; incompatible con el servidor v25) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
+El servidor ya implementa **I-04 a I-32**, con persistencia SQLite en esquema v8 y protocolo v26, incluidos I-15p/I-15q, I-16, I-17, I-18, I-19, I-30 e I-32.
+El cliente usa v21 (I-32b pendiente; incompatible con el servidor v26) e incorpora habilidades, recurso y barra de accesos (I-16b/I-16c); queda pendiente la comprobación en Play indicada en sus informes.
 Quedan pendientes las tareas de cliente anteriores indicadas en la hoja de ruta,
 además de los trabajos de seguridad H aún abiertos.

@@ -191,11 +191,7 @@ namespace Avelora.Server.Persistence
             }
         }
 
-        public AccountLoginResult Login(
-            string accountName,
-            string password,
-            string invitationCode,
-            string registrationCode)
+        public AccountLoginResult Login(string accountName, string password)
         {
             ThrowIfNotInitialized();
 
@@ -236,15 +232,37 @@ namespace Avelora.Server.Persistence
                 return AccountLoginResult.Ok(row.Id);
             }
 
-            // Misma respuesta que una contraseña mala: si dijéramos «registro cerrado» o
-            // «invitación incorrecta», se podría averiguar qué cuentas existen probando nombres.
+            // Mismo coste que una contraseña mala: una cuenta inexistente no revela si hay registro.
+            PasswordHasher.Verify(password, DummySalt, DummyHash, _passwordIterations);
+            return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+        }
+
+        public AccountLoginResult Register(
+            string accountName,
+            string password,
+            string invitationCode,
+            string registrationCode)
+        {
+            ThrowIfNotInitialized();
+
+            if (!LoginValidation.IsValidAccountName(accountName) ||
+                !LoginValidation.IsValidPassword(password))
+            {
+                return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+            }
+
+            // Sin invitación válida se devuelve siempre el mismo error y coste, exista o no la cuenta.
             if (string.IsNullOrEmpty(registrationCode) ||
                 !string.Equals(invitationCode ?? string.Empty, registrationCode, StringComparison.Ordinal))
             {
-                // Mismo coste que una contraseña mala: sin esto, el tiempo de respuesta delata qué
-                // cuentas existen (PBKDF2 solo correría para las que sí).
                 PasswordHasher.Verify(password, DummySalt, DummyHash, _passwordIterations);
                 return AccountLoginResult.Failed(RejectReason.InvalidCredentials);
+            }
+
+            using SqliteConnection connection = OpenConnection();
+            if (FindAccount(connection, accountName).HasValue)
+            {
+                return AccountLoginResult.Failed(RejectReason.AccountTaken);
             }
 
             PasswordHasher.Create(password, _passwordIterations, out byte[] salt, out byte[] hash);
@@ -261,10 +279,17 @@ namespace Avelora.Server.Persistence
             insert.Parameters.AddWithValue("@iterations", _passwordIterations);
             insert.Parameters.AddWithValue("@created", FormatTime(DateTime.UtcNow));
 
-            object? result = insert.ExecuteScalar();
-            int accountId = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+            try
+            {
+                object? result = insert.ExecuteScalar();
+                int accountId = Convert.ToInt32(result, CultureInfo.InvariantCulture);
 
-            return AccountLoginResult.Ok(accountId);
+                return AccountLoginResult.Ok(accountId);
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+            {
+                return AccountLoginResult.Failed(RejectReason.AccountTaken);
+            }
         }
 
         public CharacterRecord[] ListCharacters(int accountId)

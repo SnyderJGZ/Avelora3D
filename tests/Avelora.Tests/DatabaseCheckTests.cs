@@ -60,7 +60,7 @@ namespace Avelora.Tests
             {
                 repository.Initialize();
 
-                AccountLoginResult login = repository.Login(
+                AccountLoginResult login = repository.Register(
                     "cuenta",
                     "secreto1",
                     "avelora-dev",
@@ -102,7 +102,7 @@ namespace Avelora.Tests
             using (var repository = new SqlitePlayerRepository(DatabasePath, passwordIterations: 1_000))
             {
                 repository.Initialize();
-                repository.Login("cuenta", "secreto1", "avelora-dev", "avelora-dev");
+                repository.Register("cuenta", "secreto1", "avelora-dev", "avelora-dev");
             }
 
             // Se inserta a propósito un personaje de una cuenta que no existe. Las claves ajenas

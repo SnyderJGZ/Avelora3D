@@ -37,7 +37,7 @@ namespace Avelora.Server.Persistence
             _initialized = true;
         }
 
-        public AccountLoginResult Login(string accountName, string password, string invitationCode, string registrationCode)
+        public AccountLoginResult Login(string accountName, string password)
         {
             ThrowIfNotInitialized();
             string normalized = LoginValidation.NormalizeAccount(accountName);
@@ -57,6 +57,12 @@ namespace Avelora.Server.Persistence
             // pero no se autentica una contraseña ni se registra fuera del proceso.
             return AccountLoginResult.Ok(accountId);
         }
+
+        public AccountLoginResult Register(
+            string accountName,
+            string password,
+            string invitationCode,
+            string registrationCode) => Login(accountName, password);
 
         public CharacterRecord[] ListCharacters(int accountId)
         {

@@ -55,8 +55,8 @@ namespace Avelora.Tests
 
             Assert.True(MessageCodec.TryReadHello(bytes, 0, bytes.Length, out HelloMessage decoded));
 
-            // Cabecera fija (297: tipo, versión, tick, token, huella y bloque cifrado) más la cuenta.
-            Assert.Equal(297 + 2 + 6, bytes.Length);
+            // Cabecera fija (298: incluye la intención) más la cuenta.
+            Assert.Equal(298 + 2 + 6, bytes.Length);
             Assert.Equal(ProtocolConstants.Version, original.ProtocolVersion);
             Assert.Equal(original.ProtocolVersion, decoded.ProtocolVersion);
             Assert.Equal(original.TickRate, decoded.TickRate);
@@ -64,6 +64,48 @@ namespace Avelora.Tests
             Assert.Equal(original.MapHash, decoded.MapHash);
             Assert.Equal(original.AccountName, decoded.AccountName);
             Assert.Equal(original.EncryptedSecrets, decoded.EncryptedSecrets);
+        }
+
+        [Fact]
+        public void Hello_Lleva_La_Intencion_De_Ida_Y_Vuelta()
+        {
+            var register = new HelloMessage(
+                ProtocolConstants.Version, 20, NewHash(0), 1u, "dev", NewEncrypted(0), HelloIntent.Register);
+            byte[] registerBytes = MessageCodec.EncodeHello(register);
+            Assert.True(MessageCodec.TryReadHello(registerBytes, 0, registerBytes.Length, out HelloMessage decodedRegister));
+            Assert.Equal(HelloIntent.Register, decodedRegister.Intent);
+
+            var login = new HelloMessage(ProtocolConstants.Version, 20, NewHash(0), 1u, "dev", NewEncrypted(0));
+            byte[] loginBytes = MessageCodec.EncodeHello(login);
+            Assert.True(MessageCodec.TryReadHello(loginBytes, 0, loginBytes.Length, out HelloMessage decodedLogin));
+            Assert.Equal(HelloIntent.Login, decodedLogin.Intent);
+        }
+
+        [Fact]
+        public void Hello_Con_Intencion_Desconocida_No_Se_Lee()
+        {
+            byte[] bytes = MessageCodec.EncodeHello(new HelloMessage(
+                ProtocolConstants.Version, 20, NewHash(0), 1u, "dev", NewEncrypted(0)));
+            bytes[bytes.Length - 1] = 2;
+
+            Assert.False(MessageCodec.TryReadHello(bytes, 0, bytes.Length, out _));
+        }
+
+        [Fact]
+        public void Hello_Ocupa_Un_Byte_Mas_Por_La_Intencion()
+        {
+            byte[] bytes = MessageCodec.EncodeHello(new HelloMessage(
+                ProtocolConstants.Version, 20, NewHash(0), 1u, "dev", NewEncrypted(0)));
+
+            Assert.Equal(303, bytes.Length);
+        }
+
+        [Fact]
+        public void AccountTaken_Es_19_Y_No_Renumera()
+        {
+            Assert.Equal((byte)19, (byte)RejectReason.AccountTaken);
+            Assert.Equal((byte)9, (byte)RejectReason.RegistrationClosed);
+            Assert.Equal((byte)18, (byte)RejectReason.InternalError);
         }
 
         [Fact]
@@ -187,7 +229,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -683,9 +725,9 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Protocolo_Pvp_Usa_La_Version_23()
+        public void El_Protocolo_Pvp_Usa_La_Version_26()
         {
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -1899,7 +1941,7 @@ namespace Avelora.Tests
         [Fact]
         public void El_Protocolo_De_Habilidades_Usa_La_Version_25()
         {
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);

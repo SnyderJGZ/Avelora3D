@@ -154,11 +154,13 @@ namespace Avelora.Server.Net
                         cryptoError);
                 }
 
-                AccountLoginResult login = _repository.Login(
-                    request.AccountName,
-                    password,
-                    invitationCode,
-                    _registrationCode);
+                AccountLoginResult login = request.Intent == HelloIntent.Register
+                    ? _repository.Register(
+                        request.AccountName,
+                        password,
+                        invitationCode,
+                        _registrationCode)
+                    : _repository.Login(request.AccountName, password);
 
                 if (!login.Success)
                 {
@@ -286,7 +288,8 @@ namespace Avelora.Server.Net
             byte[] nonce,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash)
+            byte[] mapHash,
+            HelloIntent intent)
         {
             ConnectionId = connectionId;
             ConnectionGeneration = connectionGeneration;
@@ -296,6 +299,7 @@ namespace Avelora.Server.Net
             ZoneId = zoneId;
             Spawn = spawn;
             MapHash = mapHash;
+            Intent = intent;
         }
 
         public int ConnectionId { get; }
@@ -315,6 +319,8 @@ namespace Avelora.Server.Net
         public Vec2 Spawn { get; }
 
         public byte[] MapHash { get; }
+
+        public HelloIntent Intent { get; }
     }
 
     public enum CharacterOperationKind : byte

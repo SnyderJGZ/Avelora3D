@@ -173,7 +173,7 @@ namespace Avelora.Tests
                 Assert.False(MessageCodec.TryReadStatusEffects(invalid, 0, invalid.Length, out _));
             }
 
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
         }
 
         [Fact]

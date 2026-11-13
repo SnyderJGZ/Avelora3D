@@ -31,9 +31,10 @@ namespace Avelora.Shared.Protocol
         /// I-13 a 17 por CombatEvent, I-25 a 18 por el oro del inventario y LootGained, I-15 a 19
         /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP;
         /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus; I-17 a 22 por áreas,
-        /// curación y objetivo en SkillUsed; I-18 a 23 por estados temporales y StatusEffects/StatusEvent.
+        /// curación y objetivo en SkillUsed; I-18 a 23 por estados temporales y StatusEffects/StatusEvent;
+        /// I-32 a 26 por la intención (<c>HelloIntent</c>) del saludo y <see cref="RejectReason.AccountTaken"/>.
         /// </summary>
-        public const ushort Version = 25;
+        public const ushort Version = 26;
 
         /// <summary>Máximo de estados activos de tipos distintos por entidad (I-18).</summary>
         public const int MaxStatusEffects = 4;

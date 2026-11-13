@@ -1656,7 +1656,7 @@ namespace Avelora.Tests
                 levels: LevelTable.Default,
                 classes: Avelora.Server.Progression.ClassCatalog.Default);
             repository.Initialize();
-            AccountLoginResult account = repository.Login("dev", "avelora-dev", "avelora-dev", "avelora-dev");
+            AccountLoginResult account = repository.Register("dev", "avelora-dev", "avelora-dev", "avelora-dev");
             Assert.True(account.Success);
             CharacterRecord character = repository.CreateCharacter(
                 account.AccountId,
@@ -3176,8 +3176,10 @@ namespace Avelora.Tests
         private sealed class FailingCreateRepository : IPlayerRepository
         {
             public void Initialize() { }
-            public AccountLoginResult Login(string accountName, string password, string invitationCode, string registrationCode) =>
+            public AccountLoginResult Login(string accountName, string password) =>
                 AccountLoginResult.Ok(1);
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
             public CharacterCreateResult CreateCharacter(int accountId, string name, byte classId,
                 int maxCharacters, int zoneId, Vec2 spawn, byte[] mapHash) =>
                 throw new InvalidOperationException("Fallo de creación simulado.");
@@ -3193,8 +3195,10 @@ namespace Avelora.Tests
 
             public void Initialize() { }
 
-            public AccountLoginResult Login(string accountName, string password, string invitationCode, string registrationCode) =>
+            public AccountLoginResult Login(string accountName, string password) =>
                 AccountLoginResult.Ok(_character.AccountId);
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public CharacterRecord[] ListCharacters(int accountId) =>
                 accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();
@@ -3234,11 +3238,10 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode) => AccountLoginResult.Ok(1);
+            public AccountLoginResult Login(string accountName, string password) => AccountLoginResult.Ok(1);
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public CharacterRecord[] ListCharacters(int accountId) =>
                 accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();
@@ -3290,11 +3293,7 @@ namespace Avelora.Tests
             {
             }
 
-            public AccountLoginResult Login(
-                string accountName,
-                string password,
-                string invitationCode,
-                string registrationCode)
+            public AccountLoginResult Login(string accountName, string password)
             {
                 if (accountName == "bloqueo")
                 {
@@ -3306,6 +3305,9 @@ namespace Avelora.Tests
 
                 return AccountLoginResult.Ok(1);
             }
+
+            public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
+                Login(accountName, password);
 
             public CharacterRecord[] ListCharacters(int accountId) =>
                 accountId == _character.AccountId ? new[] { _character } : Array.Empty<CharacterRecord>();

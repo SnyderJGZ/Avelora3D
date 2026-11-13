@@ -69,7 +69,8 @@ namespace Avelora.Shared.Protocol
             byte[] mapHash,
             uint clientToken,
             string accountName,
-            byte[] encryptedSecrets)
+            byte[] encryptedSecrets,
+            HelloIntent intent = HelloIntent.Login)
         {
             ProtocolVersion = protocolVersion;
             TickRate = tickRate;
@@ -77,6 +78,7 @@ namespace Avelora.Shared.Protocol
             ClientToken = clientToken;
             AccountName = accountName ?? string.Empty;
             EncryptedSecrets = encryptedSecrets ?? Array.Empty<byte>();
+            Intent = intent;
         }
 
         /// <summary>Versión del protocolo que habla el cliente.</summary>
@@ -100,6 +102,16 @@ namespace Avelora.Shared.Protocol
         /// </summary>
         public byte[] EncryptedSecrets { get; }
 
+        /// <summary>Indica si el saludo solicita entrar o registrar la cuenta.</summary>
+        public HelloIntent Intent { get; }
+
+    }
+
+    /// <summary>Intención declarada por el cliente al autenticarse o registrar una cuenta.</summary>
+    public enum HelloIntent : byte
+    {
+        Login = 0,
+        Register = 1,
     }
 
     /// <summary>Petición de crear un personaje con una clase elegida por el cliente (I-10).</summary>
@@ -663,6 +675,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>El repositorio no pudo completar la operación de personaje (I-10).</summary>
         InternalError = 18,
+
+        /// <summary>Registro con invitación válida, pero ese nombre de cuenta ya existe (I-32).</summary>
+        AccountTaken = 19,
     }
 
     /// <summary>Respuesta negativa al saludo.</summary>

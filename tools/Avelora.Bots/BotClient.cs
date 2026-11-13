@@ -143,6 +143,7 @@ namespace Avelora.Bots
         private readonly int _attackCooldownMs;
         private readonly bool _pvpEnabled;
         private float _pickupRange;
+        private HelloIntent _intent = HelloIntent.Register;
 
         private IClientTransport? _transport;
 
@@ -587,6 +588,7 @@ namespace Avelora.Bots
             reason switch
             {
                 RejectReason.InvalidCredentials => "cuenta, contraseña o invitación incorrectas",
+                RejectReason.AccountTaken => "la cuenta ya existe",
                 RejectReason.CharacterLimit => "la cuenta ya tiene el máximo de personajes",
                 RejectReason.RateLimited => "demasiadas peticiones",
                 _ => reason.ToString(),
@@ -622,6 +624,12 @@ namespace Avelora.Bots
                 {
                     Status = "cancelado";
                     break;
+                }
+
+                if (result == AttemptResult.RetryLogin)
+                {
+                    DiscardTransport();
+                    continue;
                 }
 
                 if (result == AttemptResult.RateLimited)
@@ -740,6 +748,12 @@ namespace Avelora.Bots
                 if (_reject.HasValue)
                 {
                     RejectReason reason = _reject.Value;
+
+                    if (reason == RejectReason.AccountTaken && _intent == HelloIntent.Register)
+                    {
+                        _intent = HelloIntent.Login;
+                        return AttemptResult.RetryLogin;
+                    }
 
                     if (reason == RejectReason.RateLimited)
                     {
@@ -866,8 +880,8 @@ namespace Avelora.Bots
         /// </summary>
         /// <remarks>
         /// En una base nueva, una cuenta que no existe se <b>registra</b> con un saludo correcto: no
-        /// habría un fallo que cuente para el límite sino un alta. Por eso el
-        /// primer saludo es correcto (solo para crear la cuenta) y los demás llevan la contraseña
+        /// habría un fallo que cuente para el límite sino un alta. Si ya existe, cambia a login. Por eso
+        /// el primer saludo es correcto y los demás llevan la contraseña
         /// mal a propósito. Esa preparación se cuenta aparte y se ve en el resumen.
         /// </remarks>
         private void RunBadLogin(CancellationToken cancellationToken)
@@ -887,6 +901,14 @@ namespace Avelora.Bots
                 {
                     prepared = true;
                     break;
+                }
+
+                if (outcome.Kind == LoginOutcomeKind.Rejected &&
+                    outcome.Reason == RejectReason.AccountTaken &&
+                    _intent == HelloIntent.Register)
+                {
+                    _intent = HelloIntent.Login;
+                    continue;
                 }
 
                 if (outcome.Kind == LoginOutcomeKind.Rejected && outcome.Reason == RejectReason.RateLimited)
@@ -912,6 +934,8 @@ namespace Avelora.Bots
             // La preparación entra al mundo un instante y se va; el bot no es un jugador
             // conectado al final, así que el resumen no debe contarlo como tal.
             EntityId = -1;
+
+            _intent = HelloIntent.Login;
 
             string wrongPassword = _password + "-incorrecta";
             RejectReason lastReject = RejectReason.Unknown;
@@ -1129,7 +1153,8 @@ namespace Avelora.Bots
                 _mapHash,
                 _clientToken,
                 _accountName,
-                encrypted));
+                encrypted,
+                _intent));
 
             // Se guarda el saludo tal cual para que el modo replay lo reenvíe en otra conexión.
             _helloBytes = hello;
@@ -1680,8 +1705,11 @@ namespace Avelora.Bots
             {
                 _reject = reject.Reason;
 
-                _rejectCounts.TryGetValue(reject.Reason, out int count);
-                _rejectCounts[reject.Reason] = count + 1;
+                if (reject.Reason != RejectReason.AccountTaken)
+                {
+                    _rejectCounts.TryGetValue(reject.Reason, out int count);
+                    _rejectCounts[reject.Reason] = count + 1;
+                }
                 return;
             }
 
@@ -2642,6 +2670,7 @@ namespace Avelora.Bots
             RejectedFinally,
             Failed,
             Cancelled,
+            RetryLogin,
         }
 
         private enum LoginOutcomeKind

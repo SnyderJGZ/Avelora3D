@@ -15,11 +15,12 @@ namespace Avelora.Server.Persistence
         void Initialize();
 
         /// <summary>
-        /// Verifica la contraseña. Si la cuenta no existe, solo la crea cuando el código de
-        /// invitación coincide con <paramref name="registrationCode"/>; si ese código está vacío,
-        /// el registro está cerrado.
+        /// Verifica la contraseña de una cuenta existente. Nunca crea cuentas.
         /// </summary>
-        AccountLoginResult Login(
+        AccountLoginResult Login(string accountName, string password);
+
+        /// <summary>Crea una cuenta si el registro está abierto y la invitación es válida.</summary>
+        AccountLoginResult Register(
             string accountName,
             string password,
             string invitationCode,

@@ -262,7 +262,7 @@ namespace Avelora.Tests
         [Fact]
         public void Catalogo_De_Protocolo_Incluye_Campos_De_I19_Y_V25()
         {
-            Assert.Equal((ushort)25, ProtocolConstants.Version);
+            Assert.Equal((ushort)26, ProtocolConstants.Version);
             var message = new SkillCatalogMessage("recurso", new[]
             {
                 new SkillCatalogEntry(5001, 1, 0, 10, 20, 3, 6, "Prueba", hits: 3,

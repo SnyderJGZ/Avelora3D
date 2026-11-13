@@ -134,10 +134,11 @@ namespace Avelora.Tests
                     byte[] helloBytes = MessageCodec.EncodeHello(new HelloMessage(
                         ProtocolConstants.Version,
                         (ushort)SimulationConstants.TickRate,
-                         mapHash,
-                         7u,
-                         "dev",
-                         encrypted));
+                        mapHash,
+                        7u,
+                        "dev",
+                        encrypted,
+                        HelloIntent.Register));
 
                     client.Send(helloBytes, helloBytes.Length, DeliveryMode.ReliableOrdered);
                     helloSent = true;
@@ -435,7 +436,8 @@ namespace Avelora.Tests
                             mapHash,
                             11u,
                             "cuenta",
-                            encrypted));
+                            encrypted,
+                            HelloIntent.Register));
 
                         first.Send(firstHello, firstHello.Length, DeliveryMode.ReliableOrdered);
                         sentFirstHello = true;
@@ -461,7 +463,8 @@ namespace Avelora.Tests
                             mapHash,
                             12u,
                             "cuenta",
-                            encrypted));
+                            encrypted,
+                            HelloIntent.Login));
 
                         second.Send(secondHello, secondHello.Length, DeliveryMode.ReliableOrdered);
                         sentSecondHello = true;

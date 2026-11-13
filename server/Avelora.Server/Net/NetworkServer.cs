@@ -843,11 +843,7 @@ namespace Avelora.Server.Net
             if (_repository == null)
             {
                 _handshakeDeadlines.Remove(connectionId);
-                AccountLoginResult localLogin = _memoryRepository!.Login(
-                    accountName,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty);
+                AccountLoginResult localLogin = _memoryRepository!.Login(accountName, string.Empty);
                 int replaced = ReserveAccount(localLogin.AccountId, connectionId);
                 _connectionToAccount[connectionId] = localLogin.AccountId;
                 Interlocked.Increment(ref _loginsSucceeded);
@@ -910,7 +906,8 @@ namespace Avelora.Server.Net
                 nonce,
                 _zone.Id,
                 _config.Spawn,
-                _mapHash));
+                _mapHash,
+                hello.Intent));
         }
 
         /// <summary>

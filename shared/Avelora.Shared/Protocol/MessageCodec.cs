@@ -18,10 +18,10 @@ namespace Avelora.Shared.Protocol
     {
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
-        // Parte fija del saludo: tipo, versión, tick, token, huella y bloque cifrado. Después va
-        // la cuenta con su longitud uint16; la selección de personaje ocurre tras autenticar.
+        // Parte fija del saludo: cabecera y bloque cifrado, más la intención que cierra el mensaje.
+        // La cuenta variable (longitud uint16 y UTF-8) queda entre ambos; la selección de personaje ocurre después.
         private const int HelloFixedSize =
-            1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize + HelloSecrets.EncryptedSize;
+            1 + 2 + 2 + 4 + ProtocolConstants.MapHashSize + HelloSecrets.EncryptedSize + 1;
 
         // Tipo, nonce, longitud del exponente y exponente; el módulo ocupa lo que falte.
         private const int ChallengeHeaderSize = 1 + HelloSecrets.NonceSize + 1;
@@ -76,8 +76,8 @@ namespace Avelora.Shared.Protocol
         // ---------------------------------------------------------------- cliente → servidor
 
         /// <summary>
-        /// Codifica un saludo. La parte fija ocupa 297 bytes (cabecera más el bloque cifrado) y la
-        /// cuenta añade su longitud uint16 más los bytes UTF-8.
+        /// Codifica un saludo. La parte fija ocupa 298 bytes (cabecera, bloque cifrado e intención)
+        /// y la cuenta añade su longitud uint16 más los bytes UTF-8.
         /// </summary>
         public static byte[] EncodeHello(in HelloMessage message)
         {
@@ -114,6 +114,7 @@ namespace Avelora.Shared.Protocol
             writer.WriteBytes(message.MapHash, 0, ProtocolConstants.MapHashSize);
             writer.WriteBytes(message.EncryptedSecrets, 0, HelloSecrets.EncryptedSize);
             writer.WriteString(account, ProtocolConstants.MaxAccountNameBytes);
+            writer.WriteByte((byte)message.Intent);
             return buffer;
         }
 
@@ -141,6 +142,12 @@ namespace Avelora.Shared.Protocol
                 var encryptedSecrets = new byte[HelloSecrets.EncryptedSize];
                 reader.ReadBytes(encryptedSecrets, encryptedSecrets.Length);
                 string account = reader.ReadString(ProtocolConstants.MaxAccountNameBytes);
+                byte intent = reader.ReadByte();
+
+                if (intent > (byte)HelloIntent.Register)
+                {
+                    return false;
+                }
 
                 if (reader.Remaining != 0)
                 {
@@ -153,7 +160,8 @@ namespace Avelora.Shared.Protocol
                     mapHash,
                     token,
                     account,
-                    encryptedSecrets);
+                    encryptedSecrets,
+                    (HelloIntent)intent);
                 return true;
             }
             catch (ProtocolException)
@@ -1142,7 +1150,7 @@ namespace Avelora.Shared.Protocol
                 // Un motivo inventado no se puede mostrar ni interpretar: se rechaza el mensaje.
                 // El límite es el último valor definido; la prueba
                 // Todos_Los_Valores_Definidos_De_Las_Enumeraciones_Viajan avisa si se olvida.
-                if (rawReason > (byte)RejectReason.InternalError)
+                if (rawReason > (byte)RejectReason.AccountTaken)
                 {
                     return false;
                 }
