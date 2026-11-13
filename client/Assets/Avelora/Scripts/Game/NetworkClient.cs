@@ -576,6 +576,7 @@ namespace Avelora.Client
 
             _prediction.AdvanceVisual((float)frame);
             RenderLocal();
+            AnimateLocal(directionX, directionY);
             RenderRemotes(Time.unscaledTimeAsDouble);
         }
 
@@ -1886,6 +1887,9 @@ namespace Avelora.Client
                 Sprite classSprite = ClassSprite(_selectedClassId);
                 _localRenderer.sprite = classSprite != null ? classSprite : _baseSprite;
                 _localRenderer.color = classSprite != null ? Color.white : ClassColor(_selectedClassId);
+                _localIdle = ClassSheet(_selectedClassId, "quieto");
+                _localWalk = ClassSheet(_selectedClassId, "andar");
+                if (_localIdle != null && _localWalk != null) _localRenderer.color = Color.white;
             }
 
             transform.position = new Vector3(welcome.SpawnX, welcome.SpawnY, transform.position.z);
@@ -2070,6 +2074,55 @@ namespace Avelora.Client
 
         private Sprite ClassSprite(byte classId) => FigureSprite("Characters/" + classId);
 
+        // Hojas de personaje por clase (Resources/Characters/<clase>_<acción>): 4 filas de arriba abajo
+        // sur, norte, oeste, este; tantas columnas como fotogramas. null = sin hoja.
+        private readonly Dictionary<string, Sprite[]> _classSheets = new Dictionary<string, Sprite[]>();
+        private Sprite[] _localIdle;
+        private Sprite[] _localWalk;
+        private int _localFacing;
+
+        private Sprite[] ClassSheet(byte classId, string action)
+        {
+            string path = "Characters/" + classId + "_" + action;
+            if (_classSheets.TryGetValue(path, out Sprite[] sheet)) return sheet;
+            Texture2D texture = Resources.Load<Texture2D>(path);
+            if (texture != null)
+            {
+                int cell = texture.height / 4;
+                int frames = texture.width / cell;
+                sheet = new Sprite[4 * frames];
+                for (int row = 0; row < 4; row++)
+                {
+                    for (int frame = 0; frame < frames; frame++)
+                    {
+                        // La fila 0 de la imagen (sur) está arriba; en la textura de Unity, abajo es y = 0.
+                        var rect = new Rect(frame * cell, (3 - row) * cell, cell, cell);
+                        sheet[row * frames + frame] = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), cell / 1.2f);
+                    }
+                }
+            }
+
+            _classSheets[path] = sheet;
+            return sheet;
+        }
+
+        /// <summary>Anima al jugador local con las hojas de su clase, igual que RemotePlayerView a los demás.</summary>
+        private void AnimateLocal(sbyte directionX, sbyte directionY)
+        {
+            if (_localRenderer == null || _localWalk == null || _localIdle == null) return;
+            bool moving = directionX != 0 || directionY != 0;
+            if (moving)
+            {
+                // Mismo criterio que RemotePlayerView: en diagonal manda el eje horizontal.
+                _localFacing = directionX < 0 ? 2 : directionX > 0 ? 3 : directionY > 0 ? 1 : 0;
+            }
+
+            Sprite[] sheet = moving ? _localWalk : _localIdle;
+            int frames = sheet.Length / 4;
+            _localRenderer.sprite = sheet[_localFacing * frames + (int)(Time.time * (moving ? 10f : 6f)) % frames];
+            _localRenderer.flipX = false;
+        }
+
         private Sprite FigureSprite(string path)
         {
             if (_figureSprites.TryGetValue(path, out Sprite sprite)) return sprite;
@@ -2122,6 +2175,9 @@ namespace Avelora.Client
             if (kind == EntityKind.Player)
             {
                 view.SetPlayerLook(ClassSprite((byte)typeId), ClassColor((byte)typeId));
+                Sprite[] idle = ClassSheet((byte)typeId, "quieto");
+                Sprite[] walk = ClassSheet((byte)typeId, "andar");
+                if (idle != null && walk != null) view.SetNpcSheets(idle, walk, null, null, null);
             }
 
             if (kind == EntityKind.Item)
