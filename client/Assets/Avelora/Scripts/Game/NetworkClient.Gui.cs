@@ -58,6 +58,7 @@ namespace Avelora.Client
         private readonly Dictionary<ushort, Texture2D> _itemIcons = new Dictionary<ushort, Texture2D>();
         private readonly Dictionary<ushort, Texture2D> _skillIcons = new Dictionary<ushort, Texture2D>();
         private GUIStyle _barStyle;
+        private GUIStyle _panelStyle;
         private static readonly string[] StatusMaskTexts =
         {
             "", "B", "E", "B E", "L", "B L", "E L", "B E L",
@@ -90,6 +91,7 @@ namespace Avelora.Client
             }
 
             EnsureOverlayStyles();
+            EnsureGuiArt();
 
             RemotePlayerView selected = SelectedTarget();
             string rank = selected == null || selected.Rank == 0 ? string.Empty
@@ -99,7 +101,7 @@ namespace Avelora.Client
                 " · Ataques " + _attacksSent +
                 (Time.unscaledTime < _combatHintUntil ? " · " + _combatHint : string.Empty);
 
-            GUI.Box(new Rect(10f, 10f, 540f, 130f), GUIContent.none);
+            GUI.Box(new Rect(6f, 6f, 548f, 140f), GUIContent.none, _panelStyle);
             GUI.Label(
                 new Rect(20f, 16f, 520f, 118f),
                 combat + "\n" +
@@ -576,7 +578,7 @@ namespace Avelora.Client
             float width = Mathf.Min(460f, Screen.width - 24f);
             float height = _loginCreating ? 388f : 292f;
             Rect panel = new Rect((Screen.width - width) / 2f, (Screen.height - height) / 2f, width, height);
-            GUI.DrawTexture(panel, _darkSlotFill);
+            GUI.Box(panel, GUIContent.none, _panelStyle);
             GUI.Label(new Rect(panel.x + 16f, panel.y + 10f, width - 32f, 28f), "Acceso", _darkTitleStyle);
 
             float fieldX = panel.x + 16f;
@@ -891,7 +893,7 @@ namespace Avelora.Client
 
             if (_chatLog.Count > 0 || _chatOpen)
             {
-                GUI.Box(log, GUIContent.none);
+                GUI.Box(new Rect(log.x - 6f, log.y - 6f, log.width + 12f, log.height + 12f), GUIContent.none, _panelStyle);
                 float y = log.yMax - 5f - (_chatLog.Count * lineHeight);
                 for (int i = 0; i < _chatLog.Count; i++)
                 {
@@ -1882,6 +1884,8 @@ namespace Avelora.Client
 
             _barStyle = new GUIStyle { border = new RectOffset(24, 24, 0, 0) };
             _barStyle.normal.background = Resources.Load<Texture2D>("GUI/Bar");
+            _panelStyle = new GUIStyle { border = new RectOffset(16, 16, 16, 16) };
+            _panelStyle.normal.background = Resources.Load<Texture2D>("GUI/Panel");
 
             _darkWindow = Resources.Load<Texture2D>("GUI/Dark/Window");
             _darkSlot = Resources.Load<Texture2D>("GUI/Dark/Slot");
@@ -2042,7 +2046,7 @@ namespace Avelora.Client
             {
                 float left = Mathf.Max(0f, RespawnSeconds - (Time.unscaledTime - _ownDeathAt));
                 var box = new Rect((Screen.width - 320f) / 2f, Screen.height / 2f - 30f, 320f, 60f);
-                GUI.Box(box, GUIContent.none);
+                GUI.Box(box, GUIContent.none, _panelStyle);
                 GUI.Label(new Rect(box.x + 16f, box.y + 10f, 300f, 44f),
                     "Has muerto. Reapareces en " + Mathf.CeilToInt(left) + " s.", _overlayStyle);
             }
