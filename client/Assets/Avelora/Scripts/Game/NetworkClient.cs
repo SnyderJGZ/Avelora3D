@@ -73,15 +73,6 @@ namespace Avelora.Client
         [Tooltip("Retraso con el que se dibuja al resto: 100 ms son dos snapshots a 20 Hz.")]
         [SerializeField] private float interpolationDelay = 0.1f;
 
-        [SerializeField] private Color npcColor = new Color(1f, 0.6f, 0.2f, 1f);
-
-        // Aspecto de cada tipo de PNJ por su id de npcs.json (I-03c). Un tipo que no está en la
-        // lista usa el primero; sin ninguno, los PNJ se dibujan como un cuadrado teñido con npcColor.
-        [SerializeField] private NpcLook[] npcLooks = new NpcLook[0];
-
-        [Tooltip("La cámara principal sigue al jugador local (mapas más grandes que la pantalla).")]
-        [SerializeField] private bool cameraFollowsPlayer = true;
-
         // shortcut: copia de playerRespawnSeconds de server.json, solo para la cuenta atrás del aviso;
         // si el servidor la cambia, el aviso se equivoca pero la reaparición la sigue decidiendo él.
         private const float RespawnSeconds = 5f;
@@ -179,7 +170,7 @@ namespace Avelora.Client
         private readonly sbyte[] _inputHistoryY = new sbyte[ProtocolConstants.MaxInputsPerMessage];
 
         private AveloraMap _map;
-        private SpriteRenderer _localRenderer;
+        private Renderer _localRenderer;
         private LocalPlayerController _offlineController;
         private IClientTransport _transport;
         private ClientPrediction _prediction;
@@ -254,7 +245,6 @@ namespace Avelora.Client
         private byte _ownHealthPercent = 100;
         private bool _ownDead;
         private float _ownDeathAt;
-        private int _lastDirectionX;
         private int _inputHistoryCount;
         private long _inputsSent;
         private long _snapshotsReceived;
@@ -350,15 +340,19 @@ namespace Avelora.Client
             // Un cliente en red debe seguir leyendo snapshots sin foco: si no, la ventana de atrás se congela.
             Application.runInBackground = true;
             _map = GetComponent<AveloraMap>();
-            _localRenderer = GetComponent<SpriteRenderer>();
-            // Sprite base de la escena: lo copian PNJ y objetos sin arte propio aunque el jugador cambie al de su clase.
-            _baseSprite = _localRenderer != null ? _localRenderer.sprite : null;
+            _localRenderer = EntityVisuals.EnsurePlayer(transform);
             _offlineController = GetComponent<LocalPlayerController>();
             _classLook = ClassLook.Load();
         }
 
         private void Start()
         {
+            if (_map == null || !_map.Cargar())
+            {
+                _status = "mapa sin cargar: no se puede iniciar la red";
+                return;
+            }
+
             if (!connectOnStart)
             {
                 _status = "red desactivada (controlador local)";
@@ -589,17 +583,11 @@ namespace Avelora.Client
                 uint sequence = _prediction.AddInput(directionX, directionY);
                 SendMoveInput(sequence, directionX, directionY);
 
-                if (directionX != 0)
-                {
-                    _lastDirectionX = directionX;
-                }
-
                 _accumulator -= SimulationConstants.FixedDt;
             }
 
             _prediction.AdvanceVisual((float)frame);
             RenderLocal();
-            AnimateLocal(directionX, directionY);
             RenderRemotes(Time.unscaledTimeAsDouble);
         }
 
@@ -692,7 +680,14 @@ namespace Avelora.Client
             if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
             {
                 Vector2 screen = mouse.position.ReadValue();
-                Vector3 world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -cam.transform.position.z));
+                Ray ray = cam.ScreenPointToRay(screen);
+                Plane ground = new Plane(Vector3.up, Vector3.zero);
+                if (!ground.Raycast(ray, out float distance))
+                {
+                    return;
+                }
+
+                Vector3 world = EntityVisuals.ToWorld(EntityVisuals.ToNet(ray.GetPoint(distance)));
                 int picked = PickEntityAt(world, EntityKind.Npc, PickRadius);
                 if (picked == 0)
                 {
@@ -741,12 +736,12 @@ namespace Avelora.Client
                 return;
             }
 
-            Vector2 delta = (Vector2)(target.transform.position - transform.position);
+            Vec2 delta = EntityVisuals.ToNet(target.transform.position) - EntityVisuals.ToNet(transform.position);
             CurrentWeapon(out float attackRange, out float attackCooldown);
             float baseTicks = Mathf.Ceil(attackCooldown * SimulationConstants.TickRate - 0.001f);
             float hasteTicks = Mathf.Ceil(baseTicks * 10000f / (10000f + _stats.Haste) - 0.001f);
             attackCooldown = Mathf.Max(MinAttackTicks, hasteTicks) / SimulationConstants.TickRate;
-            if (delta.sqrMagnitude > attackRange * attackRange)
+            if (delta.LengthSquared > attackRange * attackRange)
             {
                 // En automático no es un error: ApproachTarget ya está caminando hacia él.
                 if (!_autoAttack)
@@ -995,8 +990,8 @@ namespace Avelora.Client
                 return;
             }
             if (!SkillReady(skill)) return;
-            Vector2 delta = (Vector2)(target.transform.position - transform.position);
-            if (delta.sqrMagnitude > skill.Range * skill.Range)
+            Vec2 delta = EntityVisuals.ToNet(target.transform.position) - EntityVisuals.ToNet(transform.position);
+            if (delta.LengthSquared > skill.Range * skill.Range)
             {
                 ShowHint("fuera de alcance");
                 return;
@@ -1119,30 +1114,30 @@ namespace Avelora.Client
                 return;
             }
 
-            Vector2 delta = (Vector2)(target.transform.position - transform.position);
+            Vec2 delta = EntityVisuals.ToNet(target.transform.position) - EntityVisuals.ToNet(transform.position);
             CurrentWeapon(out float range, out _);
             float stop = range * ApproachFraction;
-            if (delta.sqrMagnitude <= stop * stop && HasLineOfSightTo(target))
+            if (delta.LengthSquared <= stop * stop && HasLineOfSightTo(target))
             {
                 return;
             }
 
-            if (Mathf.Abs(delta.x) > AxisDeadZone)
+            if (Mathf.Abs(delta.X) > AxisDeadZone)
             {
-                directionX = (sbyte)(delta.x > 0f ? 1 : -1);
+                directionX = (sbyte)(delta.X > 0f ? 1 : -1);
             }
 
-            if (Mathf.Abs(delta.y) > AxisDeadZone)
+            if (Mathf.Abs(delta.Y) > AxisDeadZone)
             {
-                directionY = (sbyte)(delta.y > 0f ? 1 : -1);
+                directionY = (sbyte)(delta.Y > 0f ? 1 : -1);
             }
         }
 
         private bool HasLineOfSightTo(RemotePlayerView target)
         {
             return _map == null || _map.Grid == null || _map.Grid.HasLineOfSight(
-                new Vec2(transform.position.x, transform.position.y),
-                new Vec2(target.transform.position.x, target.transform.position.y));
+                EntityVisuals.ToNet(transform.position),
+                EntityVisuals.ToNet(target.transform.position));
         }
 
         /// <summary>Alcance y recarga del arma equipada, o de los puños si no hay (catálogo del servidor).</summary>
@@ -1172,8 +1167,8 @@ namespace Avelora.Client
                     continue;
                 }
 
-                Vector2 delta = (Vector2)(view.transform.position - world);
-                float distance = delta.sqrMagnitude;
+                Vec2 delta = EntityVisuals.ToNet(view.transform.position) - EntityVisuals.ToNet(world);
+                float distance = delta.LengthSquared;
                 if (distance <= bestDistance)
                 {
                     best = pair.Key;
@@ -1197,8 +1192,8 @@ namespace Avelora.Client
                     continue;
                 }
 
-                Vector2 delta = (Vector2)(view.transform.position - world);
-                float distance = delta.sqrMagnitude;
+                Vec2 delta = EntityVisuals.ToNet(view.transform.position) - EntityVisuals.ToNet(world);
+                float distance = delta.LengthSquared;
                 if (distance <= bestDistance)
                 {
                     best = pair.Key;
@@ -1873,7 +1868,6 @@ namespace Avelora.Client
             _characterSelectionPending = false;
             _lastReject = null;
             _accumulator = 0;
-            _lastDirectionX = 0;
             _zones = new ZoneInfo[0];
             _zoneId = 0;
             _zoneKind = ZoneKind.Normal;
@@ -1904,17 +1898,9 @@ namespace Avelora.Client
             ClearInputHistory();
             _welcomeReceived = true;
 
-            if (_localRenderer != null)
-            {
-                Sprite classSprite = ClassSprite(_selectedClassId);
-                _localRenderer.sprite = classSprite != null ? classSprite : _baseSprite;
-                _localRenderer.color = classSprite != null ? Color.white : ClassColor(_selectedClassId);
-                _localIdle = ClassSheet(_selectedClassId, "quieto");
-                _localWalk = ClassSheet(_selectedClassId, "andar");
-                if (_localIdle != null && _localWalk != null) _localRenderer.color = Color.white;
-            }
+            EntityVisuals.SetColor(_localRenderer, ClassColor(_selectedClassId));
 
-            transform.position = new Vector3(welcome.SpawnX, welcome.SpawnY, transform.position.z);
+            transform.position = EntityVisuals.ToWorld(new Vec2(welcome.SpawnX, welcome.SpawnY));
             _status = "conectado (entidad " + _entityId + ")";
 
             Debug.Log(
@@ -1986,18 +1972,7 @@ namespace Avelora.Client
             float alpha = (float)(_accumulator / SimulationConstants.FixedDt);
             Vec2 position = _prediction.Render(alpha);
 
-            transform.position = new Vector3(position.X, position.Y, transform.position.z);
-
-            Camera cam = Camera.main;
-            if (cameraFollowsPlayer && cam != null)
-            {
-                cam.transform.position = new Vector3(position.X, position.Y, cam.transform.position.z);
-            }
-
-            if (_localRenderer != null && _lastDirectionX != 0)
-            {
-                _localRenderer.flipX = _lastDirectionX < 0;
-            }
+            transform.position = EntityVisuals.ToWorld(position);
         }
 
         private void RenderRemotes(double now)
@@ -2042,7 +2017,7 @@ namespace Avelora.Client
                 view.Pvp = state.Pvp;
                 if (sample.Kind == EntityKind.Player)
                 {
-                    view.SetPlayerLook(ClassSprite((byte)sample.TypeId), ClassColor((byte)sample.TypeId));
+                    view.SetPlayerLook(ClassColor((byte)sample.TypeId));
                 }
 
                 view.Apply(sample);
@@ -2073,101 +2048,6 @@ namespace Avelora.Client
             }
         }
 
-        private NpcLook FindNpcLook(ushort typeId, out bool usesFallback)
-        {
-            for (int i = 0; i < npcLooks.Length; i++)
-            {
-                if (npcLooks[i] != null && npcLooks[i].typeId == typeId)
-                {
-                    usesFallback = false;
-                    return npcLooks[i];
-                }
-            }
-
-            usesFallback = npcLooks.Length > 0 && npcLooks[0] != null;
-            return usesFallback ? npcLooks[0] : null;
-        }
-
-        private Sprite _baseSprite;
-
-        // Sprites fijos de personaje (Resources/Characters/<clase>, Resources/Npcs/<tipo>), 1,2 casillas de alto;
-        // null = sin arte.
-        private readonly Dictionary<string, Sprite> _figureSprites = new Dictionary<string, Sprite>();
-
-        private Sprite ClassSprite(byte classId) => FigureSprite("Characters/" + classId);
-
-        // Hojas de personaje por clase (Resources/Characters/<clase>_<acción>): 4 filas de arriba abajo
-        // sur, norte, oeste, este; tantas columnas como fotogramas. null = sin hoja.
-        private readonly Dictionary<string, Sprite[]> _classSheets = new Dictionary<string, Sprite[]>();
-        private Sprite[] _localIdle;
-        private Sprite[] _localWalk;
-        private int _localFacing;
-
-        private Sprite[] ClassSheet(byte classId, string action)
-        {
-            string path = "Characters/" + classId + "_" + action;
-            if (_classSheets.TryGetValue(path, out Sprite[] sheet)) return sheet;
-            Texture2D texture = Resources.Load<Texture2D>(path);
-            if (texture != null)
-            {
-                int cell = texture.height / 4;
-                int frames = texture.width / cell;
-                sheet = new Sprite[4 * frames];
-                for (int row = 0; row < 4; row++)
-                {
-                    for (int frame = 0; frame < frames; frame++)
-                    {
-                        // La fila 0 de la imagen (sur) está arriba; en la textura de Unity, abajo es y = 0.
-                        var rect = new Rect(frame * cell, (3 - row) * cell, cell, cell);
-                        sheet[row * frames + frame] = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), cell / 1.2f);
-                    }
-                }
-            }
-
-            _classSheets[path] = sheet;
-            return sheet;
-        }
-
-        /// <summary>Anima al jugador local con las hojas de su clase, igual que RemotePlayerView a los demás.</summary>
-        private void AnimateLocal(sbyte directionX, sbyte directionY)
-        {
-            if (_localRenderer == null || _localWalk == null || _localIdle == null) return;
-            bool moving = directionX != 0 || directionY != 0;
-            if (moving)
-            {
-                // Mismo criterio que RemotePlayerView: en diagonal manda el eje horizontal.
-                _localFacing = directionX < 0 ? 2 : directionX > 0 ? 3 : directionY > 0 ? 1 : 0;
-            }
-
-            Sprite[] sheet = moving ? _localWalk : _localIdle;
-            int frames = sheet.Length / 4;
-            _localRenderer.sprite = sheet[_localFacing * frames + (int)(Time.time * (moving ? 10f : 6f)) % frames];
-            _localRenderer.flipX = false;
-        }
-
-        private Sprite FigureSprite(string path)
-        {
-            if (_figureSprites.TryGetValue(path, out Sprite sprite)) return sprite;
-            Texture2D texture = Resources.Load<Texture2D>(path);
-            sprite = texture == null ? null : Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
-                new Vector2(0.5f, 0.5f), texture.height / 1.2f);
-            _figureSprites[path] = sprite;
-            return sprite;
-        }
-
-        // Sprites de objetos en el suelo, uno por id, hechos del icono del inventario (60 % de una casilla).
-        private readonly Dictionary<ushort, Sprite> _groundItemSprites = new Dictionary<ushort, Sprite>();
-
-        private Sprite GroundItemSprite(ushort itemId)
-        {
-            if (_groundItemSprites.TryGetValue(itemId, out Sprite sprite)) return sprite;
-            Texture2D icon = ItemIcon(itemId);
-            sprite = icon == null ? null : Sprite.Create(icon, new Rect(0f, 0f, icon.width, icon.height),
-                new Vector2(0.5f, 0.5f), icon.width / 0.6f);
-            _groundItemSprites[itemId] = sprite;
-            return sprite;
-        }
-
         private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId)
         {
             if (_remoteRoot == null)
@@ -2179,74 +2059,27 @@ namespace Avelora.Client
             go.transform.SetParent(_remoteRoot, false);
 
             var view = go.AddComponent<RemotePlayerView>();
-
-            Sprite sprite = _baseSprite;
-            Material material = _localRenderer != null ? _localRenderer.sharedMaterial : null;
-            int sortingLayer = _localRenderer != null ? _localRenderer.sortingLayerID : 0;
-            int sortingOrder = _localRenderer != null ? _localRenderer.sortingOrder : 0;
-
-            view.Initialize(
-                entityId,
-                sprite,
-                material,
-                sortingLayer,
-                sortingOrder,
-                Color.gray,
-                npcColor);
-
-            if (kind == EntityKind.Player)
-            {
-                view.SetPlayerLook(ClassSprite((byte)typeId), ClassColor((byte)typeId));
-                Sprite[] idle = ClassSheet((byte)typeId, "quieto");
-                Sprite[] walk = ClassSheet((byte)typeId, "andar");
-                if (idle != null && walk != null) view.SetNpcSheets(idle, walk, null, null, null);
-            }
-
-            if (kind == EntityKind.Item)
-            {
-                Sprite icon = GroundItemSprite(typeId);
-                if (icon != null)
-                {
-                    view.SetItemSprite(icon);
-                }
-                else
-                {
-                    // Sin icono para ese id: cuadrado pequeño con el color de su clase.
-                    _catalog.TryGetValue(typeId, out ItemCatalogEntry item);
-                    view.SetItemLook(item.Kind == ItemKind.Potion ? new Color(0.9f, 0.2f, 0.3f, 1f)
-                        : item.Kind == ItemKind.Weapon ? new Color(0.55f, 0.7f, 0.95f, 1f)
-                        : new Color(0.95f, 0.9f, 0.75f, 1f));
-                }
-            }
-
-            bool usesFallback = false;
-            NpcLook look = kind == EntityKind.Npc ? FindNpcLook(typeId, out usesFallback) : null;
-            // Sin hojas propias pero con sprite fijo en Resources/Npcs: mejor eso que el orco base teñido.
-            Sprite npcSprite = kind == EntityKind.Npc && (look == null || usesFallback) ? FigureSprite("Npcs/" + typeId) : null;
-            if (npcSprite != null)
-            {
-                view.SetNpcStaticSprite(npcSprite);
-            }
-            else if (look != null)
-            {
-                if (usesFallback)
-                {
-                    float hue = Mathf.Repeat(typeId * 0.618034f, 1f);
-                    view.SetNpcTint(Color.HSVToRGB(hue, 0.45f, 1f));
-                }
-
-                view.SetNpcSheets(look.idle, look.walk, look.hurt, look.death, look.attack);
-            }
-
-            if (sprite == null)
-            {
-                Debug.LogWarning(
-                    "[Avelora] La entidad remota " + entityId + " no tiene sprite: el jugador local no tiene SpriteRenderer con sprite.",
-                    this);
-            }
+            Color playerColor = ClassColor((byte)typeId);
+            Color npcColor = EntityVisuals.ColorForTypeId(typeId);
+            Color itemColor = ItemColor(typeId);
+            Renderer renderer = EntityVisuals.CreateEntity(go.transform, kind, typeId,
+                kind == EntityKind.Player ? playerColor : kind == EntityKind.Item ? itemColor : npcColor);
+            view.Initialize(entityId, renderer, playerColor, npcColor, itemColor);
 
             Debug.Log("[Avelora] Entidad remota " + entityId + " creada.", this);
             return view;
+        }
+
+        private Color ItemColor(ushort itemId)
+        {
+            if (!_catalog.TryGetValue(itemId, out ItemCatalogEntry item))
+            {
+                return EntityVisuals.ColorForTypeId(itemId);
+            }
+
+            return item.Kind == ItemKind.Potion ? new Color(0.9f, 0.2f, 0.3f, 1f)
+                : item.Kind == ItemKind.Weapon ? new Color(0.55f, 0.7f, 0.95f, 1f)
+                : new Color(0.95f, 0.9f, 0.75f, 1f);
         }
 
         private bool MapHashMatches(byte[] hash)

@@ -92,7 +92,7 @@ namespace Avelora.Client
 
         private void Start()
         {
-            _current = _previous = new Vector2(transform.position.x, transform.position.y);
+            _current = _previous = new Vector2(transform.position.x, transform.position.z);
             _accumulator = 0d;
         }
 
@@ -201,16 +201,16 @@ namespace Avelora.Client
             // pero el dibujo es continuo (guía del núcleo §5.1).
             float t = (float)(_accumulator / FixedDt);
             Vector2 pos = Vector2.Lerp(_previous, _current, t);
-            transform.position = new Vector3(pos.x, pos.y, transform.position.z);
+            transform.position = new Vector3(pos.x, 0f, pos.y);
         }
 
         private void OnDrawGizmosSelected()
         {
-            Vector2 p = Application.isPlaying ? _current : new Vector2(transform.position.x, transform.position.y);
+            Vector2 p = Application.isPlaying ? _current : new Vector2(transform.position.x, transform.position.z);
             Gizmos.color = new Color(1f, 0.6f, 0.1f);
             Gizmos.DrawWireCube(
-                new Vector3(p.x, p.y, 0f),
-                new Vector3(halfSize.x * 2f, halfSize.y * 2f, 0f));
+                new Vector3(p.x, 0f, p.y),
+                new Vector3(halfSize.x * 2f, 0f, halfSize.y * 2f));
         }
     }
 }

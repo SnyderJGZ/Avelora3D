@@ -8,8 +8,9 @@
       shared/Avelora.Shared/**   ->  <Unity>/Assets/Avelora/Scripts/Shared/**
       shared/Avelora.Net/**      ->  <Unity>/Assets/Avelora/Scripts/Net/**
       client/Assets/Avelora/**   ->  <Unity>/Assets/Avelora/**
+      client/Assets/StreamingAssets/** -> <Unity>/Assets/StreamingAssets/**
 
-    Copia archivos .cs, .asmdef, .unity, .png, .asset y .dll junto con su .meta. El .meta es
+    Copia archivos .cs, .asmdef, .unity, .png, .asset, .dll y .avmap junto con su .meta. El .meta es
     obligatorio para conservar los GUID: la escena y los componentes de Unity referencian los
     scripts y los assets por GUID, y si Unity generase GUIDs nuevos las referencias se romperían.
 
@@ -50,7 +51,7 @@ $net     = Join-Path $raiz 'shared\Avelora.Net'
 $cliente = Join-Path $raiz 'client\Assets\Avelora'
 $destino = Join-Path $ProyectoUnity 'Assets\Avelora'
 
-$extensiones = @('.cs', '.asmdef', '.unity', '.png', '.asset', '.dll')
+$extensiones = @('.cs', '.asmdef', '.unity', '.png', '.asset', '.dll', '.avmap')
 
 $script:archivosSaltados = 0
 
@@ -108,6 +109,9 @@ Copy-Archivos -Origen $net -SubcarpetaDestino (Join-Path $destino 'Scripts\Net')
 
 Write-Host 'Sincronizando cliente...' -ForegroundColor Cyan
 Copy-Archivos -Origen $cliente -SubcarpetaDestino $destino
+
+Write-Host 'Sincronizando mapas (StreamingAssets)...' -ForegroundColor Cyan
+Copy-Archivos -Origen (Join-Path $raiz 'client\Assets\StreamingAssets') -SubcarpetaDestino (Join-Path $ProyectoUnity 'Assets\StreamingAssets')
 
 if ($script:archivosSaltados -gt 0) {
     Write-Host ''

@@ -253,7 +253,7 @@ namespace Avelora.Client
                     continue;
                 }
 
-                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 0.9f);
+                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 2f);
                 if (screen.z < 0f)
                 {
                     continue;
@@ -284,7 +284,7 @@ namespace Avelora.Client
                     continue;
                 }
 
-                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 1.2f);
+                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + Vector3.up * 2f);
                 if (screen.z < 0f) continue;
                 GUI.Label(new Rect(screen.x - 32f, Screen.height - screen.y - 9f, 64f, 18f),
                     StatusMaskTexts[mask], _damageNumberStyle);
@@ -292,7 +292,7 @@ namespace Avelora.Client
 
             if (_statusMasks.TryGetValue(_entityId, out byte ownMask) && ownMask < StatusMaskTexts.Length)
             {
-                Vector3 screen = cam.WorldToScreenPoint(transform.position + Vector3.up * 1.2f);
+                Vector3 screen = cam.WorldToScreenPoint(transform.position + Vector3.up * 2f);
                 if (screen.z >= 0f)
                 {
                     GUI.Label(new Rect(screen.x - 32f, Screen.height - screen.y - 9f, 64f, 18f),
@@ -508,7 +508,7 @@ namespace Avelora.Client
                 for (int k = 0; k < 24; k++)
                 {
                     float a = k * 2f * Mathf.PI / 24f;
-                    Vector3 world = flash.Center + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * flash.Radius;
+                    Vector3 world = flash.Center + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * flash.Radius;
                     Vector3 screen = cam.WorldToScreenPoint(world);
                     if (screen.z < 0f) continue;
                     GUI.DrawTexture(new Rect(screen.x - 2.5f, Screen.height - screen.y - 2.5f, 5f, 5f),
