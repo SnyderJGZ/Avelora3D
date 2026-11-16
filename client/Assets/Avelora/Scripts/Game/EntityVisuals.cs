@@ -15,7 +15,7 @@ namespace Avelora.Client
         private static readonly MaterialPropertyBlock PropertyBlock = new MaterialPropertyBlock();
         private static Material _material;
         private static GameObject _playerModel;
-        private const string PlayerModelPath = "Personajes/Novato/Novato";
+        private const string PlayerModelPath = "Personajes/NovatoGuerrero/NovatoGuerrero";
 
         /// <summary>Proyecta las coordenadas de red X/Y sobre el plano del mundo X/Z.</summary>
         public static Vector3 ToWorld(Vec2 position) => new Vector3(position.X, 0f, position.Y);
@@ -171,6 +171,15 @@ namespace Avelora.Client
                 Object.Destroy(visual);
                 return null;
             }
+
+            Animator animator = visual.GetComponent<Animator>();
+            if (animator != null)
+            {
+                animator.runtimeAnimatorController = Resources.Load<RuntimeAnimatorController>(PlayerModelPath);
+                animator.applyRootMotion = false;
+            }
+
+            visual.AddComponent<ModelMotion>();
 
             Bounds bounds = renderer.bounds;
             float scale = bounds.size.y > 0.01f ? PlayerHeight / bounds.size.y : 1f;
