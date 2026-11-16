@@ -14,6 +14,8 @@ namespace Avelora.Client
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly MaterialPropertyBlock PropertyBlock = new MaterialPropertyBlock();
         private static Material _material;
+        private static GameObject _playerModel;
+        private const string PlayerModelPath = "Personajes/Novato/Novato";
 
         /// <summary>Proyecta las coordenadas de red X/Y sobre el plano del mundo X/Z.</summary>
         public static Vector3 ToWorld(Vec2 position) => new Vector3(position.X, 0f, position.Y);
@@ -31,6 +33,12 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Player)
             {
+                Renderer model = TryCreatePlayerModel(parent, typeId);
+                if (model != null)
+                {
+                    return model;
+                }
+
                 primitive = PrimitiveType.Capsule;
                 height = PlayerHeight;
                 scale = new Vector3(0.8f, PlayerHeight * 0.5f, 0.8f);
@@ -70,10 +78,15 @@ namespace Avelora.Client
         public static Renderer EnsurePlayer(Transform parent)
         {
             Transform visual = parent.Find("Jugador_0");
-            Renderer renderer = visual != null ? visual.GetComponent<Renderer>() : null;
+            Renderer renderer = visual != null ? visual.GetComponentInChildren<Renderer>() : null;
             if (renderer == null)
             {
                 return CreateEntity(parent, EntityKind.Player, 0, Color.gray);
+            }
+
+            if (renderer is SkinnedMeshRenderer)
+            {
+                return renderer;
             }
 
             renderer.sharedMaterial = SharedMaterial;
@@ -118,7 +131,8 @@ namespace Avelora.Client
         /// <summary>Aplica el color mediante el bloque de propiedades sin crear materiales.</summary>
         public static void SetColor(Renderer renderer, Color color)
         {
-            if (renderer == null)
+            // Los modelos con textura no se tiñen: el color de clase solo vale para las primitivas.
+            if (renderer == null || renderer is SkinnedMeshRenderer)
             {
                 return;
             }
@@ -134,6 +148,35 @@ namespace Avelora.Client
         {
             float hue = Mathf.Repeat(typeId * 0.618034f, 1f);
             return Color.HSVToRGB(hue, 0.5f, 0.95f);
+        }
+
+        /// <summary>Instancia el modelo de jugador de Resources, escalado a la altura del jugador; null si no está.</summary>
+        private static Renderer TryCreatePlayerModel(Transform parent, ushort typeId)
+        {
+            // shortcut: un solo modelo para todos los jugadores; cambiar cuando llegue el mensaje de aspecto (v27).
+            if (_playerModel == null)
+            {
+                _playerModel = Resources.Load<GameObject>(PlayerModelPath);
+                if (_playerModel == null)
+                {
+                    return null;
+                }
+            }
+
+            GameObject visual = Object.Instantiate(_playerModel, parent, false);
+            visual.name = "Jugador_" + typeId;
+            Renderer renderer = visual.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (renderer == null)
+            {
+                Object.Destroy(visual);
+                return null;
+            }
+
+            Bounds bounds = renderer.bounds;
+            float scale = bounds.size.y > 0.01f ? PlayerHeight / bounds.size.y : 1f;
+            visual.transform.localScale = Vector3.one * scale;
+            visual.transform.localPosition = new Vector3(0f, (parent.position.y - bounds.min.y) * scale, 0f);
+            return renderer;
         }
 
         private static Material SharedMaterial
