@@ -9,7 +9,7 @@ namespace Avelora.Client
         // Perspectiva fija, sin yaw: arriba en pantalla es +Z (Y de red).
         private const float FieldOfView = 35f;
         private const float DownwardAngle = 55f;
-        private const float FollowDistance = 30f;
+        private const float FollowDistance = 22f;
         private const float FixedYaw = 0f;
 
         [SerializeField] private Transform target;
