@@ -36,6 +36,9 @@ namespace Avelora.Client
     [RequireComponent(typeof(AveloraMap))]
     public sealed partial class NetworkClient : MonoBehaviour
     {
+        /// <summary>Indica si el puntero está sobre un panel IMGUI del cliente.</summary>
+        public static bool PointerOverGui { get; private set; }
+
         /// <summary>Si un frame dura más, se descarta el exceso: evita una avalancha de inputs tras un parón.</summary>
         private const double MaxFrameSeconds = 0.25;
 
@@ -493,6 +496,21 @@ namespace Avelora.Client
 
         private void Update()
         {
+            Mouse mouse = Mouse.current;
+            bool overPanel = false;
+            if (mouse != null)
+            {
+                var gui = new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y);
+                overPanel = (_showStats && _statsPanel.Contains(gui)) ||
+                    (_showInventory && _inventoryPanel.Contains(gui)) ||
+                    (_showSkills && _skillsPanel.Contains(gui)) ||
+                    _hotbarPanel.Contains(gui) ||
+                    (_discardSlot >= 0 && _discardDialog.Contains(gui)) ||
+                    _pvpButtonRect.Contains(gui);
+            }
+
+            PointerOverGui = overPanel;
+
             if (_transport != null)
             {
                 _transport.Poll();
@@ -669,19 +687,7 @@ namespace Avelora.Client
             Keyboard keyboard = Keyboard.current;
 
             // Un clic sobre un panel es para la interfaz, no para elegir objetivo.
-            bool overPanel = false;
-            if (mouse != null)
-            {
-                var gui = new Vector2(mouse.position.ReadValue().x, Screen.height - mouse.position.ReadValue().y);
-                overPanel = (_showStats && _statsPanel.Contains(gui)) ||
-                    (_showInventory && _inventoryPanel.Contains(gui)) ||
-                    (_showSkills && _skillsPanel.Contains(gui)) ||
-                    _hotbarPanel.Contains(gui) ||
-                    (_discardSlot >= 0 && _discardDialog.Contains(gui)) ||
-                    _pvpButtonRect.Contains(gui);
-            }
-
-            if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !overPanel)
+            if (mouse != null && cam != null && mouse.leftButton.wasPressedThisFrame && !PointerOverGui)
             {
                 Vector2 screen = mouse.position.ReadValue();
                 Ray ray = cam.ScreenPointToRay(screen);
