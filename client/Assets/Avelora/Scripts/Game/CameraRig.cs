@@ -13,7 +13,8 @@ namespace Avelora.Client
         private const float MinDistance = 12f;
         private const float MaxDistance = 30f;
         private const float OrbitSensitivity = 0.15f;
-        private const float ZoomStep = 0.02f;
+        // Distancia por muesca de rueda; el valor del scroll varía según plataforma (±1 o ±120), así que solo se usa su signo.
+        private const float ZoomStep = 2f;
         private const float SmoothTime = 0.12f;
 
         private float _yaw;
@@ -76,7 +77,7 @@ namespace Avelora.Client
                 float scroll = mouse.scroll.ReadValue().y;
                 if (scroll != 0f && !NetworkClient.PointerOverGui)
                 {
-                    _distance = Mathf.Clamp(_distance - scroll * ZoomStep, MinDistance, MaxDistance);
+                    _distance = Mathf.Clamp(_distance - Mathf.Sign(scroll) * ZoomStep, MinDistance, MaxDistance);
                 }
             }
             else
