@@ -14,9 +14,13 @@ namespace Avelora.Client
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly MaterialPropertyBlock PropertyBlock = new MaterialPropertyBlock();
         private static Material _material;
-        // El índice coincide con el sexo: 0 hombre, 1 mujer.
-        private static readonly GameObject[] PlayerModels = new GameObject[2];
-        private static readonly string[] PlayerModelPaths = { "Personajes/NovatoGuerrero/NovatoGuerrero", "Personajes/Guerrera/Guerrera" };
+        // Índice = fila de clase * 2 + sexo (0 hombre, 1 mujer). Fila 0 guerrero (y clases sin modelo propio), fila 1 mago.
+        private static readonly string[] PlayerModelPaths =
+        {
+            "Personajes/NovatoGuerrero/NovatoGuerrero", "Personajes/Guerrera/Guerrera",
+            "Personajes/Mago/Mago", "Personajes/Maga/Maga",
+        };
+        private static readonly GameObject[] PlayerModels = new GameObject[PlayerModelPaths.Length];
 
         /// <summary>Proyecta las coordenadas de red X/Y sobre el plano del mundo X/Z.</summary>
         public static Vector3 ToWorld(Vec2 position) => new Vector3(position.X, 0f, position.Y);
@@ -95,8 +99,8 @@ namespace Avelora.Client
             return renderer;
         }
 
-        /// <summary>Cambia el modelo del jugador local por el de su sexo; devuelve el nuevo renderer.</summary>
-        public static Renderer ReplacePlayer(Transform parent, byte sex)
+        /// <summary>Cambia el modelo del jugador local por el de su clase y sexo; devuelve el nuevo renderer.</summary>
+        public static Renderer ReplacePlayer(Transform parent, byte sex, byte classId)
         {
             for (int i = parent.childCount - 1; i >= 0; i--)
             {
@@ -107,7 +111,7 @@ namespace Avelora.Client
                 }
             }
 
-            return CreateEntity(parent, EntityKind.Player, 0, Color.gray, sex);
+            return CreateEntity(parent, EntityKind.Player, classId, Color.gray, sex);
         }
 
         /// <summary>Crea el suelo liso ajustado a las dimensiones y el origen del mapa.</summary>
@@ -169,7 +173,9 @@ namespace Avelora.Client
         /// <summary>Instancia el modelo de jugador de Resources, escalado a la altura del jugador; null si no está.</summary>
         private static Renderer TryCreatePlayerModel(Transform parent, ushort typeId, byte sex)
         {
-            int index = sex == 1 ? 1 : 0;
+            // Para los jugadores, typeId es el id de clase (classes.json: 1 guerrero, 2 mago).
+            int classRow = typeId == 2 ? 1 : 0;
+            int index = classRow * 2 + (sex == 1 ? 1 : 0);
             if (PlayerModels[index] == null)
             {
                 PlayerModels[index] = Resources.Load<GameObject>(PlayerModelPaths[index]);

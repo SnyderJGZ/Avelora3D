@@ -1908,7 +1908,7 @@ namespace Avelora.Client
             ClearInputHistory();
             _welcomeReceived = true;
 
-            _localRenderer = EntityVisuals.ReplacePlayer(transform, _selectedSex);
+            _localRenderer = EntityVisuals.ReplacePlayer(transform, _selectedSex, _selectedClassId);
             EntityVisuals.SetColor(_localRenderer, ClassColor(_selectedClassId));
 
             transform.position = EntityVisuals.ToWorld(new Vec2(welcome.SpawnX, welcome.SpawnY));
