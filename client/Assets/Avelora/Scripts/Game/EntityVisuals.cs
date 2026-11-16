@@ -14,8 +14,9 @@ namespace Avelora.Client
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly MaterialPropertyBlock PropertyBlock = new MaterialPropertyBlock();
         private static Material _material;
-        private static GameObject _playerModel;
-        private const string PlayerModelPath = "Personajes/NovatoGuerrero/NovatoGuerrero";
+        // El índice coincide con el sexo: 0 hombre, 1 mujer.
+        private static readonly GameObject[] PlayerModels = new GameObject[2];
+        private static readonly string[] PlayerModelPaths = { "Personajes/NovatoGuerrero/NovatoGuerrero", "Personajes/Guerrera/Guerrera" };
 
         /// <summary>Proyecta las coordenadas de red X/Y sobre el plano del mundo X/Z.</summary>
         public static Vector3 ToWorld(Vec2 position) => new Vector3(position.X, 0f, position.Y);
@@ -24,7 +25,7 @@ namespace Avelora.Client
         public static Vec2 ToNet(Vector3 position) => new Vec2(position.x, position.z);
 
         /// <summary>Crea la primitiva adecuada como hijo, apoyada sobre el plano Y=0.</summary>
-        public static Renderer CreateEntity(Transform parent, EntityKind kind, ushort typeId, Color color)
+        public static Renderer CreateEntity(Transform parent, EntityKind kind, ushort typeId, Color color, byte sex = 0)
         {
             PrimitiveType primitive;
             float height;
@@ -33,7 +34,7 @@ namespace Avelora.Client
 
             if (kind == EntityKind.Player)
             {
-                Renderer model = TryCreatePlayerModel(parent, typeId);
+                Renderer model = TryCreatePlayerModel(parent, typeId, sex);
                 if (model != null)
                 {
                     return model;
@@ -94,6 +95,21 @@ namespace Avelora.Client
             return renderer;
         }
 
+        /// <summary>Cambia el modelo del jugador local por el de su sexo; devuelve el nuevo renderer.</summary>
+        public static Renderer ReplacePlayer(Transform parent, byte sex)
+        {
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                Transform child = parent.GetChild(i);
+                if (child.name.StartsWith("Jugador_"))
+                {
+                    Object.Destroy(child.gameObject);
+                }
+            }
+
+            return CreateEntity(parent, EntityKind.Player, 0, Color.gray, sex);
+        }
+
         /// <summary>Crea el suelo liso ajustado a las dimensiones y el origen del mapa.</summary>
         public static void CreateGround(MapCollisionGrid grid)
         {
@@ -151,19 +167,19 @@ namespace Avelora.Client
         }
 
         /// <summary>Instancia el modelo de jugador de Resources, escalado a la altura del jugador; null si no está.</summary>
-        private static Renderer TryCreatePlayerModel(Transform parent, ushort typeId)
+        private static Renderer TryCreatePlayerModel(Transform parent, ushort typeId, byte sex)
         {
-            // shortcut: un solo modelo para todos los jugadores; cambiar cuando llegue el mensaje de aspecto (v27).
-            if (_playerModel == null)
+            int index = sex == 1 ? 1 : 0;
+            if (PlayerModels[index] == null)
             {
-                _playerModel = Resources.Load<GameObject>(PlayerModelPath);
-                if (_playerModel == null)
+                PlayerModels[index] = Resources.Load<GameObject>(PlayerModelPaths[index]);
+                if (PlayerModels[index] == null)
                 {
                     return null;
                 }
             }
 
-            GameObject visual = Object.Instantiate(_playerModel, parent, false);
+            GameObject visual = Object.Instantiate(PlayerModels[index], parent, false);
             visual.name = "Jugador_" + typeId;
             Renderer renderer = visual.GetComponentInChildren<SkinnedMeshRenderer>();
             if (renderer == null)
@@ -175,7 +191,12 @@ namespace Avelora.Client
             Animator animator = visual.GetComponent<Animator>();
             if (animator != null)
             {
-                animator.runtimeAnimatorController = Resources.Load<RuntimeAnimatorController>(PlayerModelPath);
+                RuntimeAnimatorController controller = Resources.Load<RuntimeAnimatorController>(PlayerModelPaths[index]);
+                if (controller != null)
+                {
+                    animator.runtimeAnimatorController = controller;
+                }
+
                 animator.applyRootMotion = false;
             }
 

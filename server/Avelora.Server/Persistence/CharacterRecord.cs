@@ -136,6 +136,7 @@ namespace Avelora.Server.Persistence
         public int Gold { get; init; }
         public int PvpMode { get; init; }
         public int PvpForcedSeconds { get; init; }
+        public int Sex { get; init; }
     }
 
     /// <summary>Registro inmutable de un objeto guardado en una ranura.</summary>

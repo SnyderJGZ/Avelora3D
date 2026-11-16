@@ -6,7 +6,7 @@ Qué se trajo y por qué: `docs/diseno/reutilizar-3d.md`.
 
 ## Qué hay
 
-- `server/`: servidor completo (tick fijo, combate, IA de PNJ, zonas, PvP, objetos, habilidades, niveles, SQLite, login con invitación). Protocolo v26.
+- `server/`: servidor completo (tick fijo, combate, IA de PNJ, zonas, PvP, objetos, habilidades, niveles, SQLite, login con invitación). Protocolo v27.
 - `shared/`: protocolo, códec, movimiento, colisión, predicción y transporte LiteNetLib, compartidos por cliente y servidor.
 - `tests/`: 1111 pruebas.
 - `maps/`: mapa Ciudad (`.avmap`): rejilla de colisión y zonas.

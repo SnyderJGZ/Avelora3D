@@ -24,7 +24,7 @@ namespace Avelora.Server.Persistence
     /// </remarks>
     public sealed class SqlitePlayerRepository : IPlayerRepository
     {
-        public const int SchemaVersion = 8;
+        public const int SchemaVersion = 9;
 
         private const string TimeFormat = "O";
 
@@ -145,6 +145,7 @@ namespace Avelora.Server.Persistence
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 2:
                         MigrateV2ToV3(connection);
@@ -153,6 +154,7 @@ namespace Avelora.Server.Persistence
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 3:
                         MigrateV3ToV4(connection);
@@ -160,24 +162,32 @@ namespace Avelora.Server.Persistence
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 4:
                         MigrateV4ToV5(connection);
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 5:
                         MigrateV5ToV6(connection);
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 6:
                         MigrateV6ToV7(connection);
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
                         break;
                     case 7:
                         MigrateV7ToV8(connection);
+                        MigrateV8ToV9(connection);
+                        break;
+                    case 8:
+                        MigrateV8ToV9(connection);
                         break;
                     case SchemaVersion:
                         break;
@@ -335,8 +345,14 @@ namespace Avelora.Server.Persistence
             int maxCharacters,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash)
+            byte[] mapHash,
+            byte sex = 0)
         {
+            if (sex > 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sex));
+            }
+
             ThrowIfNotInitialized();
 
             if (accountId <= 0)
@@ -413,8 +429,8 @@ namespace Avelora.Server.Persistence
             insert.CommandText =
                 "INSERT INTO characters " +
                 "(account_id, name, name_key, level, experience, health, mana, zone_id, x, y, map_hash, " +
-                "class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, created_utc, updated_utc) " +
-                "VALUES (@account, @name, @key, 1, 0, @health, @mana, @zone, @x, @y, @map, @class, 0, 0, 0, 0, @created, @updated) " +
+                "class_id, alloc_str, alloc_dex, alloc_int, alloc_vit, sex, created_utc, updated_utc) " +
+                "VALUES (@account, @name, @key, 1, 0, @health, @mana, @zone, @x, @y, @map, @class, 0, 0, 0, 0, @sex, @created, @updated) " +
                 "RETURNING id;";
             insert.Parameters.AddWithValue("@account", accountId);
             insert.Parameters.AddWithValue("@name", name);
@@ -426,6 +442,7 @@ namespace Avelora.Server.Persistence
             insert.Parameters.AddWithValue("@y", (double)spawn.Y);
             insert.Parameters.AddWithValue("@map", mapHash);
             insert.Parameters.AddWithValue("@class", classId);
+            insert.Parameters.AddWithValue("@sex", sex);
             insert.Parameters.AddWithValue("@created", FormatTime(now));
             insert.Parameters.AddWithValue("@updated", FormatTime(now));
 
@@ -455,7 +472,10 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 now,
                 now,
-                classId: classId));
+                classId: classId)
+            {
+                Sex = sex,
+            });
         }
 
         public RejectReason DeleteCharacter(int accountId, int characterId, string confirmationName)
@@ -700,6 +720,7 @@ CREATE TABLE characters (
     gold            INTEGER NOT NULL DEFAULT 0,
     pvp_mode        INTEGER NOT NULL DEFAULT 0,
     pvp_forced_seconds INTEGER NOT NULL DEFAULT 0,
+    sex             INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL
 );
@@ -943,6 +964,17 @@ CREATE UNIQUE INDEX characters_name_key_unique ON characters(name_key) WHERE del
             transaction.Commit();
         }
 
+        private static void MigrateV8ToV9(SqliteConnection connection)
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "ALTER TABLE characters ADD COLUMN sex INTEGER NOT NULL DEFAULT 0;";
+            command.ExecuteNonQuery();
+            SetUserVersion(connection, transaction, 9);
+            transaction.Commit();
+        }
+
         private static void CreateInventorySchema(SqliteConnection connection, SqliteTransaction transaction)
         {
             using SqliteCommand command = connection.CreateCommand();
@@ -1128,7 +1160,7 @@ CREATE TABLE character_equipment (
             command.CommandText =
                 "SELECT id, account_id, name, level, experience, health, mana, zone_id, x, y, " +
                 "map_hash, created_utc, updated_utc, class_id, " +
-                "alloc_str, alloc_dex, alloc_int, alloc_vit, gold, pvp_mode, pvp_forced_seconds " +
+                "alloc_str, alloc_dex, alloc_int, alloc_vit, gold, pvp_mode, pvp_forced_seconds, sex " +
                 "FROM characters WHERE account_id = @account AND id = @id AND deleted_utc IS NULL LIMIT 1;";
             command.Parameters.AddWithValue("@account", accountId);
             command.Parameters.AddWithValue("@id", characterId);
@@ -1220,6 +1252,7 @@ CREATE TABLE character_equipment (
                 long rawGold = reader.GetInt64(18);
                 long rawPvpMode = reader.GetInt64(19);
                 long rawPvpForcedSeconds = reader.GetInt64(20);
+                long rawSex = reader.GetInt64(21);
                 int gold = rawGold < 0 ? 0 : rawGold > PlayerEntity.MaxGold
                     ? PlayerEntity.MaxGold : (int)rawGold;
                 if (rawGold < 0 || rawGold > PlayerEntity.MaxGold)
@@ -1235,6 +1268,14 @@ CREATE TABLE character_equipment (
                     Console.Error.WriteLine(
                         "AVISO: se corrigió pvp_mode inválido del personaje " + reader.GetInt32(0) +
                         " (" + rawPvpMode + " → " + pvpMode + ").");
+                }
+
+                int sex = rawSex == 1 ? 1 : 0;
+                if (rawSex < 0 || rawSex > 1)
+                {
+                    Console.Error.WriteLine(
+                        "AVISO: se corrigió sex inválido del personaje " + reader.GetInt32(0) +
+                        " (" + rawSex + " → " + sex + ").");
                 }
 
                 int pvpForcedSeconds = rawPvpForcedSeconds < 0 ? 0 :
@@ -1309,6 +1350,7 @@ CREATE TABLE character_equipment (
                 {
                     PvpMode = pvpMode,
                     PvpForcedSeconds = pvpForcedSeconds,
+                    Sex = sex,
                 };
 
             }

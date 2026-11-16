@@ -32,9 +32,10 @@ namespace Avelora.Shared.Protocol
         /// por ZoneList y ZoneChanged e I-15p a 20 por el estado y los mensajes de modo PvP;
         /// I-16 a 21 por UseSkill, SkillCatalog, SkillUsed, SkillRejected y ResourceStatus; I-17 a 22 por áreas,
         /// curación y objetivo en SkillUsed; I-18 a 23 por estados temporales y StatusEffects/StatusEvent;
-        /// I-32 a 26 por la intención (<c>HelloIntent</c>) del saludo y <see cref="RejectReason.AccountTaken"/>.
+        /// I-32 a 26 por la intención (<c>HelloIntent</c>) del saludo y <see cref="RejectReason.AccountTaken"/>;
+        /// U3D-02A a 27 por el sexo en la creación/lista de personajes y el bit 7 del snapshot.
         /// </summary>
-        public const ushort Version = 26;
+        public const ushort Version = 27;
 
         /// <summary>Máximo de estados activos de tipos distintos por entidad (I-18).</summary>
         public const int MaxStatusEffects = 4;

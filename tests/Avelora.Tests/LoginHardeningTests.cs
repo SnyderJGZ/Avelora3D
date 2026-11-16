@@ -829,7 +829,8 @@ namespace Avelora.Tests
                 int maxCharacters,
                 int zoneId,
                 Vec2 spawn,
-                byte[] mapHash)
+                byte[] mapHash,
+                byte sex = 0)
             {
                 var character = new CharacterRecord(
                     accountId,
@@ -844,7 +845,10 @@ namespace Avelora.Tests
                     mapHash,
                     DateTime.UtcNow,
                     DateTime.UtcNow,
-                    classId: classId);
+                    classId: classId)
+                {
+                    Sex = sex,
+                };
                 lock (_gate)
                 {
                     _characters[accountId].Add(character);

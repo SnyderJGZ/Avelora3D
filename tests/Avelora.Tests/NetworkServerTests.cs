@@ -1060,6 +1060,48 @@ namespace Avelora.Tests
         }
 
         [Fact]
+        public void El_Snapshot_Del_Servidor_Lleva_El_Sexo_A_Otro_Cliente()
+        {
+            using var harness = new Harness(config => config.SnapshotEveryTicks = 1);
+            harness.Connect(1);
+            harness.Handshake(1, automaticallySelect: false);
+            Assert.Empty(harness.WaitForCharacterList(1).Characters);
+
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Eva", 1, sex: 1)));
+            harness.Server.PollOnce();
+            CharacterListEntry femaleCharacter = Assert.Single(harness.WaitForCharacterList(1).Characters);
+            Assert.Equal((byte)1, femaleCharacter.Sex);
+            harness.Transport.RaiseReceived(1, MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(femaleCharacter.CharacterId)));
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Server.PollOnce();
+            PlayerEntity female = Assert.IsType<PlayerEntity>(Assert.Single(harness.Zone.Entities.All));
+            Assert.Equal((byte)1, female.Sex);
+
+            harness.Connect(2);
+            harness.Handshake(2, automaticallySelect: false);
+            Assert.Empty(harness.WaitForCharacterList(2).Characters);
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeCreateCharacter(
+                new CreateCharacterMessage("Adan", 1)));
+            harness.Server.PollOnce();
+            CharacterListEntry maleCharacter = Assert.Single(harness.WaitForCharacterList(2).Characters);
+            harness.Transport.RaiseReceived(2, MessageCodec.EncodeSelectCharacter(
+                new SelectCharacterMessage(maleCharacter.CharacterId)));
+            harness.Server.PollOnce();
+            harness.Server.BeforeTick(harness.Zone);
+            harness.Server.PollOnce();
+
+            harness.Zone.Tick();
+            harness.Server.AfterTick(harness.Zone);
+            harness.Server.PollOnce();
+            EntityState observedFemale = Assert.Single(
+                SnapshotFor(harness, 2).Entities, entity => entity.Id == female.Id);
+            Assert.Equal((byte)1, observedFemale.Sex);
+        }
+
+        [Fact]
         public void La_Seleccion_De_Personaje_Tiene_Un_Tope_De_Tiempo()
         {
             long now = 1000;
@@ -3181,7 +3223,7 @@ namespace Avelora.Tests
             public AccountLoginResult Register(string accountName, string password, string invitationCode, string registrationCode) =>
                 Login(accountName, password);
             public CharacterCreateResult CreateCharacter(int accountId, string name, byte classId,
-                int maxCharacters, int zoneId, Vec2 spawn, byte[] mapHash) =>
+                int maxCharacters, int zoneId, Vec2 spawn, byte[] mapHash, byte sex = 0) =>
                 throw new InvalidOperationException("Fallo de creación simulado.");
             public void SaveCharacter(CharacterRecord character) { }
             public void Dispose() { }

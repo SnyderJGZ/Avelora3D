@@ -675,7 +675,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 Assert.Equal("ANA3", Assert.Single(migrated.ListCharacters(secondAccount)).Name);
                 Assert.Equal("Bad_Name", Assert.Single(migrated.ListCharacters(thirdAccount)).Name);
                 Assert.Equal("Ana2", Assert.Single(migrated.ListCharacters(fourthAccount)).Name);
-                Assert.Equal(8, QuerySchemaVersion());
+                Assert.Equal(9, QuerySchemaVersion());
             }
             finally
             {
@@ -703,7 +703,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 migrated.Initialize();
                 CharacterRecord character = Assert.Single(migrated.ListCharacters(accountId));
                 Assert.Equal("único", ReadNameKey(character.Id));
-                Assert.Equal(8, QuerySchemaVersion());
+                Assert.Equal(9, QuerySchemaVersion());
             }
 
             Assert.True(IndexIsPartialAndUnique());
@@ -830,7 +830,8 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 downgrade.CommandText =
                     "ALTER TABLE characters DROP COLUMN pvp_mode; " +
                     "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; " +
-                    "ALTER TABLE characters DROP COLUMN gold; PRAGMA user_version=6;";
+                    "ALTER TABLE characters DROP COLUMN gold; " +
+                    "ALTER TABLE characters DROP COLUMN sex; PRAGMA user_version=6;";
                 downgrade.ExecuteNonQuery();
             }
 
@@ -839,7 +840,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             CharacterRecord restored = Assert.Single(migrated.ListCharacters(accountId));
             Assert.Equal(4, restored.Level);
             Assert.Equal(0, restored.Gold);
-            Assert.Equal(8, QuerySchemaVersion());
+            Assert.Equal(9, QuerySchemaVersion());
         }
 
         [Fact]
@@ -859,7 +860,8 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 using SqliteCommand downgrade = connection.CreateCommand();
                 downgrade.CommandText =
                     "ALTER TABLE characters DROP COLUMN pvp_mode; " +
-                    "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; PRAGMA user_version=7;";
+                    "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; " +
+                    "ALTER TABLE characters DROP COLUMN sex; PRAGMA user_version=7;";
                 downgrade.ExecuteNonQuery();
             }
 
@@ -868,7 +870,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             CharacterRecord restored = Assert.Single(migrated.ListCharacters(accountId));
             Assert.Equal(0, restored.PvpMode);
             Assert.Equal(0, restored.PvpForcedSeconds);
-            Assert.Equal(8, QuerySchemaVersion());
+            Assert.Equal(9, QuerySchemaVersion());
         }
 
         [Fact]
@@ -1154,6 +1156,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                     "ALTER TABLE characters DROP COLUMN class_id; " +
                     "ALTER TABLE characters DROP COLUMN pvp_mode; " +
                     "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; " +
+                    "ALTER TABLE characters DROP COLUMN sex; " +
                     "PRAGMA user_version=1;";
                 command.ExecuteNonQuery();
             }
@@ -1167,7 +1170,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(8, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(9, Convert.ToInt32(version.ExecuteScalar()));
             using SqliteCommand characters = verify.CreateCommand();
             characters.CommandText = "SELECT COUNT(*) FROM characters WHERE id=@id;";
             characters.Parameters.AddWithValue("@id", characterId);
@@ -1212,6 +1215,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                     "ALTER TABLE characters DROP COLUMN class_id; " +
                     "ALTER TABLE characters DROP COLUMN pvp_mode; " +
                     "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; " +
+                    "ALTER TABLE characters DROP COLUMN sex; " +
                     "PRAGMA user_version=2;";
                 command.ExecuteNonQuery();
             }
@@ -1231,7 +1235,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
             verify.Open();
             using SqliteCommand version = verify.CreateCommand();
             version.CommandText = "PRAGMA user_version;";
-            Assert.Equal(8, Convert.ToInt32(version.ExecuteScalar()));
+            Assert.Equal(9, Convert.ToInt32(version.ExecuteScalar()));
         }
 
         [Fact]
@@ -1282,6 +1286,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                     "ALTER TABLE characters DROP COLUMN class_id; " +
                     "ALTER TABLE characters DROP COLUMN pvp_mode; " +
                     "ALTER TABLE characters DROP COLUMN pvp_forced_seconds; " +
+                    "ALTER TABLE characters DROP COLUMN sex; " +
                     "PRAGMA user_version=3;";
                 command.ExecuteNonQuery();
             }
@@ -1303,7 +1308,7 @@ SELECT (SELECT COUNT(*) FROM inventory_items WHERE character_id=@id),
                 Assert.Equal(0, loaded.AllocStr + loaded.AllocDex + loaded.AllocInt + loaded.AllocVit);
             }
 
-            Assert.Equal(8, QuerySchemaVersion());
+            Assert.Equal(9, QuerySchemaVersion());
         }
 
         [Fact]
@@ -1331,6 +1336,7 @@ ALTER TABLE characters DROP COLUMN name_key;
 ALTER TABLE characters DROP COLUMN deleted_utc;
 ALTER TABLE characters DROP COLUMN pvp_mode;
 ALTER TABLE characters DROP COLUMN pvp_forced_seconds;
+ALTER TABLE characters DROP COLUMN sex;
 PRAGMA user_version = 4;";
                 command.ExecuteNonQuery();
             }
@@ -1341,7 +1347,7 @@ PRAGMA user_version = 4;";
             CharacterRecord loaded = CreateOrLoadCharacterForTest(migrated,
                 accountId, "Heroe", 1, new Vec2(0, 0), mapHash)!;
 
-            Assert.Equal(8, QuerySchemaVersion());
+            Assert.Equal(9, QuerySchemaVersion());
             Assert.Equal((ushort)3101, loaded.Equipment[(int)EquipSlot.Weapon]);
             Assert.All(loaded.Equipment.Skip(1), itemId => Assert.Equal((ushort)0, itemId));
         }

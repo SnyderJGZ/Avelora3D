@@ -174,7 +174,7 @@ namespace Avelora.Shared.Protocol
             }
         }
 
-        /// <summary>Codifica CreateCharacter: nombre UTF-8 y classId.</summary>
+        /// <summary>Codifica CreateCharacter: nombre UTF-8, classId y sexo.</summary>
         public static byte[] EncodeCreateCharacter(in CreateCharacterMessage message)
         {
             string name = message.Name ?? string.Empty;
@@ -185,20 +185,26 @@ namespace Avelora.Shared.Protocol
                 throw new ArgumentOutOfRangeException(nameof(message), "classId debe ser distinto de cero.");
             }
 
-            var buffer = new byte[1 + 2 + nameBytes + 1];
+            if (message.Sex > 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(message), "sex debe ser 0 o 1.");
+            }
+
+            var buffer = new byte[1 + 2 + nameBytes + 1 + 1];
             var writer = new WireWriter(buffer);
             writer.WriteByte((byte)MessageType.CreateCharacter);
             writer.WriteString(name, ProtocolConstants.MaxCharacterNameBytes);
             writer.WriteByte(message.ClassId);
+            writer.WriteByte(message.Sex);
             return buffer;
         }
 
-        /// <summary>Lee CreateCharacter y valida UTF-8, longitud, clase y tamaño exacto.</summary>
+        /// <summary>Lee CreateCharacter y valida UTF-8, longitud, clase, sexo y tamaño exacto.</summary>
         public static bool TryReadCreateCharacter(
             byte[] buffer, int offset, int length, out CreateCharacterMessage message)
         {
             message = default;
-            if (!HasHeader(buffer, offset, length, MessageType.CreateCharacter) || length < 4)
+            if (!HasHeader(buffer, offset, length, MessageType.CreateCharacter) || length < 5)
             {
                 return false;
             }
@@ -208,12 +214,13 @@ namespace Avelora.Shared.Protocol
                 var reader = new WireReader(buffer, offset + 1, length - 1);
                 string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
                 byte classId = reader.ReadByte();
-                if (classId == 0 || reader.Remaining != 0)
+                byte sex = reader.ReadByte();
+                if (classId == 0 || sex > 1 || reader.Remaining != 0)
                 {
                     return false;
                 }
 
-                message = new CreateCharacterMessage(name, classId);
+                message = new CreateCharacterMessage(name, classId, sex);
                 return true;
             }
             catch (ProtocolException)
@@ -908,9 +915,14 @@ namespace Avelora.Shared.Protocol
                     throw new ArgumentOutOfRangeException(nameof(message), "El personaje lleva classId o nivel cero.");
                 }
 
+                if (character.Sex > 1)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "sex debe ser 0 o 1.");
+                }
+
                 int nameBytes = GetStrictUtf8ByteCount(character.Name ?? string.Empty);
                 RequireStringLength(nameBytes, ProtocolConstants.MaxCharacterNameBytes, nameof(message));
-                size += 8 + nameBytes;
+                size += 9 + nameBytes;
             }
 
             for (int i = 0; i < classes.Length; i++)
@@ -942,6 +954,7 @@ namespace Avelora.Shared.Protocol
                 writer.WriteString(character.Name, ProtocolConstants.MaxCharacterNameBytes);
                 writer.WriteByte(character.ClassId);
                 writer.WriteByte(character.Level);
+                writer.WriteByte(character.Sex);
             }
 
             writer.WriteByte((byte)classes.Length);
@@ -984,12 +997,13 @@ namespace Avelora.Shared.Protocol
                     string name = reader.ReadString(ProtocolConstants.MaxCharacterNameBytes);
                     byte classId = reader.ReadByte();
                     byte level = reader.ReadByte();
-                    if (characterId <= 0 || classId == 0 || level == 0)
+                    byte sex = reader.ReadByte();
+                    if (characterId <= 0 || classId == 0 || level == 0 || sex > 1)
                     {
                         return false;
                     }
 
-                    characters[i] = new CharacterListEntry(characterId, name, classId, level);
+                    characters[i] = new CharacterListEntry(characterId, name, classId, level, sex);
                 }
 
                 int classCount = reader.ReadByte();
@@ -1187,7 +1201,9 @@ namespace Avelora.Shared.Protocol
                     entities[i].Action > EntityAction.Dead ||
                     entities[i].Rank > ProtocolConstants.MaxEntityRank ||
                     (entities[i].Kind != EntityKind.Npc && entities[i].Rank != 0) ||
-                    (entities[i].Pvp && entities[i].Kind != EntityKind.Player))
+                    (entities[i].Pvp && entities[i].Kind != EntityKind.Player) ||
+                    entities[i].Sex > 1 ||
+                    (entities[i].Sex != 0 && entities[i].Kind != EntityKind.Player))
                 {
                     throw new ArgumentOutOfRangeException(
                         nameof(message),
@@ -1212,8 +1228,9 @@ namespace Avelora.Shared.Protocol
                 writer.WriteSByte(state.DirectionY);
                 writer.WriteByte((byte)state.Kind);
                 writer.WriteByte(state.HealthPercent);
-                // Bits 0–3: acción; bits 4–5: rango; bit 6: PvP efectivo (solo jugadores); bit 7: reservado (0).
-                writer.WriteByte((byte)((byte)state.Action | (state.Rank << 4) | (state.Pvp ? 0x40 : 0)));
+                // Bits 0–3: acción; bits 4–5: rango; bit 6: PvP efectivo (solo jugadores); bit 7: mujer (solo jugadores).
+                writer.WriteByte((byte)((byte)state.Action | (state.Rank << 4) | (state.Pvp ? 0x40 : 0) |
+                    (state.Sex == 1 ? 0x80 : 0)));
                 writer.WriteUInt16(state.TypeId);
             }
 
@@ -1286,7 +1303,7 @@ namespace Avelora.Shared.Protocol
                         !MovementSimulator.IsValidDirection(directionX, directionY) ||
                         healthPercent > 100 ||
                         rawAction > (byte)EntityAction.Dead ||
-                        (packedAction & 0x80) != 0 ||
+                        ((packedAction & 0x80) != 0 && rawKind != (byte)EntityKind.Player) ||
                         (rawKind != (byte)EntityKind.Npc && rank != 0) ||
                         (pvp && rawKind != (byte)EntityKind.Player))
                     {
@@ -1304,7 +1321,8 @@ namespace Avelora.Shared.Protocol
                         (EntityAction)rawAction,
                         typeId,
                         rank,
-                        pvp);
+                        pvp,
+                        sex: (byte)((packedAction >> 7) & 1));
                 }
 
                 message = new SnapshotMessage(serverTick, lastSequence, entities);

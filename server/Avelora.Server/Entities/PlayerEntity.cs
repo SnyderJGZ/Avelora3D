@@ -100,6 +100,8 @@ namespace Avelora.Server.Entities
         /// <summary>Identificador de clase declarada en classes.json (I-08).</summary>
         public int ClassId { get; set; } = 1;
 
+        public byte Sex { get; set; }
+
         public int AllocStr { get; set; }
         public int AllocDex { get; set; }
         public int AllocInt { get; set; }

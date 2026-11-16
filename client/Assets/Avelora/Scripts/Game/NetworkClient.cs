@@ -280,6 +280,8 @@ namespace Avelora.Client
         private int _selectedCharacterId;
         private byte _selectedClassId;
         private byte _createClassId;
+        private byte _selectedSex;
+        private byte _createSex;
         private string _newCharacterName = string.Empty;
         private string _deleteConfirmationName = string.Empty;
         private Vector2 _characterScroll;
@@ -460,6 +462,8 @@ namespace Avelora.Client
             _selectedCharacterId = 0;
             _selectedClassId = 0;
             _createClassId = 0;
+            _selectedSex = 0;
+            _createSex = 0;
             _welcomeReceived = false;
             _disconnectRequested = false;
             _challengeReceived = false;
@@ -1898,6 +1902,7 @@ namespace Avelora.Client
             ClearInputHistory();
             _welcomeReceived = true;
 
+            _localRenderer = EntityVisuals.ReplacePlayer(transform, _selectedSex);
             EntityVisuals.SetColor(_localRenderer, ClassColor(_selectedClassId));
 
             transform.position = EntityVisuals.ToWorld(new Vec2(welcome.SpawnX, welcome.SpawnY));
@@ -2009,7 +2014,7 @@ namespace Avelora.Client
 
                 if (!_remoteViews.TryGetValue(state.Id, out RemotePlayerView view) || view == null)
                 {
-                    view = CreateRemoteView(state.Id, state.Kind, state.TypeId);
+                    view = CreateRemoteView(state.Id, state.Kind, state.TypeId, state.Sex);
                     _remoteViews[state.Id] = view;
                 }
 
@@ -2048,7 +2053,7 @@ namespace Avelora.Client
             }
         }
 
-        private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId)
+        private RemotePlayerView CreateRemoteView(int entityId, EntityKind kind, ushort typeId, byte sex)
         {
             if (_remoteRoot == null)
             {
@@ -2063,7 +2068,7 @@ namespace Avelora.Client
             Color npcColor = EntityVisuals.ColorForTypeId(typeId);
             Color itemColor = ItemColor(typeId);
             Renderer renderer = EntityVisuals.CreateEntity(go.transform, kind, typeId,
-                kind == EntityKind.Player ? playerColor : kind == EntityKind.Item ? itemColor : npcColor);
+                kind == EntityKind.Player ? playerColor : kind == EntityKind.Item ? itemColor : npcColor, sex);
             view.Initialize(entityId, renderer, playerColor, npcColor, itemColor);
 
             Debug.Log("[Avelora] Entidad remota " + entityId + " creada.", this);
@@ -2378,6 +2383,7 @@ namespace Avelora.Client
 
                 _selectedCharacterId = characterId;
                 _selectedClassId = characters[i].ClassId;
+                _selectedSex = characters[i].Sex;
                 _characterSelectionPending = true;
                 _status = "Entrando con " + characters[i].Name + "…";
                 byte[] bytes = MessageCodec.EncodeSelectCharacter(new SelectCharacterMessage(characterId));
@@ -2407,7 +2413,7 @@ namespace Avelora.Client
             }
 
             _status = "Creando personaje…";
-            byte[] bytes = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(trimmedName, classId));
+            byte[] bytes = MessageCodec.EncodeCreateCharacter(new CreateCharacterMessage(trimmedName, classId, _createSex));
             _transport.Send(bytes, bytes.Length, DeliveryMode.ReliableOrdered);
             _characterOperationPending = true;
         }

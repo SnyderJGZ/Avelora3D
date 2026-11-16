@@ -37,7 +37,8 @@ namespace Avelora.Server.Persistence
             int maxCharacters,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash) => throw new NotSupportedException(
+            byte[] mapHash,
+            byte sex = 0) => throw new NotSupportedException(
                 "Este repositorio no implementa la creación de personajes.");
 
         /// <summary>Borra lógicamente un personaje tras confirmar su nombre exacto.</summary>

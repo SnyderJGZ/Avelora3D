@@ -205,7 +205,8 @@ namespace Avelora.Server.Net
                             request.MaxCharacters,
                             request.ZoneId,
                             request.Spawn,
-                            request.MapHash);
+                            request.MapHash,
+                            request.Sex);
                         return created.Success
                             ? LoginResult.CharacterListUpdated(
                                 request.ConnectionId,
@@ -346,7 +347,8 @@ namespace Avelora.Server.Net
             int maxCharacters,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash)
+            byte[] mapHash,
+            byte sex = 0)
         {
             ConnectionId = connectionId;
             ConnectionGeneration = connectionGeneration;
@@ -360,6 +362,7 @@ namespace Avelora.Server.Net
             ZoneId = zoneId;
             Spawn = spawn;
             MapHash = mapHash;
+            Sex = sex;
         }
 
         public int ConnectionId { get; }
@@ -374,6 +377,7 @@ namespace Avelora.Server.Net
         public int ZoneId { get; }
         public Vec2 Spawn { get; }
         public byte[] MapHash { get; }
+        public byte Sex { get; }
     }
 
     internal readonly struct WorkerRequest

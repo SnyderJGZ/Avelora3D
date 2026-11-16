@@ -1029,7 +1029,8 @@ namespace Avelora.Server.Net
                     character.Id,
                     character.Name,
                     checked((byte)character.ClassId),
-                    checked((byte)character.Level));
+                    checked((byte)character.Level),
+                    checked((byte)character.Sex));
             }
 
             List<CharacterClass> definitions = _zone.Classes.Classes!;
@@ -1161,7 +1162,8 @@ namespace Avelora.Server.Net
                         _config.MaxCharactersPerAccount,
                         _zone.Id,
                         _config.Spawn,
-                        _mapHash);
+                        _mapHash,
+                        create.Sex);
                     if (created.Success)
                     {
                         EnqueueCharacterList(connectionId, _memoryRepository.ListCharacters(state.AccountId));
@@ -1174,7 +1176,7 @@ namespace Avelora.Server.Net
                     return;
                 }
 
-                EnqueueCharacterOperation(state, CharacterOperationKind.Create, name, create.ClassId, 0);
+                EnqueueCharacterOperation(state, CharacterOperationKind.Create, name, create.ClassId, 0, create.Sex);
                 return;
             }
 
@@ -1241,7 +1243,8 @@ namespace Avelora.Server.Net
             CharacterOperationKind operation,
             string name,
             byte classId,
-            int characterId)
+            int characterId,
+            byte sex = 0)
         {
             if (_login == null)
             {
@@ -1262,7 +1265,8 @@ namespace Avelora.Server.Net
                 _config.MaxCharactersPerAccount,
                 _zone.Id,
                 _config.Spawn,
-                _mapHash));
+                _mapHash,
+                sex));
         }
 
         private void EnqueueCharacterRejected(int connectionId, RejectReason reason)
@@ -1665,6 +1669,7 @@ namespace Avelora.Server.Net
                 character.Mana,
                 character.Gold);
             player.PvpMode = character.PvpMode == 1 ? PvpMode.Pvp : PvpMode.Pve;
+            player.Sex = (byte)character.Sex;
             player.PvpForcedTicksLeft = Math.Clamp(character.PvpForcedSeconds, 0, ushort.MaxValue) *
                 SimulationConstants.TickRate;
 
@@ -2392,7 +2397,8 @@ namespace Avelora.Server.Net
                     entity is PlayerEntity classed ? checked((ushort)classed.ClassId) :
                     entity is GroundItemEntity ground ? (ushort)ground.ItemId : (ushort)0,
                     entity is NpcEntity ranked ? ranked.Rank : (byte)0,
-                    entity is PlayerEntity pvpPlayer && pvpPlayer.PvpEffective);
+                    entity is PlayerEntity pvpPlayer && pvpPlayer.PvpEffective,
+                    sex: entity is PlayerEntity sexed ? sexed.Sex : (byte)0);
             }
 
             byte[] bytes = MessageCodec.EncodeSnapshot(new SnapshotMessage(

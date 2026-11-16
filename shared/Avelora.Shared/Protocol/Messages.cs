@@ -114,17 +114,19 @@ namespace Avelora.Shared.Protocol
         Register = 1,
     }
 
-    /// <summary>Petición de crear un personaje con una clase elegida por el cliente (I-10).</summary>
+    /// <summary>Petición de crear un personaje con una clase y un sexo elegidos por el cliente (I-10/U3D-02A).</summary>
     public readonly struct CreateCharacterMessage
     {
-        public CreateCharacterMessage(string name, byte classId)
+        public CreateCharacterMessage(string name, byte classId, byte sex = 0)
         {
             Name = name ?? string.Empty;
             ClassId = classId;
+            Sex = sex;
         }
 
         public string Name { get; }
         public byte ClassId { get; }
+        public byte Sex { get; }
     }
 
     /// <summary>Petición de borrar un personaje; el nombre confirma la acción (I-10).</summary>
@@ -151,18 +153,20 @@ namespace Avelora.Shared.Protocol
     /// <summary>Personaje que aparece en CharacterList (I-10).</summary>
     public readonly struct CharacterListEntry
     {
-        public CharacterListEntry(int characterId, string name, byte classId, byte level)
+        public CharacterListEntry(int characterId, string name, byte classId, byte level, byte sex = 0)
         {
             CharacterId = characterId;
             Name = name ?? string.Empty;
             ClassId = classId;
             Level = level;
+            Sex = sex;
         }
 
         public int CharacterId { get; }
         public string Name { get; }
         public byte ClassId { get; }
         public byte Level { get; }
+        public byte Sex { get; }
     }
 
     /// <summary>Clase disponible para crear personajes, anunciada en CharacterList (I-10).</summary>
@@ -694,7 +698,7 @@ namespace Avelora.Shared.Protocol
     /// <summary>Estado de una entidad dentro de un snapshot.</summary>
     /// <remarks>
     /// Ocupa 15 bytes: Id (4), posición cuantizada (2+2), dirección y tipo (1+1+1), vida (1), acción,
-    /// rango y PvP (1, I-20/I-15p) y tipo de PNJ (2, I-03c).
+    /// rango, PvP y sexo (1, I-20/I-15p/U3D-02A) y tipo de PNJ (2, I-03c).
     /// </remarks>
     public readonly struct EntityState
     {
@@ -709,7 +713,8 @@ namespace Avelora.Shared.Protocol
             EntityAction action,
             ushort typeId = 0,
             byte rank = 0,
-            bool pvp = false)
+            bool pvp = false,
+            byte sex = 0)
         {
             Id = id;
             X = x;
@@ -722,6 +727,7 @@ namespace Avelora.Shared.Protocol
             TypeId = typeId;
             Rank = rank;
             Pvp = pvp;
+            Sex = sex;
         }
 
         public int Id { get; }
@@ -755,6 +761,9 @@ namespace Avelora.Shared.Protocol
 
         /// <summary>PvP efectivo; solo es válido para jugadores.</summary>
         public bool Pvp { get; }
+
+        /// <summary>Sexo del jugador (0 hombre, 1 mujer); 0 en PNJ y objetos.</summary>
+        public byte Sex { get; }
     }
 
     /// <summary>

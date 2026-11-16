@@ -229,7 +229,7 @@ namespace Avelora.Tests
                 Assert.Equal(reason, reasonRead.Reason);
             }
 
-            Assert.Equal((ushort)26, ProtocolConstants.Version);
+            Assert.Equal((ushort)27, ProtocolConstants.Version);
             Assert.False(Enum.IsDefined(typeof(MessageType), (byte)21));
         }
 
@@ -667,8 +667,8 @@ namespace Avelora.Tests
             npcBytes[23] = 0x40;
             Assert.False(MessageCodec.TryReadSnapshot(npcBytes, 0, npcBytes.Length, out _));
 
-            bytes[23] = 0x80;
-            Assert.False(MessageCodec.TryReadSnapshot(bytes, 0, bytes.Length, out _));
+            npcBytes[23] = 0x80;
+            Assert.False(MessageCodec.TryReadSnapshot(npcBytes, 0, npcBytes.Length, out _));
         }
 
         [Fact]
@@ -725,9 +725,9 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Protocolo_Pvp_Usa_La_Version_26()
+        public void El_Protocolo_Pvp_Usa_La_Version_27()
         {
-            Assert.Equal((ushort)26, ProtocolConstants.Version);
+            Assert.Equal((ushort)27, ProtocolConstants.Version);
         }
 
         [Theory]
@@ -1939,9 +1939,9 @@ namespace Avelora.Tests
         }
 
         [Fact]
-        public void El_Protocolo_De_Habilidades_Usa_La_Version_25()
+        public void El_Protocolo_De_Habilidades_Usa_La_Version_27()
         {
-            Assert.Equal((ushort)26, ProtocolConstants.Version);
+            Assert.Equal((ushort)27, ProtocolConstants.Version);
             Assert.Equal((byte)35, (byte)MessageType.UseSkill);
             Assert.Equal((byte)36, (byte)MessageType.SkillCatalog);
             Assert.Equal((byte)37, (byte)MessageType.SkillUsed);

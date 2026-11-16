@@ -79,8 +79,14 @@ namespace Avelora.Server.Persistence
             int maxCharacters,
             int zoneId,
             Vec2 spawn,
-            byte[] mapHash)
+            byte[] mapHash,
+            byte sex = 0)
         {
+            if (sex > 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sex));
+            }
+
             ThrowIfNotInitialized();
             if (!_characters.TryGetValue(accountId, out List<CharacterRecord>? characters))
             {
@@ -129,7 +135,10 @@ namespace Avelora.Server.Persistence
                 mapHash,
                 now,
                 now,
-                classId: classId);
+                classId: classId)
+            {
+                Sex = sex,
+            };
             characters.Add(character);
             return CharacterCreateResult.Created(character);
         }

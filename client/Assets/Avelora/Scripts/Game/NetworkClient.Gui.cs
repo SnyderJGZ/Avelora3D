@@ -649,7 +649,7 @@ namespace Avelora.Client
             CharacterListEntry[] characters = _characterList.Characters;
             CharacterClassEntry[] classes = _characterList.Classes;
             int classRows = (classes.Length + 1) / 2;
-            float contentHeight = 56f + (characters.Length * 32f) + 92f + (classRows * 36f) + 58f;
+            float contentHeight = 56f + (characters.Length * 32f) + 92f + (classRows * 36f) + 58f + 34f;
             float width = Mathf.Min(560f, Screen.width - 24f);
             float height = Mathf.Min(Screen.height - 24f, contentHeight + 82f);
             _characterPanel = new Rect((Screen.width - width) / 2f, (Screen.height - height) / 2f, width, height);
@@ -732,6 +732,28 @@ namespace Avelora.Client
                 _newCharacterName = GUI.TextField(new Rect(8f, y, Mathf.Min(260f, content.width - 16f), 26f),
                     _newCharacterName, 32);
                 y += 32f;
+
+                float sexCellWidth = (content.width - 20f) / 2f;
+                for (int i = 0; i < 2; i++)
+                {
+                    var button = new Rect(8f + (i * (sexCellWidth + 4f)), y, sexCellWidth, 30f);
+                    if (_createSex == i)
+                    {
+                        GUI.color = new Color(0.34f, 0.4f, 0.48f, 0.9f);
+                        GUI.DrawTexture(button, Texture2D.whiteTexture);
+                        GUI.color = Color.white;
+                    }
+
+                    if (LeftButton(button, GUIContent.none, GUIStyle.none))
+                    {
+                        _createSex = (byte)i;
+                    }
+
+                    GUI.Label(new Rect(button.x + 6f, button.y + 2f, button.width - 12f, 26f),
+                        i == 0 ? "Hombre" : "Mujer", _darkSmallStyle);
+                }
+
+                y += 34f;
 
                 for (int i = 0; i < classes.Length; i++)
                 {
