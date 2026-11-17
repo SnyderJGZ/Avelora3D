@@ -14,11 +14,12 @@ namespace Avelora.Client
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly MaterialPropertyBlock PropertyBlock = new MaterialPropertyBlock();
         private static Material _material;
-        // Índice = fila de clase * 2 + sexo (0 hombre, 1 mujer). Fila 0 guerrero (y clases sin modelo propio), fila 1 mago.
+        // Índice = fila de clase * 2 + sexo (0 hombre, 1 mujer). Fila 0 guerrero (y clases sin modelo propio), fila 1 mago, fila 2 ranger.
         private static readonly string[] PlayerModelPaths =
         {
             "Personajes/NovatoGuerrero/NovatoGuerrero", "Personajes/Guerrera/Guerrera",
             "Personajes/Mago/Mago", "Personajes/Maga/Maga",
+            "Personajes/Ranger/Ranger", "Personajes/Rangera/Rangera",
         };
         private static readonly GameObject[] PlayerModels = new GameObject[PlayerModelPaths.Length];
 
@@ -173,8 +174,8 @@ namespace Avelora.Client
         /// <summary>Instancia el modelo de jugador de Resources, escalado a la altura del jugador; null si no está.</summary>
         private static Renderer TryCreatePlayerModel(Transform parent, ushort typeId, byte sex)
         {
-            // Para los jugadores, typeId es el id de clase (classes.json: 1 guerrero, 2 mago).
-            int classRow = typeId == 2 ? 1 : 0;
+            // Para los jugadores, typeId es el id de clase (classes.json: 1 guerrero, 2 mago, 3 ranger).
+            int classRow = typeId == 2 ? 1 : typeId == 3 ? 2 : 0;
             int index = classRow * 2 + (sex == 1 ? 1 : 0);
             if (PlayerModels[index] == null)
             {
