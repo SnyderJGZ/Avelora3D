@@ -17,9 +17,9 @@ namespace Avelora.Client
         // Índice = fila de clase * 2 + sexo (0 hombre, 1 mujer). Fila 0 guerrero (y clases sin modelo propio), fila 1 mago, fila 2 ranger, fila 3 sanador.
         private static readonly string[] PlayerModelPaths =
         {
-            "Personajes/NovatoGuerrero/NovatoGuerrero", "Personajes/Guerrera/Guerrera",
-            "Personajes/Mago/Mago", "Personajes/Maga/Maga",
-            "Personajes/RangerH/RangerH", "Personajes/Rangera/Rangera",
+            "Personajes/GuerreroH/GuerreroH", "Personajes/GuerreraM/GuerreraM",
+            "Personajes/MagoH/MagoH", "Personajes/MagaM/MagaM",
+            "Personajes/RangerH/RangerH", "Personajes/RangeraM/RangeraM",
             "Personajes/Sanador/Sanador", "Personajes/Sanadora/Sanadora",
         };
         private static readonly GameObject[] PlayerModels = new GameObject[PlayerModelPaths.Length];
